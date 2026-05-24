@@ -18,8 +18,8 @@ local Window = Rayfield:CreateWindow({
     KeySystem = false
 })
 
-local Main = Window:CreateTab("Main", "home")
-local Troll = Window:CreateTab("Gabut", "laugh")
+local Main = Window:CreateTab("Main", 4483362458)
+local Troll = Window:CreateTab("Gabut", 4483362458)
 
 Main:CreateSection("Bus System")
 
