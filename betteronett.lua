@@ -4,7 +4,7 @@ local Window = Rayfield:CreateWindow({
    Name = ".projectsion",
    LoadingTitle = "Bus Explorer Indonesia",
    LoadingSubtitle = "by .projectsion",
-   Theme = "Ocean",
+   Theme = "Bloom",
    ConfigurationSaving = {
       Enabled = true,
       FileName = "VoidlineConfig"
@@ -34,7 +34,7 @@ local HttpService = game:GetService("HttpService")
 
 -- VARIABEL
 _G.AutoFull = false
-_G.AntiAFK = false
+_G.AntiAFK = true
 _G.AutoRejoin = false
 _G.blackscreen = false
 _G.HideChar = false
@@ -56,7 +56,7 @@ local busOptions = {}
 local BlackScreen = Instance.new("ScreenGui")
 local Frame = Instance.new("Frame")
 
-BlackScreen.Name = "VoidlineBlackout"
+BlackScreen.Name = "ProjectsionBlackout"
 BlackScreen.Parent = game:GetService("CoreGui")
 BlackScreen.DisplayOrder = -1 -- Menunya aman di depan, in-game ketutup hitam
 BlackScreen.Enabled = false 
@@ -147,7 +147,7 @@ game.Players.LocalPlayer.Idled:Connect(function()
     if _G.AntiAFK then
         VirtualUser:CaptureController()
         VirtualUser:ClickButton2(Vector2.new())
-        warn("VoidlineHub: Anti-AFK Aktif!")
+        warn("Projectsion: Anti-AFK Aktif!")
     end
 end) -- Pastikan ada 'end)' di sini!
 
@@ -318,11 +318,11 @@ end
 local MainTab = Window:CreateTab("Main Farm", "play")
 MainTab:CreateSection("Autofarm bus")
 MainTab:CreateParagraph({
-    Title = "How to Use Auto-Kick", 
-    Content = "1. Masukkan target uang (Contoh: 1.500.000)\n2. Nyalakan toggle 'Enable Auto-Kick'\n3. Script akan otomatis kick saat uang tercapai."
+    Title = "Aware", 
+    Content = "USE THIS IN PRIVATE SERVER, AUTOFARM USE JB5 ONLY DIFFERENT BUS WILL GETTING YOU DETECTED."
 })
 MainTab:CreateToggle({
-    Name = "On Autofarm",
+    Name = "Go autofarm",
     CurrentValue = false,
     Callback = function(Value)
         _G.AutoFull = Value
@@ -395,14 +395,14 @@ MainTab:CreateToggle({
                     for i = 1, 30 do
                         if not _G.AutoFull then break end
                         if infoLabel and string.find(string.upper(infoLabel.Text), "RETURN TO THE CHECKPOINT") then
-                            SetStatus("Correction: TP Again!")
+                            SetStatus("Correction: TPED!")
                             SetFreeze(false)
                             task.wait(0.5)
                             InstantTP(target.CFrame)
                             task.wait(0.5)
                             SetFreeze(true)
                         else
-                            SetStatus("Position Secure...")
+                            SetStatus("Secureing...")
                         end
                         task.wait(1)
                     end
@@ -443,8 +443,8 @@ MainTab:CreateToggle({
                         local bus = GetMyBus()
                         if bus then bus:Destroy() end 
                         
-                        SetStatus("Job Finished! Restarting...")
-                        task.wait(3) 
+                        SetStatus("Finished! Looping...")
+                        task.wait(5) 
                     end
                 end
             end
@@ -587,7 +587,7 @@ MoreTab:CreateSection("important features")
 -- ANTI AFK TOGGLE
 MoreTab:CreateToggle({
    Name = "Anti-AFK System",
-   CurrentValue = false, -- Sesuai request, start-nya False
+   CurrentValue = true, -- Sesuai request, start-nya False
    Flag = "AntiAFK",
    Callback = function(Value)
       _G.AntiAFK = Value
@@ -659,7 +659,7 @@ MoreTab:CreateButton({
 })
 
 -- SECTION: BUS DEALERSHIP
-MoreTab:CreateSection("auto buy bus")
+MoreTab:CreateSection("Buy Bus")
 
 MoreTab:CreateDropdown({
    Name = "Select Bus to Purchase",
