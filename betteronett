@@ -1,3 +1,99 @@
+local Rayfield = loadstring(game:HttpGet(
+'https://raw.githubusercontent.com/shlexware/Rayfield/main/source'
+))()
+
+local Window = Rayfield:CreateWindow({
+    Name = "🚌 Luxxid Bus Hub",
+    LoadingTitle = "nyalain mesin dulu bang",
+    LoadingSubtitle = "jangan ngebut nanti oleng",
+
+    ConfigurationSaving = {
+        Enabled = false
+    },
+
+    Discord = {
+        Enabled = false
+    },
+
+    KeySystem = false
+})
+
+local Main = Window:CreateTab("Main", "home")
+local Troll = Window:CreateTab("Gabut", "laugh")
+
+Main:CreateSection("Bus System")
+
+Main:CreateButton({
+    Name = "Start Engine",
+
+    Callback = function()
+        Rayfield:Notify({
+            Title = "Bus Ready",
+            Content = "mesin diesel berhasil dinyalakan 🚍",
+            Duration = 3
+        })
+    end,
+})
+
+Main:CreateToggle({
+    Name = "Auto Route",
+    CurrentValue = false,
+    Flag = "AutoRoute",
+
+    Callback = function(v)
+
+        if v then
+            Rayfield:Notify({
+                Title = "Auto Route",
+                Content = "supir NPC mulai kerja 😴",
+                Duration = 3
+            })
+        else
+            Rayfield:Notify({
+                Title = "Auto Route",
+                Content = "supir pulang ngopi ☕",
+                Duration = 3
+            })
+        end
+    end,
+})
+
+Troll:CreateSection("fitur tidak berguna")
+
+Troll:CreateButton({
+    Name = "Tambah Aura Sigma",
+
+    Callback = function()
+
+        Rayfield:Notify({
+            Title = "SIGMA DETECTED 🗿",
+            Content = "+999999999 aura diperoleh",
+            Duration = 4
+        })
+    end,
+})
+
+Troll:CreateButton({
+    Name = "Klakson Basuri",
+
+    Callback = function()
+
+        game:GetService("StarterGui"):SetCore(
+            "SendNotification",
+            {
+                Title = "Telolet",
+                Text = "om telolet om 🚌",
+                Duration = 3
+            }
+        )
+    end,
+})
+
+Troll:CreateParagraph({
+    Title = "Developer Notes",
+    Content = "dibuat oleh manusia gabut dengan bensin pertalite"
+})
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
