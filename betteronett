@@ -1,0 +1,326 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local LP = Players.LocalPlayer
+local Character = LP.Character or LP.CharacterAdded:Wait()
+
+-- // HELPER
+local function Notify(title, content, duration)
+    Rayfield:Notify({
+        Title = title,
+        Content = content,
+        Duration = duration or 4,
+    })
+end
+
+local function SetStatus(text)
+    if StatusLabel then
+        StatusLabel:Set("Status: " .. text)
+    end
+end
+
+local function GetPrompt(path)
+    local obj = workspace
+
+    for _,v in ipairs(path) do
+        obj = obj:FindFirstChild(v)
+
+        if not obj then
+            return nil
+        end
+    end
+
+    return obj
+end
+
+-- // PERFORMANCE
+local HiddenNames = {}
+local OriginalTransparency = {}
+
+-- // TAB
+local MoreTab = Window:CreateTab("More Features", "plus-circle")
+
+-- // IMPORTANT
+MoreTab:CreateSection("Important Features")
+
+-- // ANTI AFK
+MoreTab:CreateToggle({
+    Name = "Anti-AFK System",
+    CurrentValue = false,
+    Flag = "AntiAFK",
+
+    Callback = function(Value)
+        _G.AntiAFK = Value
+
+        SetStatus(Value and "Anti-AFK Enabled" or "Anti-AFK Disabled")
+
+        Notify(
+            "System",
+            Value and "Anti-AFK Enabled" or "Anti-AFK Disabled"
+        )
+    end,
+})
+
+-- // AUTO REJOIN
+MoreTab:CreateToggle({
+    Name = "Auto Rejoin",
+    CurrentValue = false,
+    Flag = "AutoRejoin",
+
+    Callback = function(Value)
+        _G.AutoRejoin = Value
+
+        Notify(
+            "System",
+            Value and "Auto Rejoin Enabled" or "Auto Rejoin Disabled"
+        )
+    end,
+})
+
+-- // VISUAL
+MoreTab:CreateSection("Visual & Performance")
+
+-- // HIDE NAMES
+MoreTab:CreateToggle({
+    Name = "Hide All Names",
+    CurrentValue = false,
+    Flag = "HideNames",
+
+    Callback = function(Value)
+
+        if Value then
+            for _,v in ipairs(workspace:GetDescendants()) do
+                if v:IsA("BillboardGui") then
+                    HiddenNames[v] = v.Enabled
+                    v.Enabled = false
+                end
+            end
+
+            SetStatus("Names Hidden")
+
+        else
+            for gui,state in pairs(HiddenNames) do
+                if gui and gui.Parent then
+                    gui.Enabled = state
+                end
+            end
+
+            SetStatus("Names Visible")
+        end
+    end,
+})
+
+-- // HIDE CHARACTER
+MoreTab:CreateToggle({
+    Name = "Hide Character",
+    CurrentValue = false,
+    Flag = "HideChar",
+
+    Callback = function(Value)
+
+        Character = LP.Character or LP.CharacterAdded:Wait()
+
+        for _,part in ipairs(Character:GetDescendants()) do
+
+            if part:IsA("BasePart") or part:IsA("Decal") then
+
+                if OriginalTransparency[part] == nil then
+                    OriginalTransparency[part] = part.Transparency
+                end
+
+                part.Transparency = Value and 1 or OriginalTransparency[part]
+            end
+        end
+
+        SetStatus(Value and "Character Hidden" or "Character Visible")
+    end,
+})
+
+-- // FPS BOOST
+MoreTab:CreateButton({
+    Name = "FPS Boost",
+
+    Callback = function()
+
+        for _,v in ipairs(workspace:GetDescendants()) do
+
+            if v:IsA("BasePart") then
+                v.Material = Enum.Material.SmoothPlastic
+                v.Reflectance = 0
+
+            elseif v:IsA("Decal")
+                or v:IsA("Texture")
+                or v:IsA("ParticleEmitter")
+                or v:IsA("Trail") then
+
+                v.Enabled = false
+            end
+        end
+
+        game.Lighting.GlobalShadows = false
+        game.Lighting.FogEnd = 100000
+
+        SetStatus("FPS Boost Enabled")
+
+        Notify(
+            "Performance",
+            "FPS Boost Applied"
+        )
+    end,
+})
+
+-- // BUS
+MoreTab:CreateSection("Auto Buy Bus")
+
+SelectedBusToBuy = SelectedBusToBuy or "None"
+
+MoreTab:CreateDropdown({
+    Name = "Select Bus",
+    Options = CarListData,
+    CurrentOption = {CarListData[1] or "None"},
+    MultipleOptions = false,
+
+    Callback = function(Option)
+        SelectedBusToBuy = Option[1]
+    end,
+})
+
+MoreTab:CreateButton({
+    Name = "Buy Selected Bus",
+
+    Callback = function()
+
+        if not SelectedBusToBuy
+            or SelectedBusToBuy == "None" then
+
+            Notify(
+                "Error",
+                "Please select a bus first!"
+            )
+
+            return
+        end
+
+        local success,err = pcall(function()
+
+            Remotes:WaitForChild("BuyCar")
+                :FireServer(SelectedBusToBuy)
+
+        end)
+
+        if success then
+
+            SetStatus("Purchased " .. SelectedBusToBuy)
+
+            Notify(
+                "Success",
+                "Purchased: "..SelectedBusToBuy
+            )
+
+        else
+
+            warn(err)
+
+            Notify(
+                "Error",
+                "Purchase Failed"
+            )
+        end
+    end,
+})
+
+-- // TELEPORT
+MoreTab:CreateSection("World Teleport")
+
+SelectedTP = "Dealership"
+
+MoreTab:CreateDropdown({
+    Name = "Select Destination",
+    Options = {"Dealership","Modifikasi","Teleport City"},
+    CurrentOption = {"Dealership"},
+    MultipleOptions = false,
+
+    Callback = function(Option)
+        SelectedTP = Option[1]
+    end,
+})
+
+MoreTab:CreateButton({
+    Name = "Teleport",
+
+    Callback = function()
+
+        local target = TP_Locations[SelectedTP]
+
+        if target
+            and LP.Character
+            and LP.Character:FindFirstChild("HumanoidRootPart") then
+
+            LP.Character:PivotTo(target)
+
+            SetStatus("Teleported to "..SelectedTP)
+
+            Notify(
+                "Teleport",
+                "Teleported to "..SelectedTP
+            )
+        end
+    end,
+})
+
+-- // OPEN UI
+MoreTab:CreateSection("Open UI")
+
+SelectedAction = "Dealership"
+
+local PromptList = {
+    ["Dealership"] = {
+        "BigBus_DealershipPart",
+        "ProximityPrompt"
+    },
+
+    ["Modifikasi"] = {
+        "Modif",
+        "ModificationTriggerPart",
+        "ProximityPrompt"
+    },
+
+    ["Teleport City"] = {
+        "Telportpart",
+        "ProximityPrompt"
+    }
+}
+
+MoreTab:CreateDropdown({
+    Name = "Select Menu",
+    Options = {"Dealership","Modifikasi","Teleport City"},
+    CurrentOption = {"Dealership"},
+    MultipleOptions = false,
+
+    Callback = function(Option)
+        SelectedAction = Option[1]
+    end,
+})
+
+MoreTab:CreateButton({
+    Name = "Open Selected Menu",
+
+    Callback = function()
+
+        local prompt = GetPrompt(PromptList[SelectedAction])
+
+        if prompt then
+
+            fireproximityprompt(prompt)
+
+            SetStatus("Opening "..SelectedAction)
+
+        else
+
+            Notify(
+                "Error",
+                "Prompt Not Found"
+            )
+        end
+    end,
+})
