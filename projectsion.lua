@@ -294,14 +294,29 @@ local function runAutofarm()
                 local targetCF = (waypoint:IsA("Model") and waypoint:GetPivot()) or waypoint.CFrame
                 
                 -- Teleport truck pakai step
-                StepTeleport(myTruck, targetCF, 20, 0.15)
-                task.wait(math.random(1, 2))
+StepTeleport(myTruck, targetCF, 20, 0.15)
+task.wait(math.random(1, 2))
+
+-- [TAMBAHAN] Coba fire waypoint prompt via player
+local prompt = waypoint:FindFirstChildWhichIsA("ProximityPrompt")
+    or waypoint:FindFirstChild("Prompt")
+if prompt then
+    local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        StepTeleportChar(hrp, targetCF, 10, 0.1)
+        task.wait(math.random(1, 2))
+        fireproximityprompt(prompt)
+        task.wait(math.random(1, 2))
+    end
+end
+
+
 
                 CurrentMoney = getCleanMoney()
                 EarnedMoney = CurrentMoney - StartMoney
 
                 -- Countdown Delay
-                NextTeleportIn = 49.3
+                NextTeleportIn = math.random (45-55)
                 repeat
                     task.wait(1)
                     NextTeleportIn = NextTeleportIn - 1
