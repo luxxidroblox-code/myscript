@@ -1,4 +1,4 @@
--- 🤖 Nano AI 🤖: Integrated Script
+-- 🤖 Nano AI 🤖: Anti-Bug Integrated Script
 local VelarisUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/nhfudzfsrzggt/brigida/refs/heads/main/dist/main.lua", true))()
 
 -- // Services
@@ -326,6 +326,8 @@ local function runAutofarm()
                 local skyHeight = 650
                 local startPos = primary.Position
 
+                primary.AssemblyLinearVelocity = Vector3.zero
+                primary.AssemblyAngularVelocity = Vector3.zero
                 primary.CFrame = CFrame.new(startPos.X, skyHeight, startPos.Z)
                 task.wait(0.2)
 
@@ -335,6 +337,8 @@ local function runAutofarm()
 
                 local speed = 145 -- Batas kecepatan aman penyamaran server
                 local distance = (primary.Position - targetSkyPos).Magnitude
+                local lastDistance = distance
+                local stuckCheckCount = 0
 
                 while distance > 15 and _G.Autofarm and humanoid.SeatPart ~= nil do
                     if not car.Parent then break end
@@ -344,10 +348,25 @@ local function runAutofarm()
                     distance = (targetSkyPos - currentPos).Magnitude
                     StatusLabel.Text = "Sky-Bypassing: " .. math.floor(distance) .. "m Left"
 
-                    -- Update rotasi menghadap target dan suntik kecepatan linear
-                    primary.CFrame = CFrame.lookAt(currentPos, targetSkyPos)
+                    -- [ANTI-BUG DETECT] CFrame Interpolation fallback jika velocity statis/stuck
+                    local nextPosition = currentPos + (direction * 4)
+                    primary.CFrame = CFrame.lookAt(nextPosition, targetSkyPos)
+
+                    -- Suntik kecepatan linear konstan
                     primary.AssemblyLinearVelocity = direction * speed
                     primary.AssemblyAngularVelocity = Vector3.zero
+
+                    -- Deteksi kalkulasi kemacetan jarak (Stuck Handler)
+                    if math.abs(distance - lastDistance) < 0.1 then
+                        stuckCheckCount = stuckCheckCount + 1
+                        if stuckCheckCount > 30 then -- Jika posisi membeku selama 30 frame, paksa teleport instan ke checkpoint terdekat
+                            primary.CFrame = CFrame.lookAt(currentPos + (direction * 150), targetSkyPos)
+                            stuckCheckCount = 0
+                        end
+                    else
+                        stuckCheckCount = 0
+                    end
+                    lastDistance = distance
                     task.wait()
                 end
 
