@@ -113,19 +113,19 @@ task.spawn(function()
     end)
 end)
 
--- // 2. FUNGSI AUTO-AVATAR
+-- // FUNGSI AUTO-AVATAR
 local function getAvatar()
     return "https://www.roblox.com/headshot-thumbnail/image?userId=" .. lp.UserId .. "&width=420&height=420&format=png"
 end
 
--- // 3. FORMAT RUPIAH
+-- // FORMAT RUPIAH
 local function formatRP(v)
     local s = string.format("%.0f", v)
     local formatted = s:reverse():gsub("(%d%d%d)", "%1."):reverse():gsub("^%.", "")
     return "RP. " .. formatted
 end
 
--- // 4. RUNNING TIME
+-- // RUNNING TIME
 local function getRunningTime()
     local diff = os.time() - _G.StartTime
     local hours = math.floor(diff / 3600)
@@ -134,22 +134,16 @@ local function getRunningTime()
     return string.format("%02d:%02d:%02d", hours, mins, secs)
 end
 
--- // 5. FUNGSI WEBHOOK
+-- // FUNGSI WEBHOOK
 local function sendWebhook(income, target)
     if _G.WebhookURL == "" or not _G.WebhookURL:find("discord.com") then return end
-    
     _G.CycleCount = _G.CycleCount + 1
     _G.TotalEarning = _G.TotalEarning + income
-    
     local currentMoney = getCleanMoney()
     local http_request = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
     local HttpService = game:GetService("HttpService")
-
     local embed = {
-        ["author"] = {
-            ["name"] = "Projectsion Webhook",
-            ["icon_url"] = getAvatar()
-        },
+        ["author"] = { ["name"] = "Projectsion Webhook", ["icon_url"] = getAvatar() },
         ["title"] = "Cycle Completed",
         ["color"] = 0xFFFFFF,
         ["fields"] = {
@@ -161,43 +155,28 @@ local function sendWebhook(income, target)
             {["name"] = "Cycle Count", ["value"] = tostring(_G.CycleCount), ["inline"] = false},
             {["name"] = "Running Time", ["value"] = getRunningTime(), ["inline"] = false}
         },
-        ["image"] = {
-            ["url"] = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&"
-        },
-        ["footer"] = {
-            ["text"] = "Made by .projectsion | " .. os.date("%m/%d/%Y %I:%M %p")
-        }
+        ["image"] = { ["url"] = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&" },
+        ["footer"] = { ["text"] = "Made by .projectsion | " .. os.date("%m/%d/%Y %I:%M %p") }
     }
-
-    local payload = HttpService:JSONEncode({
-        ["username"] = "Projectsion Reports", 
-        ["embeds"] = {embed}
-    })
-
+    local payload = HttpService:JSONEncode({ ["username"] = "Projectsion Reports", ["embeds"] = {embed} })
     if http_request then
         pcall(function()
-            http_request({
-                Url = _G.WebhookURL,
-                Method = "POST",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = payload
-            })
+            http_request({ Url = _G.WebhookURL, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = payload })
         end)
     end
 end
 
--- // 6. MONEY MONITOR
+-- // MONEY MONITOR
 task.spawn(function()
     while true do
         local newMoney = getCleanMoney()
         if _G.AutoWebhook and newMoney > lastMoney then
             pendingIncome = pendingIncome + (newMoney - lastMoney)
-            
             if not isRunning then
                 isRunning = true
                 task.spawn(function()
                     while isRunning and _G.AutoWebhook do
-                        task.wait(60) 
+                        task.wait(60)
                         if pendingIncome > 0 and _G.WebhookURL ~= "" then
                             sendWebhook(pendingIncome, 0)
                             pendingIncome = 0
@@ -214,31 +193,7 @@ task.spawn(function()
     end
 end)
 
--- ============================================
--- // STEP TELEPORT TRUCK (anti-detect)
--- ============================================
-local function StepTeleport(model, targetCF, steps, interval)
-    steps    = steps    or 20
-    interval = interval or 0.15
-
-    local startCF = model:GetPivot()
-    for i = 1, steps do
-        local stepCF = startCF:Lerp(targetCF, i / steps)
-        model:PivotTo(stepCF)
-        if model.PrimaryPart then
-            model.PrimaryPart.AssemblyLinearVelocity  = Vector3.new(0, 0, 0)
-            model.PrimaryPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-        end
-        task.wait(interval)
-    end
-    model:PivotTo(targetCF)
-    if model.PrimaryPart then
-        model.PrimaryPart.AssemblyLinearVelocity  = Vector3.new(0, 0, 0)
-        model.PrimaryPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-    end
-end
-
--- // STEP TELEPORT PLAYER (anti-detect)
+-- // STEP TELEPORT PLAYER
 local function StepTeleportChar(hrp, targetCF, steps, interval)
     steps    = steps    or 10
     interval = interval or 0.1
@@ -249,12 +204,39 @@ local function StepTeleportChar(hrp, targetCF, steps, interval)
     end
     hrp.CFrame = targetCF
 end
--- ============================================
 
--- // --- FUNGSI UTAMA FARM ---
+-- // MOVE TRUCK PHYSICS (anti-detect)
+local function MoveTruckPhysics(truck, targetCF)
+    local root = truck.PrimaryPart
+    if not root then return end
+
+    local bv = Instance.new("BodyVelocity")
+    bv.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+    bv.Parent = root
+
+    local speed = 80
+    local target = targetCF.Position
+    local elapsed = 0
+    local maxTime = (root.Position - target).Magnitude / speed + 5
+
+    while elapsed < maxTime do
+        local dt = task.wait(0.1)
+        elapsed = elapsed + dt
+        local dir = (target - root.Position).Unit
+        bv.Velocity = dir * speed
+        if (root.Position - target).Magnitude < 5 then break end
+    end
+
+    bv:Destroy()
+    truck:PivotTo(targetCF)
+    root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+end
+
+-- // FUNGSI UTAMA FARM
 local function runAutofarm()
     StartMoney = getCleanMoney()
-    
+
     while _G.Autofarm do
         local char = lp.Character or lp.CharacterAdded:Wait()
         local hrp = char:WaitForChild("HumanoidRootPart")
@@ -280,43 +262,41 @@ local function runAutofarm()
         -- 4. Masuk Truck & Loop Teleport
         task.wait(math.random(4, 6))
         local myTruck = getMyTruck()
-        
+
         if myTruck then
             StepTeleportChar(hrp, myTruck.DriveSeat.CFrame, 8, 0.1)
             task.wait(math.random(1, 2))
             fireproximityprompt(myTruck.DriveSeat:WaitForChild("PromptDriveSeat"))
             task.wait(math.random(1, 2))
-            
+
             while _G.Autofarm do
                 if not myTruck or not myTruck.Parent then break end
 
                 local waypoint = Workspace:WaitForChild("Etc"):WaitForChild("Waypoint"):WaitForChild("Waypoint")
                 local targetCF = (waypoint:IsA("Model") and waypoint:GetPivot()) or waypoint.CFrame
-                
-                -- Teleport truck pakai step
-StepTeleport(myTruck, targetCF, 20, 0.15)
-task.wait(math.random(1, 2))
 
--- [TAMBAHAN] Coba fire waypoint prompt via player
-local prompt = waypoint:FindFirstChildWhichIsA("ProximityPrompt")
-    or waypoint:FindFirstChild("Prompt")
-if prompt then
-    local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-    if hrp then
-        StepTeleportChar(hrp, targetCF, 10, 0.1)
-        task.wait(math.random(1, 2))
-        fireproximityprompt(prompt)
-        task.wait(math.random(1, 2))
-    end
-end
+                -- Gerak truck pakai physics
+                MoveTruckPhysics(myTruck, targetCF)
+                task.wait(math.random(1, 2))
 
-
+                -- Coba fire waypoint prompt
+                local prompt = waypoint:FindFirstChildWhichIsA("ProximityPrompt")
+                    or waypoint:FindFirstChild("Prompt")
+                if prompt then
+                    local hrp2 = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+                    if hrp2 then
+                        StepTeleportChar(hrp2, targetCF, 10, 0.1)
+                        task.wait(math.random(1, 2))
+                        fireproximityprompt(prompt)
+                        task.wait(math.random(1, 2))
+                    end
+                end
 
                 CurrentMoney = getCleanMoney()
                 EarnedMoney = CurrentMoney - StartMoney
 
                 -- Countdown Delay
-                NextTeleportIn = math.random (45-55)
+                NextTeleportIn = math.random(45, 55)
                 repeat
                     task.wait(1)
                     NextTeleportIn = NextTeleportIn - 1
@@ -332,12 +312,12 @@ end
 local Window = VelarisUI:Window({
     Title     = "Car Driving Indonesia",
     Footer    = "By .projectsion",
-    Color     = "Dark",            
+    Color     = "Dark",
     Version   = "1.6",
-    Image     = "75533822533623",    
+    Image     = "75533822533623",
     Size      = UDim2.fromOffset(640, 400),
-    ShowUser  = true,                  
-    Search    = true,                  
+    ShowUser  = true,
+    Search    = true,
     Animation = true,
 })
 
@@ -367,41 +347,30 @@ local ProxTab = Window:AddTab({ Name = "automation", Icon = "projectsion:bot" })
 local NpcSection = ProxTab:AddSection({ Title = "Open npc", Open = true })
 NpcSection:AddDropdown({
     Title    = "Select npc",
-    Options  = { "Npc upgrade slot Npc", "Npc Box Shop","Daily quest npc" },
+    Options  = { "Npc upgrade slot Npc", "Npc Box Shop", "Daily quest npc" },
     Default  = "Npc job select",
-    Callback = function(value)
-        SelectedNPC = value
-    end
+    Callback = function(value) SelectedNPC = value end
 })
-
 NpcSection:AddButton({
     Title    = "Open npc",
     Callback = function()
         local target = NPC_Paths[SelectedNPC]
-        if target then
-            fireproximityprompt(target)
-        end
+        if target then fireproximityprompt(target) end
     end
 })
 
 local DealerSection = ProxTab:AddSection({ Title = "Open dealership", Open = true })
-
 DealerSection:AddDropdown({
     Title    = "Select Dealer",
     Options  = { "Toyota", "Suzuki", "Premium", "Nissan", "Mercedes", "Komersial", "KIA", "Hyundai", "Honda", "Daihatsu", "Chery", "Bandung", "Dealer 77" },
     Default  = "",
-    Callback = function(value)
-        SelectedDealer = value
-    end
+    Callback = function(value) SelectedDealer = value end
 })
-
 DealerSection:AddButton({
     Title    = "Open Dealer UI",
     Callback = function()
         local target = Dealer_Paths[SelectedDealer]
-        if target then
-            fireproximityprompt(target)
-        end
+        if target then fireproximityprompt(target) end
     end
 })
 
@@ -410,11 +379,8 @@ GachaSection:AddDropdown({
     Title    = "Select Action / Box",
     Options  = { "Limited Box", "Gamepass Box", "Minigame Box", "Claim" },
     Default  = "Limited Box",
-    Callback = function(value)
-        SelectedBox = value
-    end
+    Callback = function(value) SelectedBox = value end
 })
-
 GachaSection:AddToggle({
     Title    = "auto gacha box",
     Content  = "Automatic Buy Box",
@@ -435,7 +401,6 @@ GachaSection:AddToggle({
         end
     end
 })
-
 GachaSection:AddButton({
     Title    = "Execute Selection",
     Callback = function()
@@ -454,24 +419,18 @@ WebhookSection:AddInput({
     Title    = "webhook",
     Content  = "Enter link webhook",
     Default  = "",
-    Callback = function(value)
-        _G.WebhookURL = value
-    end
+    Callback = function(value) _G.WebhookURL = value end
 })
-
 WebhookSection:AddToggle({
     Title    = "enable webhook",
     Content  = "webhook ngirim setiap 1 menit",
     Default  = false,
-    Callback = function(value)
-        _G.AutoWebhook = value
-    end
+    Callback = function(value) _G.AutoWebhook = value end
 })
 
 -- TAB TELEPORT
 local TpTab = Window:AddTab({ Name = "Teleport", Icon = "projectsion:map-pin" })
 
--- // 1. PLAYER TELEPORT SECTION
 local PlayerSection = TpTab:AddSection({ Title = "Teleport Player", Open = true })
 local PlayerDropdown = PlayerSection:AddDropdown({
     Title    = "Select Player",
@@ -483,8 +442,8 @@ local PlayerDropdown = PlayerSection:AddDropdown({
 local function refreshPlayers()
     local pList = {}
     for _, v in pairs(workspace.Lives:GetChildren()) do
-        if v:IsA("Model") and v.Name ~= lp.Name then 
-            table.insert(pList, v.Name) 
+        if v:IsA("Model") and v.Name ~= lp.Name then
+            table.insert(pList, v.Name)
         end
     end
     PlayerDropdown:SetValues(pList)
@@ -499,10 +458,8 @@ PlayerSection:AddButton({
     end
 })
 
--- // 2. SAVED LOCATION SECTION
 local SaveSection = TpTab:AddSection({ Title = "Saved Location", Open = false })
 local LocationStatus = SaveSection:AddParagraph({ Title = "Status:", Content = "No Location Saved" })
-
 SaveSection:AddButton({
     Title    = "Get Location Now",
     Callback = function()
@@ -510,18 +467,16 @@ SaveSection:AddButton({
         LocationStatus:SetContent("Location Saved Successfully!")
     end
 })
-
 SaveSection:AddButton({
     Title    = "Teleport to Saved Location",
     Callback = function()
-        if SavedPos then 
-            lp.Character:PivotTo(SavedPos) 
-        else 
-            LocationStatus:SetContent("Error: Save a location first!") 
+        if SavedPos then
+            lp.Character:PivotTo(SavedPos)
+        else
+            LocationStatus:SetContent("Error: Save a location first!")
         end
     end
 })
-
 SaveSection:AddButton({
     Title    = "Reset Saved Location",
     Callback = function()
@@ -530,7 +485,6 @@ SaveSection:AddButton({
     end
 })
 
--- // 3. NPC TELEPORT SECTION
 local NpcOnlyTp = TpTab:AddSection({ Title = "Teleport NPC", Open = false })
 NpcOnlyTp:AddDropdown({
     Title    = "Select NPC",
@@ -538,7 +492,6 @@ NpcOnlyTp:AddDropdown({
     Default  = "Npc job select",
     Callback = function(value) SelectedNpcTp = value end
 })
-
 NpcOnlyTp:AddButton({
     Title    = "Teleport to NPC",
     Callback = function()
@@ -547,7 +500,6 @@ NpcOnlyTp:AddButton({
     end
 })
 
--- // 4. DEALER TELEPORT SECTION
 local DealerOnlyTp = TpTab:AddSection({ Title = "Teleport Dealership", Open = false })
 DealerOnlyTp:AddDropdown({
     Title    = "Select Dealer",
@@ -555,7 +507,6 @@ DealerOnlyTp:AddDropdown({
     Default  = "Toyota",
     Callback = function(value) SelectedDealerTp = value end
 })
-
 DealerOnlyTp:AddButton({
     Title    = "Teleport to Dealer",
     Callback = function()
@@ -567,10 +518,9 @@ DealerOnlyTp:AddButton({
     end
 })
 
--- Jalankan refresh list player sekali di awal
 task.spawn(refreshPlayers)
 
--- // UPDATE UI STATS (Tiap 2 Detik)
+-- // UPDATE UI STATS
 task.spawn(function()
     while true do
         if _G.Autofarm then
@@ -583,7 +533,7 @@ task.spawn(function()
     end
 end)
 
--- // UPDATE UI TIMER (Tiap 1 Detik)
+-- // UPDATE UI TIMER
 task.spawn(function()
     while true do
         if _G.Autofarm then
