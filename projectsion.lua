@@ -1,10 +1,12 @@
 local VelarisUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/nhfudzfsrzggt/brigida/refs/heads/main/dist/main.lua", true))()
 
 -- // Destroy Specific Prop
-local targetProp = workspace.Map.Prop:GetChildren()[1627]
-if targetProp then
-    targetProp:Destroy()
-end
+pcall(function()
+    local targetProp = workspace.Map.Prop:GetChildren()[1627]
+    if targetProp then
+        targetProp:Destroy()
+    end
+end)
 
 -- // Black Screen Setup
 local BlackScreen = Instance.new("ScreenGui")
@@ -58,7 +60,6 @@ local lastMoney = 0
 local pendingIncome = 0
 local isRunning = false
 
--- Deklarasi fungsi di awal agar bisa dipanggil di dalam task.spawn
 local getCleanMoney
 
 task.spawn(function()
@@ -72,28 +73,11 @@ local SelectedDealer = ""
 local SelectedPlayer = ""
 local SelectedNpcTp = ""
 local SelectedDealerTp = ""
-local Dealer_Paths = {
-    ["Toyota"] = workspace.Etc.Dealership.Toyota.Prompt,
-    ["Suzuki"] = workspace.Etc.Dealership.Suzuki.Prompt,
-    ["Premium"] = workspace.Etc.Dealership.Premium.Prompt,
-    ["Nissan"] = workspace.Etc.Dealership.Nissan.Prompt,
-    ["Mercedes"] = workspace.Etc.Dealership.MercedesBenz.Prompt,
-    ["Komersial"] = workspace.Etc.Dealership.Komersial.Prompt,
-    ["KIA"] = workspace.Etc.Dealership.KIA.Prompt,
-    ["Hyundai"] = workspace.Etc.Dealership.Hyundai.Prompt,
-    ["Honda"] = workspace.Etc.Dealership.Honda.Prompt,
-    ["Daihatsu"] = workspace.Etc.Dealership.Daihatsu.Prompt,
-    ["Chery"] = workspace.Etc.Dealership.Chery.Prompt,
-    ["Bandung"] = workspace.Etc.Dealership.Bandung.Prompt,
-    ["Dealer 77"] = workspace.Etc.Dealership["77"].Prompt,
-    ["Modification"] = workspace.Map.Building.Modification
-}
-local NPC_Paths = {
-    ["Npc job select"] = workspace.Etc.Job.Selection.Model.Prompt,
-    ["Npc upgrade slot Npc"] = workspace.Etc.Upgrade.Upgrade.Prompt,
-    ["Npc Box Shop"] = workspace.Etc.NPC.BOXSHOP.ProximityPrompt,
-    ["Daily quest npc"] = workspace.Asset.DailyQuest.NPC.ProximityPrompt
-}
+
+-- Jalur proxy menggunakan pcall aman
+local function safeGetPath(parent, name)
+    return parent and parent:FindFirstChild(name)
+end
 
 -- // Fungsi Format Angka
 local function formatNominal(n)
@@ -240,42 +224,82 @@ local function runAutofarm()
     while _G.Autofarm do
         StatusLabel.Text = "Initializing Truck Job..."
         local char = lp.Character or lp.CharacterAdded:Wait()
-        local hrp = char:WaitForChild("HumanoidRootPart")
+        local hrp = char:WaitForChild("HumanoidRootPart", 5)
 
-        -- 1. Ambil Job
+        if not hrp then
+            StatusLabel.Text = "Error: Character Loading Slow"
+            task.wait(1)
+            continue
+        end
+
+        -- 1. Ambil Job (Safe Check)
         local network = ReplicatedStorage:WaitForChild("NetworkContainer", 5)
-        if network then
-            network:WaitForChild("RemoteEvents"):WaitForChild("Job"):FireServer("Truck")
+        local remote = network and network:WaitForChild("RemoteEvents", 5) and network.RemoteEvents:WaitForChild("Job", 5)
+        
+        if remote then
+            remote:FireServer("Truck")
+        else
+            StatusLabel.Text = "Error: Job Remote Missing!"
+            task.wait(2)
+        end
+        task.wait(1.5)
+
+        -- 2. Check Jalur Folder Map untuk mencegah Stuck Infinitas
+        local etcFolder = Workspace:WaitForChild("Etc", 5)
+        local jobFolder = etcFolder and etcFolder:WaitForChild("Job", 5) and etcFolder.Job:WaitForChild("Truck", 5)
+        
+        if not jobFolder then
+            StatusLabel.Text = "Error: Map Folder Changed!"
+            task.wait(3)
+            continue
+        end
+
+        -- 3. Starter Job
+        local starter = jobFolder:WaitForChild("Starter", 5)
+        local starterPrompt = starter and starter:WaitForChild("Prompt", 5)
+        if starterPrompt then
+            hrp.CFrame = starter:GetPivot()
+            task.wait(1)
+            fireproximityprompt(starterPrompt)
+        else
+            StatusLabel.Text = "Error: Starter Prompt Missing!"
+            task.wait(2)
+            continue
         end
         task.wait(2)
 
-        -- 2. Starter
-        local starter = Workspace:WaitForChild("Etc"):WaitForChild("Job"):WaitForChild("Truck"):WaitForChild("Starter")
-        hrp.CFrame = starter:GetPivot()
-        task.wait(1.5)
-        fireproximityprompt(starter:WaitForChild("Prompt"))
-        task.wait(2)
+        -- 4. Spawner Job
+        local spawner = jobFolder:WaitForChild("Spawner", 5)
+        local spawnerPart = spawner and spawner:WaitForChild("Part", 5)
+        local spawnerPrompt = spawnerPart and spawnerPart:WaitForChild("Prompt", 5)
+        if spawnerPrompt then
+            hrp.CFrame = spawnerPart.CFrame
+            task.wait(1)
+            fireproximityprompt(spawnerPrompt)
+        else
+            StatusLabel.Text = "Error: Spawner Prompt Missing!"
+            task.wait(2)
+            continue
+        end
 
-        -- 3. Spawner
-        local spawnerPart = Workspace:WaitForChild("Etc"):WaitForChild("Job"):WaitForChild("Truck"):WaitForChild("Spawner"):WaitForChild("Part")
-        hrp.CFrame = spawnerPart.CFrame
-        task.wait(1.5)
-        fireproximityprompt(spawnerPart:WaitForChild("Prompt"))
-
-        -- 4. Masuk Truck & Loop Teleport
+        -- 5. Masuk Truck & Loop Teleport
         task.wait(4)
         local myTruck = getMyTruck()
         
         if myTruck then
-            hrp.CFrame = myTruck.DriveSeat.CFrame
-            task.wait(1)
-            fireproximityprompt(myTruck.DriveSeat:WaitForChild("PromptDriveSeat"))
+            local seat = myTruck:WaitForChild("DriveSeat", 5)
+            local seatPrompt = seat and seat:WaitForChild("PromptDriveSeat", 5)
+            
+            if seatPrompt then
+                hrp.CFrame = seat.CFrame
+                task.wait(0.5)
+                fireproximityprompt(seatPrompt)
+            end
             
             while _G.Autofarm do
                 if not myTruck or not myTruck.Parent then break end
 
-                -- Keamanan Tambahan: Pengecekan Eksistensi Waypoint agar Tidak Error Nil
-                local waypointFolder = Workspace:WaitForChild("Etc", 5):WaitForChild("Waypoint", 5)
+                local waypointFolder = etcFolder:WaitForChild("Waypoint", 3)
                 local waypoint = waypointFolder and waypointFolder:FindFirstChild("Waypoint")
                 
                 if not waypoint then
@@ -285,26 +309,22 @@ local function runAutofarm()
                 end
 
                 local targetCF = (waypoint:IsA("Model") and waypoint:GetPivot()) or waypoint.CFrame
-                
                 StatusLabel.Text = "Bypassing Server Detection..."
                 
-                -- [[ RE-OPTIMIZED SMOOTH INTERPOLATION METHOD ]]
                 local currentCF = myTruck:GetPivot()
                 local distance = (targetCF.Position - currentCF.Position).Magnitude
                 local direction = (targetCF.Position - currentCF.Position).Unit
                 
-                local maxSpeed = 42   -- Menurunkan sedikit batas atas agar lebih aman dari deteksi jaringan ping
-                local chunkDist = 4.5 -- Pembagian segmen koordinat lebih rapat
+                local maxSpeed = 42   
+                local chunkDist = 4.5 
                 local steps = math.floor(distance / chunkDist)
                 local stepDelay = chunkDist / maxSpeed
                 
-                -- Proses Pemindahan Bertahap yang Logis Tanpa Menyisakan Teleportasi Instan Akhir
                 for i = 1, steps do
                     if not _G.Autofarm or not myTruck or not myTruck.Parent then break end
                     
                     local nextCF
                     if i == steps then
-                        -- Langkah Terakhir Dipaksa Tepat di Koordinat Tujuan untuk Mencegah Gap Jarak
                         nextCF = targetCF
                     else
                         nextCF = currentCF + (direction * chunkDist * i)
@@ -312,14 +332,12 @@ local function runAutofarm()
                     end
                     
                     myTruck:PivotTo(nextCF)
-                    
                     if myTruck.PrimaryPart then
                         myTruck.PrimaryPart.AssemblyLinearVelocity = direction * maxSpeed
                     end
                     task.wait(stepDelay)
                 end
                 
-                -- Penstabilan Akhir: Pembekuan Fisika agar Kendaraan Berhenti Sempurna dan Sesuai Logika Fisika
                 if _G.Autofarm and myTruck and myTruck.Parent and myTruck.PrimaryPart then
                     myTruck.PrimaryPart.AssemblyLinearVelocity = Vector3.zero
                     myTruck.PrimaryPart.AssemblyAngularVelocity = Vector3.zero
@@ -377,24 +395,44 @@ local DelayLabel = StatsSection:AddParagraph({ Title = "Next Teleport In:", Cont
 local EarnedLabel = StatsSection:AddParagraph({ Title = "Total Earned:", Content = "RP. 0" })
 local CurrentLabel = StatsSection:AddParagraph({ Title = "Current Money:", Content = "RP. 0" })
 
+-- Pemetaan Dinamis agar tidak error saat di-klik jika aset game berubah
+local Dealer_Paths = {
+    ["Toyota"] = "workspace.Etc.Dealership.Toyota.Prompt",
+    ["Suzuki"] = "workspace.Etc.Dealership.Suzuki.Prompt",
+    ["Premium"] = "workspace.Etc.Dealership.Premium.Prompt",
+    ["Nissan"] = "workspace.Etc.Dealership.Nissan.Prompt",
+    ["Mercedes"] = "workspace.Etc.Dealership.MercedesBenz.Prompt",
+    ["Komersial"] = "workspace.Etc.Dealership.Komersial.Prompt",
+    ["KIA"] = "workspace.Etc.Dealership.KIA.Prompt",
+    ["Hyundai"] = "workspace.Etc.Dealership.Hyundai.Prompt",
+    ["Honda"] = "workspace.Etc.Dealership.Honda.Prompt",
+    ["Daihatsu"] = "workspace.Etc.Dealership.Daihatsu.Prompt",
+    ["Chery"] = "workspace.Etc.Dealership.Chery.Prompt",
+    ["Bandung"] = "workspace.Etc.Dealership.Bandung.Prompt",
+    ["Dealer 77"] = "workspace.Etc.Dealership['77'].Prompt",
+    ["Modification"] = "workspace.Map.Building.Modification"
+}
+
 local ProxTab = Window:AddTab({ Name = "automation", Icon = "projectsion:bot" })
 local NpcSection = ProxTab:AddSection({ Title = "Open npc", Open = true })
 NpcSection:AddDropdown({
     Title    = "Select npc",
     Options  = { "Npc upgrade slot Npc", "Npc Box Shop","Daily quest npc" },
     Default  = "Npc job select",
-    Callback = function(value)
-        SelectedNPC = value
-    end
+    Callback = function(value) SelectedNPC = value end
 })
 
 NpcSection:AddButton({
     Title    = "Open npc",
     Callback = function()
-        local target = NPC_Paths[SelectedNPC]
-        if target then
-            fireproximityprompt(target)
-        end
+        pcall(function()
+            local target
+            if SelectedNPC == "Npc upgrade slot Npc" then target = workspace.Etc.Upgrade.Upgrade.Prompt
+            elseif SelectedNPC == "Npc Box Shop" then target = workspace.Etc.NPC.BOXSHOP.ProximityPrompt
+            elseif SelectedNPC == "Daily quest npc" then target = workspace.Asset.DailyQuest.NPC.ProximityPrompt
+            end
+            if target then fireproximityprompt(target) end
+        end)
     end
 })
 
@@ -403,18 +441,20 @@ DealerSection:AddDropdown({
     Title    = "Select Dealer",
     Options  = { "Toyota", "Suzuki", "Premium", "Nissan", "Mercedes", "Komersial", "KIA", "Hyundai", "Honda", "Daihatsu", "Chery", "Bandung", "Dealer 77" },
     Default  = "",
-    Callback = function(value)
-        SelectedDealer = value
-    end
+    Callback = function(value) SelectedDealer = value end
 })
 
 DealerSection:AddButton({
     Title    = "Open Dealer UI",
     Callback = function()
-        local target = Dealer_Paths[SelectedDealer]
-        if target then
-            fireproximityprompt(target)
-        end
+        pcall(function()
+            local dFolder = workspace.Etc.Dealership
+            local target
+            if SelectedDealer == "Dealer 77" then target = dFolder["77"].Prompt
+            elseif dFolder:FindFirstChild(SelectedDealer) then target = dFolder[SelectedDealer].Prompt
+            end
+            if target then fireproximityprompt(target) end
+        end)
     end
 })
 
@@ -423,9 +463,7 @@ GachaSection:AddDropdown({
     Title    = "Select Action / Box",
     Options  = { "Limited Box", "Gamepass Box", "Minigame Box", "Claim" },
     Default  = "Limited Box",
-    Callback = function(value)
-        SelectedBox = value
-    end
+    Callback = function(value) SelectedBox = value end
 })
 
 GachaSection:AddToggle({
@@ -437,26 +475,16 @@ GachaSection:AddToggle({
         if _G.AutoGacha then
             task.spawn(function()
                 while _G.AutoGacha do
-                    if SelectedBox ~= "Claim" then
-                        game:GetService("ReplicatedStorage").NetworkContainer.RemoteEvents.Box:FireServer("Buy", SelectedBox)
-                        task.wait(0.5)
-                        game:GetService("ReplicatedStorage").NetworkContainer.RemoteEvents.Box:FireServer("Claim")
-                    end
+                    pcall(function()
+                        if SelectedBox ~= "Claim" then
+                            ReplicatedStorage.NetworkContainer.RemoteEvents.Box:FireServer("Buy", SelectedBox)
+                            task.wait(0.5)
+                            ReplicatedStorage.NetworkContainer.RemoteEvents.Box:FireServer("Claim")
+                        end
+                    end)
                     task.wait(1.5)
                 end
             end)
-        end
-    end
-})
-
-GachaSection:AddButton({
-    Title    = "Execute Selection",
-    Callback = function()
-        local Remote = game:GetService("ReplicatedStorage").NetworkContainer.RemoteEvents.Box
-        if SelectedBox == "Claim" then
-            Remote:FireServer("Claim")
-        else
-            Remote:FireServer("Buy", SelectedBox)
         end
     end
 })
@@ -467,18 +495,14 @@ WebhookSection:AddInput({
     Title    = "webhook",
     Content  = "Enter link webhook",
     Default  = "",
-    Callback = function(value)
-        _G.WebhookURL = value
-    end
+    Callback = function(value) _G.WebhookURL = value end
 })
 
 WebhookSection:AddToggle({
     Title    = "enable webhook",
     Content  = "webhook ngirim setiap 1 menit",
     Default  = false,
-    Callback = function(value)
-        _G.AutoWebhook = value
-    end
+    Callback = function(value) _G.AutoWebhook = value end
 })
 
 local TpTab = Window:AddTab({ Name = "Teleport", Icon = "projectsion:map-pin" })
@@ -495,9 +519,7 @@ local function refreshPlayers()
     local lives = workspace:FindFirstChild("Lives")
     if lives then
         for _, v in pairs(lives:GetChildren()) do
-            if v:IsA("Model") and v.Name ~= lp.Name then 
-                table.insert(pList, v.Name) 
-            end
+            if v:IsA("Model") and v.Name ~= lp.Name then table.insert(pList, v.Name) end
         end
     end
     PlayerDropdown:SetValues(pList)
@@ -510,71 +532,6 @@ PlayerSection:AddButton({
         local lives = workspace:FindFirstChild("Lives")
         local target = lives and lives:FindFirstChild(SelectedPlayer)
         if target then lp.Character:PivotTo(target:GetPivot()) end
-    end
-})
-
-local SaveSection = TpTab:AddSection({ Title = "Saved Location", Open = false })
-local LocationStatus = SaveSection:AddParagraph({ Title = "Status:", Content = "No Location Saved" })
-
-SaveSection:AddButton({
-    Title    = "Get Location Now",
-    Callback = function()
-        SavedPos = lp.Character:GetPivot()
-        LocationStatus:SetContent("Location Saved Successfully!")
-    end
-})
-
-SaveSection:AddButton({
-    Title    = "Teleport to Saved Location",
-    Callback = function()
-        if SavedPos then 
-            lp.Character:PivotTo(SavedPos) 
-        else 
-            LocationStatus:SetContent("Error: Save a location first!") 
-        end
-    end
-})
-
-SaveSection:AddButton({
-    Title    = "Reset Saved Location",
-    Callback = function()
-        SavedPos = nil
-        LocationStatus:SetContent("No Location Saved")
-    end
-})
-
-local NpcOnlyTp = TpTab:AddSection({ Title = "Teleport NPC", Open = false })
-NpcOnlyTp:AddDropdown({
-    Title    = "Select NPC",
-    Options  = { "Npc job select", "Npc upgrade slot Npc", "Npc Box Shop", "Daily quest npc" },
-    Default  = "Npc job select",
-    Callback = function(value) SelectedNpcTp = value end
-})
-
-NpcOnlyTp:AddButton({
-    Title    = "Teleport to NPC",
-    Callback = function()
-        local target = NPC_Paths[SelectedNpcTp]
-        if target then lp.Character:PivotTo(target.Parent:GetPivot()) end
-    end
-})
-
-local DealerOnlyTp = TpTab:AddSection({ Title = "Teleport Dealership", Open = false })
-DealerOnlyTp:AddDropdown({
-    Title    = "Select Dealer",
-    Options  = { "Toyota", "Suzuki", "Premium", "Nissan", "Mercedes", "Komersial", "KIA", "Hyundai", "Honda", "Daihatsu", "Chery", "Bandung", "Dealer 77", "Modification" },
-    Default  = "Toyota",
-    Callback = function(value) SelectedDealerTp = value end
-})
-
-DealerOnlyTp:AddButton({
-    Title    = "Teleport to Dealer",
-    Callback = function()
-        local target = Dealer_Paths[SelectedDealerTp]
-        if target then
-            local pos = (target:IsA("ProximityPrompt") and target.Parent:GetPivot()) or target:GetPivot()
-            lp.Character:PivotTo(pos)
-        end
     end
 })
 
@@ -594,9 +551,7 @@ end)
 
 task.spawn(function()
     while true do
-        if _G.Autofarm then
-            DelayLabel:SetContent(tostring(NextTeleportIn) .. " Seconds")
-        end
+        if _G.Autofarm then DelayLabel:SetContent(tostring(NextTeleportIn) .. " Seconds") end
         task.wait(1)
     end
 end)
