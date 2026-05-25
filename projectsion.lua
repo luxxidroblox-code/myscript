@@ -1,12 +1,34 @@
 local VelarisUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/nhfudzfsrzggt/brigida/refs/heads/main/dist/main.lua", true))()
 
--- // Destroy Specific Prop
+-- // Services
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local lp = Players.LocalPlayer
+
+-- // Destroy Specific Prop untuk Mengurangi Beban Memori / Lag
 pcall(function()
     local targetProp = workspace.Map.Prop:GetChildren()[1627]
     if targetProp then
         targetProp:Destroy()
     end
 end)
+
+-- // [GABUNGAN ASSET] Pembuatan Platform Pendukung di Bawah Map (Agar Kendaraan Stabil)
+local function createPlatform(name, cframe, size)
+    if Workspace:FindFirstChild(name) then Workspace[name]:Destroy() end
+    local part = Instance.new("Part", Workspace)
+    part.Name = name
+    part.CFrame = cframe
+    part.Size = size
+    part.Anchored = true
+    part.Transparency = 1
+end
+
+createPlatform("Tele1[STORAGE]", CFrame.new(-7932.738, 382.885, 46876.062), Vector3.new(280, 1, 280))
+createPlatform("Tp Asset", CFrame.new(-7845.343, 383.014, 46865.543), Vector3.new(280, 1, 280))
+createPlatform("spawn[Ngawi]", CFrame.new(34938.425, 131.505, -54576.171), Vector3.new(550, 1, 320))
 
 -- // Black Screen Setup
 local BlackScreen = Instance.new("ScreenGui")
@@ -34,12 +56,6 @@ StatusLabel.TextSize = 28
 StatusLabel.Text = "Waiting for Farm..."
 StatusLabel.TextXAlignment = Enum.TextXAlignment.Center
 
--- // Services
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
-local Players = game:GetService("Players")
-local lp = Players.LocalPlayer
-
 -- // Config & Stats Variables
 _G.Autofarm = false
 _G.AutoGacha = false
@@ -50,7 +66,6 @@ local StartMoney = 0
 local CurrentMoney = 0
 local EarnedMoney = 0
 local NextTeleportIn = 0
-local SavedPos = nil
 _G.StartTime = _G.StartTime or os.time()
 _G.CycleCount = _G.CycleCount or 0
 _G.TotalEarning = _G.TotalEarning or 0
@@ -60,75 +75,67 @@ local lastMoney = 0
 local pendingIncome = 0
 local isRunning = false
 
-local getCleanMoney
-
-task.spawn(function()
-    task.wait(3) 
-    lastMoney = getCleanMoney()
-end)
-
 local SelectedBox = "Limited Box"
 local SelectedNPC = ""
 local SelectedDealer = ""
 local SelectedPlayer = ""
-local SelectedNpcTp = ""
-local SelectedDealerTp = ""
 
--- Jalur proxy menggunakan pcall aman
-local function safeGetPath(parent, name)
-    return parent and parent:FindFirstChild(name)
-end
-
--- // Fungsi Format Angka
+-- // Fungsi Format Angka ke Ribuan Komma
 local function formatNominal(n)
     local left, num, right = string.match(tostring(n), '^([^%d]*%d)(%d*)(.-)$')
     if not left then return tostring(n) end
     return left .. (num:reverse():gsub('(%d%d%d)', '%1,'):reverse()) .. right
 end
 
--- // Fungsi Konversi Text ke Angka
-function getCleanMoney()
+-- // Fungsi Konversi Text ke Angka Bersih
+local function getCleanMoney()
     if not MoneyPath then return 0 end
     local rawText = MoneyPath.Text
     local cleanText = rawText:gsub("RP.", ""):gsub(",", ""):gsub("%s+", "")
     return tonumber(cleanText) or 0
 end
 
--- // Fungsi Cari Truck
+task.spawn(function()
+    task.wait(3) 
+    lastMoney = getCleanMoney()
+end)
+
+-- // Fungsi Ambil Kendaraan Atas Nama Pemain (Lebih Universal)
 local function getMyTruck()
     local vehicles = Workspace:FindFirstChild("Vehicles")
     if vehicles then
-        for _, v in pairs(vehicles:GetChildren()) do
-            if v:IsA("Model") and v:FindFirstChild("DriveSeat") then
-                return v
-            end
-        end
+        return vehicles:FindFirstChild(lp.Name .. "sCar")
     end
     return nil
+end
+
+-- // Fungsi Trigger Proximity Prompt Aman
+local function safeFirePrompt(prompt)
+    if prompt and prompt:IsA("ProximityPrompt") then
+        fireproximityprompt(prompt)
+    end
 end
 
 -- [[ ANTI-AFK SYSTEM ]]
 task.spawn(function()
     local VirtualUser = game:GetService("VirtualUser")
-    game:GetService("Players").LocalPlayer.Idled:Connect(function()
+    lp.Idled:Connect(function()
         VirtualUser:CaptureController()
         VirtualUser:ClickButton2(Vector2.new())
     end)
 end)
 
--- // 2. FUNGSI AUTO-AVATAR
+-- // FUNGSI WEBHOOK DATA UTILS
 local function getAvatar()
     return "https://www.roblox.com/headshot-thumbnail/image?userId=" .. lp.UserId .. "&width=420&height=420&format=png"
 end
 
--- // 3. FORMAT RUPIAH
 local function formatRP(v)
     local s = string.format("%.0f", v)
     local formatted = s:reverse():gsub("(%d%d%d)", "%1."):reverse():gsub("^%.", "")
     return "RP. " .. formatted
 end
 
--- // 4. RUNNING TIME
 local function getRunningTime()
     local diff = os.time() - _G.StartTime
     local hours = math.floor(diff / 3600)
@@ -137,7 +144,7 @@ local function getRunningTime()
     return string.format("%02d:%02d:%02d", hours, mins, secs)
 end
 
--- // 5. FUNGSI WEBHOOK
+-- // FUNGSI LOG WEBHOOK DISCORD
 local function sendWebhook(income, target)
     if _G.WebhookURL == "" or not _G.WebhookURL:find("discord.com") then return end
     
@@ -153,19 +160,18 @@ local function sendWebhook(income, target)
             ["name"] = "Projectsion Webhook",
             ["icon_url"] = getAvatar()
         },
-        ["title"] = "Cycle Completed",
+        ["title"] = "Cycle Completed (Sky Velocity Mode)",
         ["color"] = 0xFFFFFF,
         ["fields"] = {
             {["name"] = "Username", ["value"] = lp.Name, ["inline"] = false},
             {["name"] = "Cycle Income", ["value"] = formatRP(income), ["inline"] = false},
-            {["name"] = "Target", ["value"] = formatRP(target), ["inline"] = false},
-            {["name"] = "Current Money", ["value"] = formatRP(currentMoney) .. " (Est)", ["inline"] = false},
-            {["name"] = "Total Earning", ["value"] = formatRP(_G.TotalEarning) .. " (Est)", ["inline"] = false},
+            {["name"] = "Current Money", ["value"] = formatRP(currentMoney), ["inline"] = false},
+            {["name"] = "Total Earning This Session", ["value"] = formatRP(_G.TotalEarning), ["inline"] = false},
             {["name"] = "Cycle Count", ["value"] = tostring(_G.CycleCount), ["inline"] = false},
             {["name"] = "Running Time", ["value"] = getRunningTime(), ["inline"] = false}
         },
         ["image"] = {
-            ["url"] = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&"
+            ["url"] = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg"
         },
         ["footer"] = {
             ["text"] = "Made by .projectsion | " .. os.date("%m/%d/%Y %I:%M %p")
@@ -189,7 +195,7 @@ local function sendWebhook(income, target)
     end
 end
 
--- // 6. MONEY MONITOR
+-- // MONEY MONITOR UNTUK WEBHOOK
 task.spawn(function()
     while true do
         local newMoney = getCleanMoney()
@@ -217,155 +223,165 @@ task.spawn(function()
     end
 end)
 
--- // --- FUNGSI UTAMA FARM ---
+-- // --- FUNGSI UTAMA SKY VELOCITY FARM ---
 local function runAutofarm()
     StartMoney = getCleanMoney()
     
     while _G.Autofarm do
-        StatusLabel.Text = "Initializing Truck Job..."
         local char = lp.Character or lp.CharacterAdded:Wait()
+        local humanoid = char:WaitForChild("Humanoid", 5)
         local hrp = char:WaitForChild("HumanoidRootPart", 5)
 
-        if not hrp then
+        if not hrp or not humanoid then
             StatusLabel.Text = "Error: Character Loading Slow"
             task.wait(1)
             continue
         end
 
-        -- 1. Ambil Job (Safe Check)
-        local network = ReplicatedStorage:WaitForChild("NetworkContainer", 5)
-        local remote = network and network:WaitForChild("RemoteEvents", 5) and network.RemoteEvents:WaitForChild("Job", 5)
-        
-        if remote then
-            remote:FireServer("Truck")
-        else
-            StatusLabel.Text = "Error: Job Remote Missing!"
-            task.wait(2)
-        end
-        task.wait(1.5)
-
-        -- 2. Check Jalur Folder Map untuk mencegah Stuck Infinitas
-        local etcFolder = Workspace:WaitForChild("Etc", 5)
-        local jobFolder = etcFolder and etcFolder:WaitForChild("Job", 5) and etcFolder.Job:WaitForChild("Truck", 5)
-        
-        if not jobFolder then
-            StatusLabel.Text = "Error: Map Folder Changed!"
-            task.wait(3)
-            continue
-        end
-
-        -- 3. Starter Job
-        local starter = jobFolder:WaitForChild("Starter", 5)
-        local starterPrompt = starter and starter:WaitForChild("Prompt", 5)
-        if starterPrompt then
-            hrp.CFrame = starter:GetPivot()
-            task.wait(1)
-            fireproximityprompt(starterPrompt)
-        else
-            StatusLabel.Text = "Error: Starter Prompt Missing!"
-            task.wait(2)
-            continue
-        end
-        task.wait(2)
-
-        -- 4. Spawner Job
-        local spawner = jobFolder:WaitForChild("Spawner", 5)
-        local spawnerPart = spawner and spawner:WaitForChild("Part", 5)
-        local spawnerPrompt = spawnerPart and spawnerPart:WaitForChild("Prompt", 5)
-        if spawnerPrompt then
-            hrp.CFrame = spawnerPart.CFrame
-            task.wait(1)
-            fireproximityprompt(spawnerPrompt)
-        else
-            StatusLabel.Text = "Error: Spawner Prompt Missing!"
-            task.wait(2)
-            continue
-        end
-
-        -- 5. Masuk Truck & Loop Teleport
-        task.wait(4)
-        local myTruck = getMyTruck()
-        
-        if myTruck then
-            local seat = myTruck:WaitForChild("DriveSeat", 5)
-            local seatPrompt = seat and seat:WaitForChild("PromptDriveSeat", 5)
+        -- JIKA PEMAIN DI LUAR KENDARAAN (Proses Ambil & Spawn Truk)
+        if humanoid.SeatPart == nil then
+            StatusLabel.Text = "Initializing Truck Job..."
             
-            if seatPrompt then
-                hrp.CFrame = seat.CFrame
-                task.wait(0.5)
-                fireproximityprompt(seatPrompt)
+            -- 1. Ambil Job ke Server
+            local network = ReplicatedStorage:WaitForChild("NetworkContainer", 5)
+            local remote = network and network:WaitForChild("RemoteEvents", 5) and network.RemoteEvents:WaitForChild("Job", 5)
+            if remote then
+                remote:FireServer("Truck")
             end
-            
-            while _G.Autofarm do
-                if not myTruck or not myTruck.Parent then break end
+            task.wait(0.5)
 
-                local waypointFolder = etcFolder:WaitForChild("Waypoint", 3)
-                local waypoint = waypointFolder and waypointFolder:FindFirstChild("Waypoint")
-                
-                if not waypoint then
-                    StatusLabel.Text = "Waiting for Waypoint..."
-                    task.wait(1)
-                    continue
-                end
+            -- 2. Ambil Jalur Folder Kerja
+            local etcFolder = Workspace:WaitForChild("Etc", 5)
+            local jobFolder = etcFolder and etcFolder:WaitForChild("Job", 5) and etcFolder.Job:WaitForChild("Truck", 5)
+            if not jobFolder then
+                StatusLabel.Text = "Error: Map Folder Changed!"
+                task.wait(3)
+                continue
+            end
 
-                local targetCF = (waypoint:IsA("Model") and waypoint:GetPivot()) or waypoint.CFrame
-                StatusLabel.Text = "Bypassing Server Detection..."
+            -- 3. Trigger Starter Job
+            local starter = jobFolder:WaitForChild("Starter", 5)
+            if starter then
+                hrp.CFrame = starter:GetPivot()
+                hrp.Anchored = true
+                task.wait(1)
+                hrp.Anchored = false
                 
-                local currentCF = myTruck:GetPivot()
-                local distance = (targetCF.Position - currentCF.Position).Magnitude
-                local direction = (targetCF.Position - currentCF.Position).Unit
-                
-                local maxSpeed = 42   
-                local chunkDist = 4.5 
-                local steps = math.floor(distance / chunkDist)
-                local stepDelay = chunkDist / maxSpeed
-                
-                for i = 1, steps do
-                    if not _G.Autofarm or not myTruck or not myTruck.Parent then break end
-                    
-                    local nextCF
-                    if i == steps then
-                        nextCF = targetCF
-                    else
-                        nextCF = currentCF + (direction * chunkDist * i)
-                        nextCF = CFrame.new(nextCF.Position, nextCF.Position + direction)
-                    end
-                    
-                    myTruck:PivotTo(nextCF)
-                    if myTruck.PrimaryPart then
-                        myTruck.PrimaryPart.AssemblyLinearVelocity = direction * maxSpeed
-                    end
-                    task.wait(stepDelay)
+                local waypointFolder = etcFolder:WaitForChild("Waypoint", 5)
+                if waypointFolder and waypointFolder:FindFirstChild("Waypoint") then
+                    local prepos = waypointFolder.Waypoint.Position
+                    local timeout = 0
+                    repeat 
+                        safeFirePrompt(starter:FindFirstChild("Prompt"))
+                        task.wait(0.5)
+                        timeout = timeout + 1
+                    until (waypointFolder.Waypoint.Position ~= prepos) or not _G.Autofarm or timeout > 10
                 end
-                
-                if _G.Autofarm and myTruck and myTruck.Parent and myTruck.PrimaryPart then
-                    myTruck.PrimaryPart.AssemblyLinearVelocity = Vector3.zero
-                    myTruck.PrimaryPart.AssemblyAngularVelocity = Vector3.zero
-                end
-                
-                CurrentMoney = getCleanMoney()
-                EarnedMoney = CurrentMoney - StartMoney
+            end
+            task.wait(1)
 
-                NextTeleportIn = math.random(50, 55)
+            -- 4. Trigger Spawner Kendaraan
+            local spawner = jobFolder:WaitForChild("Spawner", 5)
+            local spawnerPart = spawner and spawner:WaitForChild("Part", 5)
+            if spawnerPart then
+                hrp.CFrame = spawnerPart.CFrame
+                task.wait(1)
+                
+                local timeout = 0
                 repeat
-                    StatusLabel.Text = "Next Teleport In: " .. tostring(NextTeleportIn) .. " Seconds"
-                    task.wait(1)
-                    NextTeleportIn = NextTeleportIn - 1
-                until NextTeleportIn <= 0 or not _G.Autofarm
+                    safeFirePrompt(spawnerPart:FindFirstChild("Prompt"))
+                    task.wait(0.5)
+                    timeout = timeout + 1
+                until getMyTruck() or not _G.Autofarm or timeout > 15
+            end
+            task.wait(1)
+
+            -- 5. Masuk Otomatis ke Kursi Pengemudi
+            local myTruck = getMyTruck()
+            if myTruck then
+                local driveSeat = myTruck:WaitForChild("DriveSeat", 5)
+                if driveSeat then
+                    local timeout = 0
+                    repeat
+                        pcall(function() driveSeat:Sit(humanoid) end)
+                        task.wait(0.5)
+                        timeout = timeout + 1
+                    until humanoid.SeatPart ~= nil or not _G.Autofarm or timeout > 10
+                end
+            end
+
+        -- JIKA PEMAIN SUDAH BERADA DI DALAM TRUK (Proses Pengantaran Jalur Langit)
+        elseif humanoid.SeatPart ~= nil then
+            local seat = humanoid.SeatPart
+            local car = seat.Parent
+            local primary = car.PrimaryPart or car:FindFirstChild("DriveSeat")
+            
+            local etcFolder = Workspace:FindFirstChild("Etc")
+            local waypointFolder = etcFolder and etcFolder:FindFirstChild("Waypoint")
+            local waypoint = waypointFolder and waypointFolder:FindFirstChild("Waypoint")
+            
+            if primary and waypoint then
+                -- Langkah A: Terbangkan Truk ke Atas Langit (Gunakan CFrame Properti, BUKAN PivotTo)
+                local skyHeight = 650
+                local startPos = primary.Position
+                
+                primary.CFrame = CFrame.new(startPos.X, skyHeight, startPos.Z)
+                task.wait(0.2)
+                
+                -- Langkah B: Laju Menuju Koordinat Waypoint Menggunakan Gabungan Velocity Fisika & CFrame Orien
+                local targetPos = waypoint.Position
+                local targetSkyPos = Vector3.new(targetPos.X, skyHeight, targetPos.Z)
+                
+                local speed = 145 -- Batas kecepatan aman penyamaran server
+                local distance = (primary.Position - targetSkyPos).Magnitude
+                
+                while distance > 15 and _G.Autofarm and humanoid.SeatPart ~= nil do
+                    if not car.Parent then break end
+                    
+                    local currentPos = primary.Position
+                    local direction = (targetSkyPos - currentPos).Unit
+                    distance = (targetSkyPos - currentPos).Magnitude
+                    StatusLabel.Text = "Sky-Bypassing: " .. math.floor(distance) .. "m Left"
+                    
+                    -- Update rotasi menghadap target dan suntik kecepatan linear
+                    primary.CFrame = CFrame.lookAt(currentPos, targetSkyPos)
+                    primary.AssemblyLinearVelocity = direction * speed
+                    primary.AssemblyAngularVelocity = Vector3.zero
+                    task.wait()
+                end
+                
+                -- Langkah C: Landaskan Truk Kembali Menggunakan Properti .CFrame Langsung di Atas Checkpoint Bumi
+                if _G.Autofarm and car.Parent then
+                    primary.AssemblyLinearVelocity = Vector3.zero
+                    primary.AssemblyAngularVelocity = Vector3.zero
+                    
+                    primary.CFrame = CFrame.new(targetPos + Vector3.new(0, 3, 0))
+                    task.wait(0.5)
+                    
+                    -- Sistem Cooldown Deteksi Keamanan Gaji Server (Dihubungkan Langsung ke Loop UI Detik)
+                    local prepos = waypoint.Position
+                    NextTeleportIn = math.random(50, 55)
+                    
+                    while waypoint.Position == prepos and _G.Autofarm and NextTeleportIn > 0 do
+                        StatusLabel.Text = "Waiting Payout: " .. tostring(NextTeleportIn) .. "s"
+                        task.wait(1)
+                        NextTeleportIn = NextTeleportIn - 1
+                    end
+                    NextTeleportIn = 0
+                end
             end
         end
-        if not _G.Autofarm then break end
-        task.wait(1)
+        task.wait(0.5)
     end
     StatusLabel.Text = "Autofarm Stopped"
 end
 
--- [[ GUI VELARIS ]] --
+-- [[ INTERFACE MENCIPTAKAN WINDOW VELARISUI ]] --
 local Window = VelarisUI:Window({
     Title     = "Car Driving Indonesia",
     Footer    = "By .projectsion",
     Color     = "Dark",            
-    Version   = "1.6",
+    Version   = "2.0 (Sky Velocity)",
     Image     = "75533822533623",    
     Size      = UDim2.fromOffset(640, 400),
     ShowUser  = true,                  
@@ -374,11 +390,11 @@ local Window = VelarisUI:Window({
 })
 
 local FarmTab = Window:AddTab({ Name = "Autofarm", Icon = "projectsion:truck" })
-local FarmSection = FarmTab:AddSection({ Title = "Autofarm Truck", Open = true })
+local FarmSection = FarmTab:AddSection({ Title = "Autofarm Truck Sky", Open = true })
 
 FarmSection:AddToggle({
     Title    = "On Autofarm Truck",
-    Content  = "Autofarm truck tanpa stuck",
+    Content  = "Metode terbang tinggi bypass anti-cheat fisis",
     Default  = false,
     Callback = function(value)
         _G.Autofarm = value
@@ -394,24 +410,6 @@ local StatsSection = StatsTab:AddSection({ Title = "Statistics", Open = true })
 local DelayLabel = StatsSection:AddParagraph({ Title = "Next Teleport In:", Content = "0 Seconds" })
 local EarnedLabel = StatsSection:AddParagraph({ Title = "Total Earned:", Content = "RP. 0" })
 local CurrentLabel = StatsSection:AddParagraph({ Title = "Current Money:", Content = "RP. 0" })
-
--- Pemetaan Dinamis agar tidak error saat di-klik jika aset game berubah
-local Dealer_Paths = {
-    ["Toyota"] = "workspace.Etc.Dealership.Toyota.Prompt",
-    ["Suzuki"] = "workspace.Etc.Dealership.Suzuki.Prompt",
-    ["Premium"] = "workspace.Etc.Dealership.Premium.Prompt",
-    ["Nissan"] = "workspace.Etc.Dealership.Nissan.Prompt",
-    ["Mercedes"] = "workspace.Etc.Dealership.MercedesBenz.Prompt",
-    ["Komersial"] = "workspace.Etc.Dealership.Komersial.Prompt",
-    ["KIA"] = "workspace.Etc.Dealership.KIA.Prompt",
-    ["Hyundai"] = "workspace.Etc.Dealership.Hyundai.Prompt",
-    ["Honda"] = "workspace.Etc.Dealership.Honda.Prompt",
-    ["Daihatsu"] = "workspace.Etc.Dealership.Daihatsu.Prompt",
-    ["Chery"] = "workspace.Etc.Dealership.Chery.Prompt",
-    ["Bandung"] = "workspace.Etc.Dealership.Bandung.Prompt",
-    ["Dealer 77"] = "workspace.Etc.Dealership['77'].Prompt",
-    ["Modification"] = "workspace.Map.Building.Modification"
-}
 
 local ProxTab = Window:AddTab({ Name = "automation", Icon = "projectsion:bot" })
 local NpcSection = ProxTab:AddSection({ Title = "Open npc", Open = true })
@@ -537,6 +535,7 @@ PlayerSection:AddButton({
 
 task.spawn(refreshPlayers)
 
+-- // Loop Sinkronisasi Teks Parameter Statistik UI
 task.spawn(function()
     while true do
         if _G.Autofarm then
@@ -551,7 +550,11 @@ end)
 
 task.spawn(function()
     while true do
-        if _G.Autofarm then DelayLabel:SetContent(tostring(NextTeleportIn) .. " Seconds") end
+        if _G.Autofarm then 
+            DelayLabel:SetContent(tostring(NextTeleportIn) .. " Seconds") 
+        else
+            DelayLabel:SetContent("0 Seconds")
+        end
         task.wait(1)
     end
 end)
