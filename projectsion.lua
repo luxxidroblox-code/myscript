@@ -250,59 +250,66 @@ local function runAutofarm()
         fireproximityprompt(spawnerPart:WaitForChild("Prompt"))
 
         -- 4. Masuk Truck & Loop Teleport
-task.wait(4)
-local myTruck = getMyTruck()
-
-if myTruck then
-    hrp.CFrame = myTruck.DriveSeat.CFrame
-    task.wait(1)
-    fireproximityprompt(myTruck.DriveSeat:WaitForChild("PromptDriveSeat"))
-    
-    while _G.Autofarm do
-        if not myTruck or not myTruck.Parent then break end
-
-        local waypoint = Workspace:WaitForChild("Etc"):WaitForChild("Waypoint"):WaitForChild("Waypoint")
-        local targetCF = (waypoint:IsA("Model") and waypoint:GetPivot()) or waypoint.CFrame
+        task.wait(4)
+        local myTruck = getMyTruck()
         
-        -- Smooth Movement
-        SmoothMove(myTruck, targetCF)
-
-        task.wait(math.random(20,60)/100)
-
-        -- Final Sync
-        myTruck:PivotTo(targetCF)
-
-        if myTruck.PrimaryPart then
-            myTruck.PrimaryPart.AssemblyLinearVelocity *= 0.1
-        end
-        
-        CurrentMoney = getCleanMoney()
-        EarnedMoney = CurrentMoney - StartMoney
-
-        -- Countdown Delay
-        NextTeleportIn = GetRandomDelay()
-
-        repeat
+        if myTruck then
+            hrp.CFrame = myTruck.DriveSeat.CFrame
             task.wait(1)
-            NextTeleportIn = NextTeleportIn - 1
-        until NextTeleportIn <= 0 or not _G.Autofarm
+            fireproximityprompt(myTruck.DriveSeat:WaitForChild("PromptDriveSeat"))
+            
+            while _G.Autofarm do
+    if not myTruck or not myTruck.Parent then break end
+
+    local waypoint = Workspace:WaitForChild("Etc"):WaitForChild("Waypoint"):WaitForChild("Waypoint")
+    local targetPos = (waypoint:IsA("Model") and waypoint:GetPivot().Position) or waypoint.Position
+
+    local primary = myTruck.PrimaryPart
+    if primary then
+        local dir = (targetPos - primary.Position)
+        local dist = dir.Magnitude
+
+        if dist > 5 then
+            dir = dir.Unit
+
+            -- GERAK REALISTIS (ACCELERATION)
+            primary.AssemblyLinearVelocity = primary.AssemblyLinearVelocity:Lerp(
+                dir * 70,
+                0.07
+            )
+        else
+            -- natural braking
+            primary.AssemblyLinearVelocity *= 0.88
+        end
+
+        -- stabil rotasi
+        primary.AssemblyAngularVelocity = Vector3.zero
     end
+
+    CurrentMoney = getCleanMoney()
+    EarnedMoney = CurrentMoney - StartMoney
+
+    NextTeleportIn = math.random(50, 55)
+    repeat
+        task.wait(1)
+        NextTeleportIn -= 1
+    until NextTeleportIn <= 0 or not _G.Autofarm
 end
 
 -- [[ GUI VELARIS ]] --
 local Window = VelarisUI:Window({
     Title     = "Car Driving Indonesia",
     Footer    = "By .projectsion",
-    Color     = "Dark",            
+    Color     = "Default",            
     Version   = "1.6",
-    Image     = "75533822533623",    
+    Image     = "101833678008843",    
     Size      = UDim2.fromOffset(640, 400),
     ShowUser  = true,                  
     Search    = true,                  
     Animation = true,
 })
 
-local FarmTab = Window:AddTab({ Name = "Autofarm", Icon = "projectsion:truck" })
+local FarmTab = Window:AddTab({ Name = "Autofarm", Icon = "lucide:truck" })
 local FarmSection = FarmTab:AddSection({ Title = "Autofarm Truck", Open = true })
 
 FarmSection:AddToggle({
@@ -322,14 +329,14 @@ FarmSection:AddToggle({
 })
 
 
-local StatsTab = Window:AddTab({ Name = "Stats", Icon = "projectsion:trending-up" })
+local StatsTab = Window:AddTab({ Name = "Stats", Icon = "lucide:trending-up" })
 local StatsSection = StatsTab:AddSection({ Title = "Statistics", Open = true })
 local DelayLabel = StatsSection:AddParagraph({ Title = "Next Teleport In:", Content = "0 Seconds" })
 local EarnedLabel = StatsSection:AddParagraph({ Title = "Total Earned:", Content = "RP. 0" })
 local CurrentLabel = StatsSection:AddParagraph({ Title = "Current Money:", Content = "RP. 0" })
 
 
-local ProxTab = Window:AddTab({ Name = "automation", Icon = "projectsion:bot" })
+local ProxTab = Window:AddTab({ Name = "automation", Icon = "lucide:bot" })
 local NpcSection = ProxTab:AddSection({ Title = "Open npc", Open = true })
 NpcSection:AddDropdown({
     Title    = "Select npc",
@@ -416,7 +423,7 @@ GachaSection:AddButton({
     end
 })
 
-local WebhookTab = Window:AddTab({ Name = "Webhook ", Icon = "projectsion:webhook" })
+local WebhookTab = Window:AddTab({ Name = "Webhook ", Icon = "lucide:webhook" })
 local WebhookSection = WebhookTab:AddSection({ Title = "Webhook farm ", Open = true })
 WebhookSection:AddInput({
     Title    = "webhook",
