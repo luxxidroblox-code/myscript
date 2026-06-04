@@ -1,180 +1,190 @@
-local VelarisUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/nhfudzfsrzggt/brigida/refs/heads/main/dist/main.lua", true))()
+local genv = getgenv()
+local fenv = getfenv()
 
--- // Services
+loadstring(game:HttpGet('https://raw.githubusercontent.com/LynX99-9/komtolmmek2/refs/heads/main/Adonis'))()
+game:GetService('CoreGui').RobloxGui['CoreScripts/NetworkPause']:Destroy()
+
+genv.WindUI = nil
+genv.maxRetries = 3
+
+local _ = genv.maxRetries
+
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+
+-- [[ DATA BINDING ]]
+local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
-local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
-local lp = Players.LocalPlayer
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer -- Kita pakai LP untuk LocalPlayer
+local RunService = game:GetService("RunService")
+local PlayerData = LP:WaitForChild("PlayerData") -- DIPERBAIKI: Dari Player jadi LP
+local UserInputService = game:GetService("UserInputService")
 
--- // Destroy Specific Prop untuk Mengurangi Beban Memori / Lag
-pcall(function()
-    local targetProp = workspace.Map.Prop:GetChildren()[1627]
-    if targetProp then
-        targetProp:Destroy()
-    end
-end)
+-- // SETTINGS & PROMPTS
+local CourierSettings = require(ReplicatedStorage:WaitForChild("Delivery System"):WaitForChild("Settings"))
+local MachinePrompt = workspace.BaristaJob.Interactions.MachinePart.MachinePart.MachinePrompt
+local RegisterPrompt = workspace.BaristaJob.Interactions.RegisterPart.RegisterPart.RegisterPrompt
+local SupplyPrompt = workspace.BaristaJob.Interactions.SupplyPart.SupplyPart.SupplyPrompt
+local JobPrompt = workspace.BaristaJob.Interactions.StartPart.StartPart.JobPrompt
 
--- // [GABUNGAN ASSET] Pembuatan Platform Pendukung di Bawah Map (Agar Kendaraan Stabil)
-local function createPlatform(name, cframe, size)
-    if Workspace:FindFirstChild(name) then Workspace[name]:Destroy() end
-    local part = Instance.new("Part", Workspace)
-    part.Name = name
-    part.CFrame = cframe
-    part.Size = size
-    part.Anchored = true
-    part.Transparency = 1
-end
+-- // CFRAMES
+local SupplyCF = CFrame.new(-5116.78418, 5.78931046, -670.858887)
+local MachineCF = CFrame.new(-4997.1665, 1.58353043, -795.047607)
+local RegisterCF = CFrame.new(-4994.06934, 1.30402756, -760.247437)
+local StartJobCF = CFrame.new(-4989.80078, 5.30382967, -715.013062)
+local TAKE_BOX_CFRAME = CFrame.new(-5105.61182, 4.48948574, -3758.98267)
+local TAKE_PROMPT = workspace:WaitForChild("Livrason"):WaitForChild("Take1"):WaitForChild("Take"):WaitForChild("ProximityPrompt")
 
-createPlatform("Tele1[STORAGE]", CFrame.new(-7932.738, 382.885, 46876.062), Vector3.new(280, 1, 280))
-createPlatform("Tp Asset", CFrame.new(-7845.343, 383.014, 46865.543), Vector3.new(280, 1, 280))
-createPlatform("spawn[Ngawi]", CFrame.new(34938.425, 131.505, -54576.171), Vector3.new(550, 1, 320))
-
--- // Black Screen Setup
-local BlackScreen = Instance.new("ScreenGui")
-local Frame = Instance.new("Frame")
-local StatusLabel = Instance.new("TextLabel")
-
-BlackScreen.Name = "ProjectsionBlackout"
-BlackScreen.Parent = game:GetService("CoreGui")
-BlackScreen.DisplayOrder = -1 
-BlackScreen.Enabled = false 
-
-Frame.Parent = BlackScreen
-Frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-Frame.Size = UDim2.new(1.5, 0, 1.5, 0) 
-Frame.Position = UDim2.new(-0.25, 0, -0.25, 0)
-Frame.BorderSizePixel = 0
-
-StatusLabel.Parent = Frame
-StatusLabel.BackgroundTransparency = 1
-StatusLabel.Position = UDim2.new(0.25, 0, 0.4, 0)
-StatusLabel.Size = UDim2.new(0.5, 0, 0.1, 0)
-StatusLabel.Font = Enum.Font.GothamBold
-StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-StatusLabel.TextSize = 28
-StatusLabel.Text = "Waiting for Farm..."
-StatusLabel.TextXAlignment = Enum.TextXAlignment.Center
-
--- // Config & Stats Variables
-_G.Autofarm = false
-_G.AutoGacha = false
+-- [[ GLOBAL VARIABLES ]]
+_G.AutofarmCourier = false 
+_G.CourierSpeed = 230  
+_G.AutoFarmBarista = false
 _G.AutoWebhook = false
 _G.WebhookURL = "" 
-local MoneyPath = lp.PlayerGui:WaitForChild("Main"):WaitForChild("Container"):WaitForChild("Hub"):WaitForChild("CashFrame"):WaitForChild("Frame"):WaitForChild("TextLabel")
-local StartMoney = 0
-local CurrentMoney = 0
-local EarnedMoney = 0
-local NextTeleportIn = 0
-_G.StartTime = _G.StartTime or os.time()
-_G.CycleCount = _G.CycleCount or 0
-_G.TotalEarning = _G.TotalEarning or 0
-_G.WebhookURL = _G.WebhookURL or ""
-
-local lastMoney = 0 
+_G.TotalEarning = 0
+_G.CycleCount = 0
+_G.StartTime = os.time()
+LastActivity = tick()
+local lastMoney = PlayerData.RPValue.Value
 local pendingIncome = 0
 local isRunning = false
+local cooldownTime = 60
+local WaktuKosong = nil
 
-local SelectedBox = "Limited Box"
-local SelectedNPC = ""
-local SelectedDealer = ""
-local SelectedPlayer = ""
-
--- // Fungsi Format Angka ke Ribuan Komma
-local function formatNominal(n)
-    local left, num, right = string.match(tostring(n), '^([^%d]*%d)(%d*)(.-)$')
-    if not left then return tostring(n) end
-    return left .. (num:reverse():gsub('(%d%d%d)', '%1,'):reverse()) .. right
-end
-
--- // Fungsi Konversi Text ke Angka Bersih
-local function getCleanMoney()
-    if not MoneyPath then return 0 end
-    local rawText = MoneyPath.Text
-    local cleanText = rawText:gsub("RP.", ""):gsub(",", ""):gsub("%s+", "")
-    return tonumber(cleanText) or 0
-end
-
-task.spawn(function()
-    task.wait(3) 
-    lastMoney = getCleanMoney()
-end)
-
--- // Fungsi Ambil Kendaraan Atas Nama Pemain (Lebih Universal)
-local function getMyTruck()
-    local vehicles = Workspace:FindFirstChild("Vehicles")
-    if vehicles then
-        return vehicles:FindFirstChild(lp.Name .. "sCar")
-    end
-    return nil
-end
-
--- // Fungsi Trigger Proximity Prompt Aman
-local function safeFirePrompt(prompt)
-    if prompt and prompt:IsA("ProximityPrompt") then
-        fireproximityprompt(prompt)
+-- [[  UTILITY FUNCTIONS ]]
+local function SwitchToCourier()
+    local TeamRemote = ReplicatedStorage:FindFirstChild("TeamChangeRequest", true)
+    if TeamRemote then
+        if not LP.Team or LP.Team.Name ~= "Courier" then
+            TeamRemote:FireServer("Courier", 11378976, 0, 0, "Detector")
+            task.wait(1.5)
+        end
     end
 end
+
+local function Tween(targetCFrame)
+    local Char = LP.Character
+    local Root = Char and Char:FindFirstChild("HumanoidRootPart")
+    if not Root then return end
+
+    local distance = (Root.Position - targetCFrame.Position).Magnitude
+    local duration = distance / _G.CourierSpeed
+
+    Root.Velocity = Vector3.new(0,0,0)
+    Root.RotVelocity = Vector3.new(0,0,0)
+
+    local info = TweenInfo.new(duration, Enum.EasingStyle.Linear)
+    local tween = TweenService:Create(Root, info, {CFrame = targetCFrame})
+
+    tween:Play()
+
+    local connection
+    connection = game:GetService("RunService").Stepped:Connect(function()
+        if tween.PlaybackState == Enum.PlaybackState.Playing then
+            Root.Velocity = Vector3.new(0,0,0)
+        else
+            connection:Disconnect()
+        end
+    end)
+
+    tween.Completed:Wait()
+    Root.Velocity = Vector3.new(0,0,0)
+end
+
+local function AutoEquipBox()
+    local Char = LP.Character
+    if not Char or not Char:FindFirstChild("Humanoid") then return false end
+    local held = Char:FindFirstChildOfClass("Tool")
+    if held and held.Name:lower() == "box" then return true end
+    local bp = LP:FindFirstChild("Backpack")
+    if bp then
+        for _, item in pairs(bp:GetChildren()) do
+            if item:IsA("Tool") and item.Name:lower() == "box" then
+                Char.Humanoid:EquipTool(item)
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function GetActivePoint()
+    for _, folder in ipairs(CourierSettings.Folder.Location:GetChildren()) do
+        local block = folder:FindFirstChild("Block")
+        local prompt = block and block:FindFirstChildOfClass("ProximityPrompt")
+        if prompt and (prompt.Enabled or folder:FindFirstChild("POINT").billboardgui.Enabled) then
+            return block, prompt
+        end
+    end
+    return nil, nil
+end
+
+
 
 -- [[ ANTI-AFK SYSTEM ]]
 task.spawn(function()
     local VirtualUser = game:GetService("VirtualUser")
-    lp.Idled:Connect(function()
+    game:GetService("Players").LocalPlayer.Idled:Connect(function()
         VirtualUser:CaptureController()
         VirtualUser:ClickButton2(Vector2.new())
     end)
 end)
 
--- // FUNGSI WEBHOOK DATA UTILS
+-- // 2. FUNGSI AUTO-AVATAR (Narik foto profil user otomatis)
 local function getAvatar()
-    return "https://www.roblox.com/headshot-thumbnail/image?userId=" .. lp.UserId .. "&width=420&height=420&format=png"
+    -- Pastikan pakai LP.UserId agar sinkron dengan Data Binding lu
+    return "https://www.roblox.com/headshot-thumbnail/image?userId=" .. LP.UserId .. "&width=420&height=420&format=png"
 end
 
+-- // 3. FORMAT RUPIAH
 local function formatRP(v)
     local s = string.format("%.0f", v)
     local formatted = s:reverse():gsub("(%d%d%d)", "%1."):reverse():gsub("^%.", "")
     return "RP. " .. formatted
 end
 
+-- // 4. RUNNING TIME
 local function getRunningTime()
     local diff = os.time() - _G.StartTime
-    local hours = math.floor(diff / 3600)
-    local mins = math.floor((diff % 3600) / 60)
-    local secs = diff % 60
-    return string.format("%02d:%02d:%02d", hours, mins, secs)
+    return string.format("%02d:%02d:%02d", math.floor(diff/3600), math.floor((diff%3600)/60), diff%60)
 end
 
--- // FUNGSI LOG WEBHOOK DISCORD
+-- // 5. FUNGSI WEBHOOK (PROJECTSION EMBED AUTHOR VERSION)
 local function sendWebhook(income, target)
     if _G.WebhookURL == "" or not _G.WebhookURL:find("discord.com") then return end
     
     _G.CycleCount = _G.CycleCount + 1
     _G.TotalEarning = _G.TotalEarning + income
     
-    local currentMoney = getCleanMoney()
+    local currentMoney = PlayerData.RPValue.Value
     local http_request = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
-    local HttpService = game:GetService("HttpService")
 
     local embed = {
         ["author"] = {
             ["name"] = "Projectsion Webhook",
-            ["icon_url"] = getAvatar()
+            ["icon_url"] = getAvatar() -- Foto profil lu (LP)
         },
-        ["title"] = "Cycle Completed (Sky Velocity Mode)",
+
+        ["title"] = "Cycle Completed",
         ["color"] = 0xFFFFFF,
+
         ["fields"] = {
-            {["name"] = "Username", ["value"] = lp.Name, ["inline"] = false},
+            {["name"] = "Username", ["value"] = LP.Name, ["inline"] = false}, -- DIUBAH: Dari Player ke LP
             {["name"] = "Cycle Income", ["value"] = formatRP(income), ["inline"] = false},
-            {["name"] = "Current Money", ["value"] = formatRP(currentMoney), ["inline"] = false},
-            {["name"] = "Total Earning This Session", ["value"] = formatRP(_G.TotalEarning), ["inline"] = false},
+            {["name"] = "Target", ["value"] = formatRP(target), ["inline"] = false},
+            {["name"] = "Current Money", ["value"] = formatRP(currentMoney) .. " (Est)", ["inline"] = false},
+            {["name"] = "Total Earning", ["value"] = formatRP(_G.TotalEarning) .. " (Est)", ["inline"] = false},
             {["name"] = "Cycle Count", ["value"] = tostring(_G.CycleCount), ["inline"] = false},
             {["name"] = "Running Time", ["value"] = getRunningTime(), ["inline"] = false}
         },
+
         ["image"] = {
-            ["url"] = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg"
+            ["url"] = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&"
         },
+
         ["footer"] = {
-            ["text"] = "Made by .projectsion | " .. os.date("%m/%d/%Y %I:%M %p")
+            ["text"] = "Made By Projectsion | " .. os.date("%m/%d/%Y %I:%M %p")
         }
     }
 
@@ -195,366 +205,356 @@ local function sendWebhook(income, target)
     end
 end
 
--- // MONEY MONITOR UNTUK WEBHOOK
-task.spawn(function()
-    while true do
-        local newMoney = getCleanMoney()
-        if _G.AutoWebhook and newMoney > lastMoney then
-            pendingIncome = pendingIncome + (newMoney - lastMoney)
-            
-            if not isRunning then
-                isRunning = true
-                task.spawn(function()
-                    while isRunning and _G.AutoWebhook do
-                        task.wait(60) 
-                        if pendingIncome > 0 and _G.WebhookURL ~= "" then
-                            sendWebhook(pendingIncome, 0)
-                            pendingIncome = 0
-                        end
-                        if not _G.AutoWebhook or not _G.Autofarm then
-                            isRunning = false
-                        end
-                    end
-                end)
-            end
-        end
-        lastMoney = newMoney
-        task.wait(2)
-    end
-end)
-
--- // --- FUNGSI UTAMA SKY VELOCITY FARM ---
-local function runAutofarm()
-    StartMoney = getCleanMoney()
-    
-    while _G.Autofarm do
-        local char = lp.Character or lp.CharacterAdded:Wait()
-        local humanoid = char:WaitForChild("Humanoid", 5)
-        local hrp = char:WaitForChild("HumanoidRootPart", 5)
-
-        if not hrp or not humanoid then
-            StatusLabel.Text = "Error: Character Loading Slow"
-            task.wait(1)
-            continue
-        end
-
-        -- JIKA PEMAIN DI LUAR KENDARAAN (Proses Ambil & Spawn Truk)
-        if humanoid.SeatPart == nil then
-            StatusLabel.Text = "Initializing Truck Job..."
-            
-            -- 1. Ambil Job ke Server
-            local network = ReplicatedStorage:WaitForChild("NetworkContainer", 5)
-            local remote = network and network:WaitForChild("RemoteEvents", 5) and network.RemoteEvents:WaitForChild("Job", 5)
-            if remote then
-                remote:FireServer("Truck")
-            end
-            task.wait(0.5)
-
-            -- 2. Ambil Jalur Folder Kerja
-            local etcFolder = Workspace:WaitForChild("Etc", 5)
-            local jobFolder = etcFolder and etcFolder:WaitForChild("Job", 5) and etcFolder.Job:WaitForChild("Truck", 5)
-            if not jobFolder then
-                StatusLabel.Text = "Error: Map Folder Changed!"
-                task.wait(3)
-                continue
-            end
-
-            -- 3. Trigger Starter Job
-            local starter = jobFolder:WaitForChild("Starter", 5)
-            if starter then
-                hrp.CFrame = starter:GetPivot()
-                hrp.Anchored = true
-                task.wait(1)
-                hrp.Anchored = false
-                
-                local waypointFolder = etcFolder:WaitForChild("Waypoint", 5)
-                if waypointFolder and waypointFolder:FindFirstChild("Waypoint") then
-                    local prepos = waypointFolder.Waypoint.Position
-                    local timeout = 0
-                    repeat 
-                        safeFirePrompt(starter:FindFirstChild("Prompt"))
-                        task.wait(0.5)
-                        timeout = timeout + 1
-                    until (waypointFolder.Waypoint.Position ~= prepos) or not _G.Autofarm or timeout > 10
-                end
-            end
-            task.wait(1)
-
-            -- 4. Trigger Spawner Kendaraan
-            local spawner = jobFolder:WaitForChild("Spawner", 5)
-            local spawnerPart = spawner and spawner:WaitForChild("Part", 5)
-            if spawnerPart then
-                hrp.CFrame = spawnerPart.CFrame
-                task.wait(1)
-                
-                local timeout = 0
-                repeat
-                    safeFirePrompt(spawnerPart:FindFirstChild("Prompt"))
-                    task.wait(0.5)
-                    timeout = timeout + 1
-                until getMyTruck() or not _G.Autofarm or timeout > 15
-            end
-            task.wait(1)
-
-            -- 5. Masuk Otomatis ke Kursi Pengemudi
-            local myTruck = getMyTruck()
-            if myTruck then
-                local driveSeat = myTruck:WaitForChild("DriveSeat", 5)
-                if driveSeat then
-                    local timeout = 0
-                    repeat
-                        pcall(function() driveSeat:Sit(humanoid) end)
-                        task.wait(0.5)
-                        timeout = timeout + 1
-                    until humanoid.SeatPart ~= nil or not _G.Autofarm or timeout > 10
-                end
-            end
-
-        -- JIKA PEMAIN SUDAH BERADA DI DALAM TRUK (Proses Pengantaran Jalur Langit)
-        elseif humanoid.SeatPart ~= nil then
-            local seat = humanoid.SeatPart
-            local car = seat.Parent
-            local primary = car.PrimaryPart or car:FindFirstChild("DriveSeat")
-            
-            local etcFolder = Workspace:FindFirstChild("Etc")
-            local waypointFolder = etcFolder and etcFolder:FindFirstChild("Waypoint")
-            local waypoint = waypointFolder and waypointFolder:FindFirstChild("Waypoint")
-            
-            if primary and waypoint then
-                -- Langkah A: Terbangkan Truk ke Atas Langit (Gunakan CFrame Properti, BUKAN PivotTo)
-                local skyHeight = 650
-                local startPos = primary.Position
-                
-                primary.CFrame = CFrame.new(startPos.X, skyHeight, startPos.Z)
-                task.wait(0.2)
-                
-                -- Langkah B: Laju Menuju Koordinat Waypoint Menggunakan Gabungan Velocity Fisika & CFrame Orien
-                local targetPos = waypoint.Position
-                local targetSkyPos = Vector3.new(targetPos.X, skyHeight, targetPos.Z)
-                
-                local speed = 145 -- Batas kecepatan aman penyamaran server
-                local distance = (primary.Position - targetSkyPos).Magnitude
-                
-                while distance > 15 and _G.Autofarm and humanoid.SeatPart ~= nil do
-                    if not car.Parent then break end
-                    
-                    local currentPos = primary.Position
-                    local direction = (targetSkyPos - currentPos).Unit
-                    distance = (targetSkyPos - currentPos).Magnitude
-                    StatusLabel.Text = "Sky-Bypassing: " .. math.floor(distance) .. "m Left"
-                    
-                    -- Update rotasi menghadap target dan suntik kecepatan linear
-                    primary.CFrame = CFrame.lookAt(currentPos, targetSkyPos)
-                    primary.AssemblyLinearVelocity = direction * speed
-                    primary.AssemblyAngularVelocity = Vector3.zero
-                    task.wait()
-                end
-                
-                -- Langkah C: Landaskan Truk Kembali Menggunakan Properti .CFrame Langsung di Atas Checkpoint Bumi
-                if _G.Autofarm and car.Parent then
-                    primary.AssemblyLinearVelocity = Vector3.zero
-                    primary.AssemblyAngularVelocity = Vector3.zero
-                    
-                    primary.CFrame = CFrame.new(targetPos + Vector3.new(0, 3, 0))
-                    task.wait(0.5)
-                    
-                    -- Sistem Cooldown Deteksi Keamanan Gaji Server (Dihubungkan Langsung ke Loop UI Detik)
-                    local prepos = waypoint.Position
-                    NextTeleportIn = math.random(50, 55)
-                    
-                    while waypoint.Position == prepos and _G.Autofarm and NextTeleportIn > 0 do
-                        StatusLabel.Text = "Waiting Payout: " .. tostring(NextTeleportIn) .. "s"
-                        task.wait(1)
-                        NextTeleportIn = NextTeleportIn - 1
-                    end
-                    NextTeleportIn = 0
-                end
-            end
-        end
-        task.wait(0.5)
-    end
-    StatusLabel.Text = "Autofarm Stopped"
-end
-
--- [[ INTERFACE MENCIPTAKAN WINDOW VELARISUI ]] --
-local Window = VelarisUI:Window({
-    Title     = "Car Driving Indonesia",
-    Footer    = "By .projectsion",
-    Color     = "Dark",            
-    Version   = "2.0 (Sky Velocity)",
-    Image     = "75533822533623",    
-    Size      = UDim2.fromOffset(640, 400),
-    ShowUser  = true,                  
-    Search    = true,                  
-    Animation = true,
-})
-
-local FarmTab = Window:AddTab({ Name = "Autofarm", Icon = "projectsion:truck" })
-local FarmSection = FarmTab:AddSection({ Title = "Autofarm Truck Sky", Open = true })
-
-FarmSection:AddToggle({
-    Title    = "On Autofarm Truck",
-    Content  = "Metode terbang tinggi bypass anti-cheat fisis",
-    Default  = false,
-    Callback = function(value)
-        _G.Autofarm = value
-        BlackScreen.Enabled = value
-        if _G.Autofarm then
-            task.spawn(runAutofarm)
-        end
-    end
-})
-
-local StatsTab = Window:AddTab({ Name = "Stats", Icon = "projectsion:trending-up" })
-local StatsSection = StatsTab:AddSection({ Title = "Statistics", Open = true })
-local DelayLabel = StatsSection:AddParagraph({ Title = "Next Teleport In:", Content = "0 Seconds" })
-local EarnedLabel = StatsSection:AddParagraph({ Title = "Total Earned:", Content = "RP. 0" })
-local CurrentLabel = StatsSection:AddParagraph({ Title = "Current Money:", Content = "RP. 0" })
-
-local ProxTab = Window:AddTab({ Name = "automation", Icon = "projectsion:bot" })
-local NpcSection = ProxTab:AddSection({ Title = "Open npc", Open = true })
-NpcSection:AddDropdown({
-    Title    = "Select npc",
-    Options  = { "Npc upgrade slot Npc", "Npc Box Shop","Daily quest npc" },
-    Default  = "Npc job select",
-    Callback = function(value) SelectedNPC = value end
-})
-
-NpcSection:AddButton({
-    Title    = "Open npc",
-    Callback = function()
-        pcall(function()
-            local target
-            if SelectedNPC == "Npc upgrade slot Npc" then target = workspace.Etc.Upgrade.Upgrade.Prompt
-            elseif SelectedNPC == "Npc Box Shop" then target = workspace.Etc.NPC.BOXSHOP.ProximityPrompt
-            elseif SelectedNPC == "Daily quest npc" then target = workspace.Asset.DailyQuest.NPC.ProximityPrompt
-            end
-            if target then fireproximityprompt(target) end
-        end)
-    end
-})
-
-local DealerSection = ProxTab:AddSection({ Title = "Open dealership", Open = true })
-DealerSection:AddDropdown({
-    Title    = "Select Dealer",
-    Options  = { "Toyota", "Suzuki", "Premium", "Nissan", "Mercedes", "Komersial", "KIA", "Hyundai", "Honda", "Daihatsu", "Chery", "Bandung", "Dealer 77" },
-    Default  = "",
-    Callback = function(value) SelectedDealer = value end
-})
-
-DealerSection:AddButton({
-    Title    = "Open Dealer UI",
-    Callback = function()
-        pcall(function()
-            local dFolder = workspace.Etc.Dealership
-            local target
-            if SelectedDealer == "Dealer 77" then target = dFolder["77"].Prompt
-            elseif dFolder:FindFirstChild(SelectedDealer) then target = dFolder[SelectedDealer].Prompt
-            end
-            if target then fireproximityprompt(target) end
-        end)
-    end
-})
-
-local GachaSection = ProxTab:AddSection({ Title = "Gacha Box", Open = true })
-GachaSection:AddDropdown({
-    Title    = "Select Action / Box",
-    Options  = { "Limited Box", "Gamepass Box", "Minigame Box", "Claim" },
-    Default  = "Limited Box",
-    Callback = function(value) SelectedBox = value end
-})
-
-GachaSection:AddToggle({
-    Title    = "auto gacha box",
-    Content  = "Automatic Buy Box",
-    Default  = false,
-    Callback = function(value)
-        _G.AutoGacha = value
-        if _G.AutoGacha then
+-- // 6. MONEY MONITOR (DAFTAR PERUBAHAN DUIT)
+PlayerData.RPValue:GetPropertyChangedSignal("Value"):Connect(function()
+    local newMoney = PlayerData.RPValue.Value
+    if newMoney > lastMoney then
+        pendingIncome = pendingIncome + (newMoney - lastMoney)
+        
+        if not isRunning then
+            isRunning = true
             task.spawn(function()
-                while _G.AutoGacha do
-                    pcall(function()
-                        if SelectedBox ~= "Claim" then
-                            ReplicatedStorage.NetworkContainer.RemoteEvents.Box:FireServer("Buy", SelectedBox)
-                            task.wait(0.5)
-                            ReplicatedStorage.NetworkContainer.RemoteEvents.Box:FireServer("Claim")
-                        end
-                    end)
-                    task.wait(1.5)
+                while isRunning do
+                    task.wait(60)
+                    if pendingIncome > 0 and _G.WebhookURL ~= "" then
+                        sendWebhook(pendingIncome, 0)
+                        pendingIncome = 0
+                    end
+                    -- Auto stop jika semua farm off
+                    if not _G.AutofarmCourier and not _G.AutoFarmBarista then
+                        isRunning = false
+                    end
                 end
             end)
         end
     end
-})
+    lastMoney = newMoney
+end)
 
-local WebhookTab = Window:AddTab({ Name = "Webhook ", Icon = "projectsion:webhook" })
-local WebhookSection = WebhookTab:AddSection({ Title = "Webhook farm ", Open = true })
-WebhookSection:AddInput({
-    Title    = "webhook",
-    Content  = "Enter link webhook",
-    Default  = "",
-    Callback = function(value) _G.WebhookURL = value end
-})
 
-WebhookSection:AddToggle({
-    Title    = "enable webhook",
-    Content  = "webhook ngirim setiap 1 menit",
-    Default  = false,
-    Callback = function(value) _G.AutoWebhook = value end
-})
-
-local TpTab = Window:AddTab({ Name = "Teleport", Icon = "projectsion:map-pin" })
-local PlayerSection = TpTab:AddSection({ Title = "Teleport Player", Open = true })
-local PlayerDropdown = PlayerSection:AddDropdown({
-    Title    = "Select Player",
-    Options  = {}, 
-    Default  = "",
-    Callback = function(value) SelectedPlayer = value end
-})
-
-local function refreshPlayers()
-    local pList = {}
-    local lives = workspace:FindFirstChild("Lives")
-    if lives then
-        for _, v in pairs(lives:GetChildren()) do
-            if v:IsA("Model") and v.Name ~= lp.Name then table.insert(pList, v.Name) end
-        end
+-- // PATHS
+local function GetBaristaElements()
+    -- Ganti Player jadi LP biar nyambung sama variabel di atas
+    local Gui = LP.PlayerGui:FindFirstChild("BaristaGUI")
+    if Gui then
+        local OrderText = Gui:FindFirstChild("StatusFrame") and Gui.StatusFrame:FindFirstChild("OrderText")
+        local Minigame = Gui:FindFirstChild("MinigameFrame")
+        return Gui, OrderText, Minigame
     end
-    PlayerDropdown:SetValues(pList)
+    return nil, nil, nil
 end
 
-PlayerSection:AddButton({ Title = "Refresh Player List", Callback = refreshPlayers })
-PlayerSection:AddButton({
-    Title    = "Teleport to Player",
-    Callback = function()
-        local lives = workspace:FindFirstChild("Lives")
-        local target = lives and lives:FindFirstChild(SelectedPlayer)
-        if target then lp.Character:PivotTo(target:GetPivot()) end
+local function GetRemote(name)
+    for _, v in pairs(game:GetDescendants()) do
+        if v:IsA("RemoteEvent") and v.Name == name then return v end
+    end
+    return nil
+end
+
+
+-- // BYPASS TP (SIT -> WAIT -> TP)
+local function BypassTP(targetCF)
+    -- Ganti Player jadi LP biar gak nil
+    local Char = LP.Character or LP.CharacterAdded:Wait()
+    local Hum = Char:WaitForChild("Humanoid")
+    local Root = Char:WaitForChild("HumanoidRootPart")
+    
+    if Hum and Root then
+        Hum.Sit = true
+        task.wait(0.5) -- SIT WAIT
+        Root.CFrame = targetCF
+        task.wait(0.3)
+        Hum.Sit = false
+    end
+end
+
+-- // CORE SEQUENCE: REMOTE -> BYPASS TP -> WAIT -> START
+local function ExecuteStartSequence()
+    local tr = GetRemote("TeamChangeRequest")
+    
+    -- Ganti Player jadi LP di baris ini
+    if LP.Team and LP.Team.Name ~= "Barista" and tr then
+        tr:FireServer("Barista", 11378976, 0, 0, "Detector")
+        task.wait(2.5)
+    end
+    
+    BypassTP(StartJobCF)
+    task.wait(0.8) -- WAIT BEFORE FIRE
+    
+    if JobPrompt and JobPrompt.Enabled then
+        fireproximityprompt(JobPrompt)
+    end
+    
+    LastActivity = tick() -- Reset timer setelah ambil job
+end
+
+-- // MAIN FARMING LOOP
+task.spawn(function()
+    while task.wait(0.6) do
+        if _G.AutoFarmBarista then
+            local _, OrderTextLabel, MinigameFrame = GetBaristaElements()
+            
+            -- Cek 4 Menit Tanpa Aktivitas
+            if tick() - LastActivity >= 240 then
+                ExecuteStartSequence()
+            end
+
+            if OrderTextLabel then
+                local txt = OrderTextLabel.Text:lower()
+                local isBroken = (OrderTextLabel.TextColor3.R > 0.8 and (txt:find("break") or txt:find("down")))
+                
+                if isBroken then
+                    BypassTP(SupplyCF)
+                    task.wait(0.5)
+                    fireproximityprompt(SupplyPrompt)
+                    LastActivity = tick() -- RESET TIMER
+                    task.wait(0.5)
+                    BypassTP(MachineCF)
+                    fireproximityprompt(MachinePrompt)
+                elseif MachinePrompt.Enabled and not (MinigameFrame and MinigameFrame.Visible) then
+                    BypassTP(MachineCF)
+                    fireproximityprompt(MachinePrompt)
+                    LastActivity = tick() -- RESET TIMER
+                    repeat task.wait(0.5)
+                        LastActivity = tick() -- Jaga agar tidak mati pas nunggu minigame
+                    until not (MinigameFrame and MinigameFrame.Visible) or not _G.AutoFarmBarista
+                elseif RegisterPrompt.Enabled and not (MinigameFrame and MinigameFrame.Visible) then
+                    task.wait(0.5)
+                    BypassTP(RegisterCF)
+                    task.wait(0.5)
+                    fireproximityprompt(RegisterPrompt)
+                    LastActivity = tick() -- RESET TIMER
+                end
+            end
+        end
+    end
+end)
+
+-- Persistent Fixes & Anti-AFK
+RunService.Heartbeat:Connect(function()
+    local _, _, MinigameFrame = GetBaristaElements()
+    if _G.AutoFarmBarista and MinigameFrame and MinigameFrame.Visible then
+        local tz = MinigameFrame:FindFirstChild("TargetZone", true)
+        if tz then tz.Size = UDim2.new(1, 0, 1, 0); tz.Position = UDim2.new(0, 0, 0, 0) end
+    end
+end)
+
+
+-- [[ MAIN ENGINE ]]
+task.spawn(function()
+    warn("[PROJECTSION] Engine Loaded & Waiting for Toggle...")
+    
+    while true do
+        task.wait(1)
+        
+        -- Hanya jalan jika Toggle ON
+        if _G.AutofarmCourier then
+            -- 1. Masuk Job (Jika respawn/baru mulai)
+            SwitchToCourier()
+
+            -- Ambil data karakter terbaru setiap kali loop (penting karena sering respawn)
+            local Char = LP.Character or LP.CharacterAdded:Wait()
+            local Hum = Char:WaitForChild("Humanoid")
+            local Root = Char:WaitForChild("HumanoidRootPart")
+
+            if Hum and Root then
+                
+                -- [[ LOGIC DETEKSI LIMIT / STUCK 4 MENIT ]]
+                if not AutoEquipBox() then
+                    -- Mulai hitung waktu kalau tangan kosong
+                    if not WaktuKosong then 
+                        WaktuKosong = os.clock() 
+                    end
+                    
+                    -- Jika sudah 240 detik (4 menit) masih kosong
+                    if (os.clock() - WaktuKosong) >= 240 then
+                        warn("[PROJECTSION] Limit Detect / Stuck! Switching Role...")
+                        
+                        -- Remote Civilian buat reset status (Ini bakal bikin lu RESPAWN)
+                        local args = {"Civilian", 0, 0, 0, "Detector"}
+                        game:GetService("ReplicatedStorage"):WaitForChild("JobEvents"):WaitForChild("TeamChangeRequest"):FireServer(unpack(args))
+                        
+                        WaktuKosong = nil -- Reset timer
+                        
+                        -- LOCK SCRIPT: Tunggu sampai bener-bener jadi Civilian
+                        repeat 
+                            task.wait(1)
+                            warn("[PROJECTSION] Waiting for team change to Civilian...")
+                        until (LP.Team and LP.Team.Name == "Civilian") or not _G.AutofarmCourier
+                        
+                        -- Jeda istirahat 15 detik (Biar gak disangka spam ganti team) 
+                       warn("[PROJECTSION] Resting for 15s...")
+                        task.wait(15) 
+                        
+                        continue -- Balik ke paling atas buat masuk Courier lagi (Bakal RESPAWN lagi)
+                    end
+                else
+                    -- Kalau pegang box, timer reset jadi nil lagi
+                    WaktuKosong = nil
+                end
+
+                -- [[ BYPASS UTAMA: WAJIB SIT SEBELUM TWEEN ]]
+                -- Karena setiap ganti job itu RESPAWN, lu bakal berdiri. 
+                -- Maka di sini wajib dipaksa duduk dulu sebelum gerak (Tween).
+                if not Hum.Sit then
+                    warn("[PROJECTSION] Activating SIT Bypass...")
+                    repeat 
+                        Hum.Sit = true
+                        task.wait(0.5)
+                    until Hum.Sit or not _G.AutofarmCourier
+                    task.wait(1) -- Jeda biar server sinkron posisi duduk lu
+                end
+
+                -- PHASE 1: AMBIL PAKET
+                if not AutoEquipBox() then
+                    -- Tween ke tempat ambil box
+                    Tween(TAKE_BOX_CFRAME)
+                    task.wait(0.5)
+                    
+                    if _G.AutofarmCourier and TAKE_PROMPT.Enabled then
+                        fireproximityprompt(TAKE_PROMPT)
+                        task.wait(1.5)
+                    end
+                
+                -- PHASE 2: ANTER PAKET
+                else
+                    local TargetBlock, TargetPrompt = GetActivePoint()
+                    
+                    if TargetBlock and TargetPrompt then
+                        task.wait(math.random(0, 1))
+                        
+                        -- Tween ke tempat antar
+                        Tween(TargetBlock.CFrame * CFrame.new(0, 2, 0))
+                        task.wait(0.8)
+                        
+                        AutoEquipBox() -- Pastikan tool masih dipegang sebelum diprompt
+                        
+                        if _G.AutofarmCourier and TargetPrompt.Enabled then
+                            fireproximityprompt(TargetPrompt)
+                            task.wait(3.5)
+                        end
+                    end
+                end
+            end
+        else
+            -- Reset timer kalau toggle dimatikan manual
+            WaktuKosong = nil
+        end
+    end
+end)
+
+
+
+
+
+
+
+
+-- window
+local Window = WindUI:CreateWindow({
+    Title = "Projectsion",
+    Icon = "dds", 
+    Author = "laksid",
+    Folder = "apa aja",
+    Transparent = true,
+    Size = UDim2.fromOffset(300, 350),
+   
+    OpenButton = {
+        Enabled = true,
+        Title = "Drag Drive Simulator",
+        Draggable = true,
+    }
+})
+
+Window:Tag({
+Title = "DDS",
+Icon = "dds",
+Color = Color3.fromRGB(139,0,0),
+Border = true,
+})
+
+
+-- Home Tab
+local HomeTab = Window:Tab({ Title = "Home Tab", Icon = "house" })
+
+HomeTab:Section({ Title = "Update Log" })
+HomeTab:Button({
+Title = "Version 1.0",
+Desc = "[+]added autofarm courier\n[+]added barista\n[+]webhook sistem\n[+]new ui",
+Icon = "file-text"
+})
+
+
+local AutofarmTab = Window:Tab({ Title = "Autofarm", Icon = "motorcycle"})
+
+AutofarmTab:Section({ Title = "AutoFarming" })
+
+AutofarmTab:Toggle({
+    Title = "Autofarm Courier",
+    Desc = "It's safe if you're in doubt, use an alt accoumt",
+    Callback = function(state)
+        _G.AutofarmCourier = state -- Ini yang bakal dibaca sama loop engine
+        if state then
+            WindUI:Notify({ 
+                Title = ".projectsion", 
+                Content = "Courier Autofarm Enabled!", 
+                Duration = 3 
+            })
+        end
     end
 })
 
-task.spawn(refreshPlayers)
-
--- // Loop Sinkronisasi Teks Parameter Statistik UI
-task.spawn(function()
-    while true do
-        if _G.Autofarm then
-            local current = getCleanMoney()
-            EarnedMoney = current - StartMoney
-            EarnedLabel:SetContent("RP. " .. formatNominal(EarnedMoney))
-            CurrentLabel:SetContent("RP. " .. formatNominal(current))
-        end
-        task.wait(2)
+AutofarmTab:Slider({
+    Title = "speed Autofarm Courier",
+    Desc = "changes tween autofarm",
+    Value = {Min = 10, Max = 550, Default = 300},
+    Callback = function(value)
+        _G.CourierSpeed = value -- Real-time ganti speed tween
     end
-end)
+})
 
-task.spawn(function()
-    while true do
-        if _G.Autofarm then 
-            DelayLabel:SetContent(tostring(NextTeleportIn) .. " Seconds") 
-        else
-            DelayLabel:SetContent("0 Seconds")
+AutofarmTab:Section({ Title = "Autofarm barista" })
+AutofarmTab:Toggle({
+    Title = "Autofarm barista",
+    Desc = "This is quite a big salary!",
+    Callback = function(state)
+        _G.AutoFarmBarista = state 
+        if state then
+            LastActivity = tick()
+            -- [[ PANCINGAN BIAR LANGSUNG JALAN ]]
+            task.spawn(function()
+                ExecuteStartSequence() 
+            end)
+            
+            WindUI:Notify({ 
+                Title = ".projectsion", 
+                Content = "Barista Active!", 
+                Duration = 3 
+            })
         end
-        task.wait(1)
     end
-end)
+})
+
+local WebhookTab = Window:Tab({ Title = "Webhook", Icon = "webhook" })
+
+WebhookTab:Section({ Title = "Webhook Configuration" })
+
+WebhookTab:Input({
+    Title = "Discord Webhook URL",
+    Desc = "Enter your Discord channel webhook link",
+    Placeholder = "https://discord.com/api/webhooks/...",
+    Callback = function(text)
+        _G.WebhookURL = text
+        print("Webhook set to: " .. text)
+    end
+})
+
+-- Tambahin Toggle biar user bisa ON/OFF log-nya
+WebhookTab:Toggle({
+    Title = "Enable Webhook Logs",
+    Desc = "Send cycle reports to Discord every 1 minute",
+    Default = false,
+    Callback = function(state)
+        _G.AutoWebhook = state
+    end
+})
