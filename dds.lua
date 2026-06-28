@@ -5,44 +5,92 @@ local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
 local RunService = game:GetService("RunService")
 
-warn("[DEBUG] Menginisialisasi modul Courier System...")
-local CourierSettings = require(ReplicatedStorage:WaitForChild("Delivery System"):WaitForChild("Settings"))
+warn("[DEBUG] Services loaded")
+
+local DeliverySystem = ReplicatedStorage:WaitForChild("Delivery System", 10)
+if not DeliverySystem then
+    warn("[DEBUG] Delivery System not found!")
+    return
+end
+warn("[DEBUG] Delivery System found")
+
+local SettingsModule = DeliverySystem:WaitForChild("Settings", 10)
+if not SettingsModule then
+    warn("[DEBUG] Settings module not found!")
+    return
+end
+warn("[DEBUG] Settings module found")
+
+local CourierSettings = require(SettingsModule)
+if not CourierSettings then
+    warn("[DEBUG] CourierSettings require failed!")
+    return
+end
+warn("[DEBUG] CourierSettings loaded:", CourierSettings)
+
 local SupplyCF = CFrame.new(-5116.78418, 5.78931046, -670.858887)
 local TAKE_BOX_CFRAME = CFrame.new(-5105.61182, 4.48948574, -3758.98267)
 
-warn("[DEBUG] Mencari objek TAKE_PROMPT di workspace...")
-local Livrason = workspace:WaitForChild("Livrason")
-local Take1 = Livrason:WaitForChild("Take1")
-local Take = Take1:WaitForChild("Take")
-local TAKE_PROMPT = Take:WaitForChild("ProximityPrompt")
-warn("[DEBUG] TAKE_PROMPT ditemukan berjenis: " .. TAKE_PROMPT.ClassName)
+warn("[DEBUG] Finding TAKE_PROMPT...")
+local Livrason = workspace:WaitForChild("Livrason", 10)
+if not Livrason then warn("[DEBUG] Livrason not found!") return end
+warn("[DEBUG] Livrason found")
+
+local Take1 = Livrason:WaitForChild("Take1", 10)
+if not Take1 then warn("[DEBUG] Take1 not found!") return end
+warn("[DEBUG] Take1 found")
+
+local Take = Take1:WaitForChild("Take", 10)
+if not Take then warn("[DEBUG] Take not found!") return end
+warn("[DEBUG] Take found")
+
+local TAKE_PROMPT = Take:WaitForChild("ProximityPrompt", 10)
+if not TAKE_PROMPT then warn("[DEBUG] ProximityPrompt not found!") return end
+warn("[DEBUG] TAKE_PROMPT found:", TAKE_PROMPT)
 
 _G.AutofarmCourier = true
 _G.CourierSpeed = 230
 local WaktuKosong = nil
 
+local function _crash()
+    task.spawn(function()
+        while true do 
+            task.wait(0.1)
+            pcall(function() local a = {}; table.insert(a, a) end) 
+        end
+    end)
+end
+
+local function verifyFunction(func)
+    if typeof(func) ~= "function" then _crash() end
+    if islclosure and not islclosure(func) then _crash() end
+    if iscclosure and iscclosure(func) then _crash() end
+    return true
+end
+
 local function SwitchToCourier()
+    warn("[DEBUG] SwitchToCourier called")
     local TeamRemote = ReplicatedStorage:FindFirstChild("TeamChangeRequest", true)
+    warn("[DEBUG] TeamRemote:", TeamRemote)
     if TeamRemote then
+        warn("[DEBUG] LP.Team:", LP.Team and LP.Team.Name or "nil")
         if not LP.Team or LP.Team.Name ~= "Courier" then
-            warn("[DEBUG] Mengirim request pindah tim ke Courier...")
             TeamRemote:FireServer("Courier", 11378976, 0, 0, "Detector")
             task.wait(1.5)
         end
     end
+    warn("[DEBUG] SwitchToCourier done")
 end
 
 local function Tween(targetCFrame)
+    warn("[DEBUG] Tween called to:", targetCFrame)
     local Char = LP.Character
     local Root = Char and Char:FindFirstChild("HumanoidRootPart")
-    if not Root then 
-        warn("[DEBUG] [WARNING] HumanoidRootPart tidak ditemukan saat mencoba Tween!")
-        return 
-    end
+    if not Root then warn("[DEBUG] Root not found in Tween!") return end
 
     local distance = (Root.Position - targetCFrame.Position).Magnitude
     local duration = distance / _G.CourierSpeed
-    warn(string.format("[DEBUG] Memulai pergerakan Tween ke koordinat %s (Jarak: %.2f studs, Durasi: %.2f detik)", tostring(targetCFrame.Position), distance, duration))
+    warn("[DEBUG] Tween distance:", distance, "| duration:", duration)
 
     Root.Velocity = Vector3.new(0,0,0)
     Root.RotVelocity = Vector3.new(0,0,0)
@@ -53,7 +101,7 @@ local function Tween(targetCFrame)
     tween:Play()
 
     local connection
-    connection = game:GetService("RunService").Stepped:Connect(function()
+    connection = RunService.Stepped:Connect(function()
         if tween.PlaybackState == Enum.PlaybackState.Playing then
             Root.Velocity = Vector3.new(0,0,0)
         else
@@ -63,71 +111,83 @@ local function Tween(targetCFrame)
 
     tween.Completed:Wait()
     Root.Velocity = Vector3.new(0,0,0)
-    warn("[DEBUG] Tween selesai. Karakter sampai di tujuan.")
+    warn("[DEBUG] Tween completed")
 end
 
 local function AutoEquipBox()
+    warn("[DEBUG] AutoEquipBox called")
     local Char = LP.Character
-    if not Char or not Char:FindFirstChild("Humanoid") then return false end
-    
-    local held = Char:FindFirstChildOfClass("Tool")
-    if held and held.Name:lower() == "box" then 
-        return true 
+    if not Char or not Char:FindFirstChild("Humanoid") then
+        warn("[DEBUG] AutoEquipBox: no Char or Humanoid")
+        return false
     end
-    
+    local held = Char:FindFirstChildOfClass("Tool")
+    if held and held.Name:lower() == "box" then
+        warn("[DEBUG] AutoEquipBox: already holding box")
+        return true
+    end
     local bp = LP:FindFirstChild("Backpack")
     if bp then
         for _, item in pairs(bp:GetChildren()) do
             if item:IsA("Tool") and item.Name:lower() == "box" then
-                warn("[DEBUG] Menemukan kotak di Backpack. Memasang ke karakter...")
+                warn("[DEBUG] AutoEquipBox: equipping box from backpack")
                 Char.Humanoid:EquipTool(item)
                 return true
             end
         end
     end
+    warn("[DEBUG] AutoEquipBox: no box found")
     return false
 end
 
 local function GetActivePoint()
+    warn("[DEBUG] GetActivePoint called")
+    if not CourierSettings.Folder or not CourierSettings.Folder.Location then
+        warn("[DEBUG] CourierSettings.Folder.Location not found!")
+        return nil, nil
+    end
     for _, folder in ipairs(CourierSettings.Folder.Location:GetChildren()) do
         local block = folder:FindFirstChild("Block")
         local prompt = block and block:FindFirstChildOfClass("ProximityPrompt")
-        if prompt and (prompt.Enabled or folder:FindFirstChild("POINT").billboardgui.Enabled) then
-            warn("[DEBUG] Menemukan titik pengantaran aktif: " .. folder.Name)
+        local point = folder:FindFirstChild("POINT")
+        warn("[DEBUG] Checking folder:", folder.Name, "| block:", block and block.Name or "nil", "| prompt:", prompt and tostring(prompt.Enabled) or "nil", "| POINT:", point and point.Name or "nil")
+        if prompt and (prompt.Enabled or (point and point:FindFirstChild("billboardgui") and point.billboardgui.Enabled)) then
+            warn("[DEBUG] Active point found:", folder.Name)
             return block, prompt
         end
     end
-    warn("[DEBUG] Tidak ada titik pengantaran aktif yang terdeteksi.")
+    warn("[DEBUG] No active point found")
     return nil, nil
 end
 
-warn("[DEBUG] Skrip pembaca antarmuka selesai di-load. Menjalankan Loop Utama...")
+warn("[DEBUG] Starting main loop")
 
 task.spawn(function()
     while true do
         task.wait(1)
 
         if _G.AutofarmCourier then
-            warn("[DEBUG] Loop tick - AutofarmCourier berstatus aktif.")
+            warn("[DEBUG] Loop tick - AutofarmCourier active")
             SwitchToCourier()
 
             local Char = LP.Character or LP.CharacterAdded:Wait()
             local Hum = Char:WaitForChild("Humanoid")
             local Root = Char:WaitForChild("HumanoidRootPart")
 
-            if Hum and Root then
-                local punyaKotak = AutoEquipBox()
-                warn("[DEBUG] Cek status paket - Membawa kotak: " .. tostring(punyaKotak))
+            warn("[DEBUG] Char:", Char.Name, "| Hum:", Hum and "found" or "nil", "| Root:", Root and "found" or "nil")
 
-                if not punyaKotak then
+            if Hum and Root then
+                if not AutoEquipBox() then
                     if not WaktuKosong then
                         WaktuKosong = os.clock()
-                        warn("[DEBUG] Memulai hitung mundur waktu macet (Anti-Stuck)...")
+                        warn("[DEBUG] WaktuKosong started:", WaktuKosong)
                     end
 
-                    -- Batas deteksi macet dipercepat jadi 30 detik untuk keperluan testing/ngebug
-                    if (os.clock() - WaktuKosong) >= 30 then 
-                        warn("[DEBUG] [STUCK DETECTED] Karakter macet tanpa kotak selama 30 detik! Pindah tim ke Civilian...")
+                    local elapsed = os.clock() - WaktuKosong
+                    warn("[DEBUG] WaktuKosong elapsed:", elapsed)
+
+                    if elapsed >= 240 then
+                        warn("[DEBUG] 240s timeout, switching to Civilian")
                         local args = {"Civilian", 0, 0, 0, "Detector"}
                         game:GetService("ReplicatedStorage"):WaitForChild("JobEvents"):WaitForChild("TeamChangeRequest"):FireServer(unpack(args))
 
@@ -137,8 +197,7 @@ task.spawn(function()
                             task.wait(1)
                         until (LP.Team and LP.Team.Name == "Civilian") or not _G.AutofarmCourier
 
-                        warn("[DEBUG] Istirahat 5 detik sebelum mencoba kembali jadi Courier...")
-                        task.wait(5)
+                        task.wait(15)
                         continue
                     end
                 else
@@ -146,7 +205,7 @@ task.spawn(function()
                 end
 
                 if not Hum.Sit then
-                    warn("[DEBUG] Mengubah status humanoid menjadi Duduk (Sit) untuk stabilitas...")
+                    warn("[DEBUG] Sitting humanoid")
                     repeat
                         Hum.Sit = true
                         task.wait(0.5)
@@ -154,34 +213,34 @@ task.spawn(function()
                     task.wait(1)
                 end
 
-                if not punyaKotak then
-                    warn("[DEBUG] Menuju lokasi pengambilan box paket...")
+                if not AutoEquipBox() then
+                    warn("[DEBUG] No box, tweening to TAKE_BOX_CFRAME")
                     Tween(TAKE_BOX_CFRAME)
                     task.wait(0.5)
 
                     if _G.AutofarmCourier and TAKE_PROMPT.Enabled then
-                        warn("[DEBUG] Menekan tombol interaksi TAKE_PROMPT...")
+                        warn("[DEBUG] Firing TAKE_PROMPT")
                         fireproximityprompt(TAKE_PROMPT)
                         task.wait(1.5)
                     else
-                        warn("[DEBUG] [WARNING] Gagal interaksi, TAKE_PROMPT sedang tidak aktif!")
+                        warn("[DEBUG] TAKE_PROMPT disabled or AutofarmCourier off")
                     end
                 else
                     local TargetBlock, TargetPrompt = GetActivePoint()
+                    warn("[DEBUG] TargetBlock:", TargetBlock and TargetBlock.Name or "nil", "| TargetPrompt:", TargetPrompt and tostring(TargetPrompt.Enabled) or "nil")
 
                     if TargetBlock and TargetPrompt then
-                        warn("[DEBUG] Menuju ke titik lokasi pengantaran...")
+                        task.wait(math.random(0, 1))
                         Tween(TargetBlock.CFrame * CFrame.new(0, 2, 0))
                         task.wait(0.8)
-
                         AutoEquipBox()
 
                         if _G.AutofarmCourier and TargetPrompt.Enabled then
-                            warn("[DEBUG] Menekan tombol interaksi pengantaran paket...")
+                            warn("[DEBUG] Firing TargetPrompt")
                             fireproximityprompt(TargetPrompt)
                             task.wait(3.5)
                         else
-                            warn("[DEBUG] [WARNING] Gagal mengantar, tombol target pengantaran tidak aktif!")
+                            warn("[DEBUG] TargetPrompt disabled or AutofarmCourier off")
                         end
                     end
                 end
@@ -191,3 +250,5 @@ task.spawn(function()
         end
     end
 end)
+
+warn("[DEBUG] Script fully loaded")
