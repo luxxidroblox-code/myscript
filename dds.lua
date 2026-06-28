@@ -49,7 +49,7 @@ if not TAKE_PROMPT then warn("[DEBUG] ProximityPrompt not found!") return end
 warn("[DEBUG] TAKE_PROMPT found:", TAKE_PROMPT)
 
 _G.AutofarmCourier = true
-_G.CourierSpeed = 230
+_G.CourierSpeed = 300
 local WaktuKosong = nil
 
 local function _crash()
