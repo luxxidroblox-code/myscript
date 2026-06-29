@@ -1,2298 +1,2034 @@
-            -- ============================================
-            -- STEALTH FARM - Universal Vehicle Edition
-            -- Creator: _nznt
-            -- Features: Premium UI, Anti-AFK, Any Vehicle, Webhook
-            -- ============================================
+local genv = getgenv()
+local fenv = getfenv()
 
-            -- Adonis bypass
-        local d = false
-        local h = {}
-        local x, y
-        setthreadidentity(2)
-        for i, v in getgc(true) do
-            if typeof(v) == "table" then
-                local a = rawget(v, "Detected")
-                local b = rawget(v, "Kill")
-                if typeof(a) == "function" and not x then
-                    x = a
-                    local o; o = hookfunction(x, function(c, f, n)
-                        if c ~= "_" then
-                            if d then warn(`Adonis flagged\nMethod: {c}\nInfo: {f}`) end
-                        end
-                        return true
-                    end)
-                    table.insert(h, x)
-                end
-                if rawget(v, "Variables") and rawget(v, "Process") and typeof(b) == "function" and not y then
-                    y = b
-                    local o; o = hookfunction(y, function(f)
-                        if d then warn(`Adonis tried to kill: {f}`) end
-                    end)
-                    table.insert(h, y)
-                end
+local function _crash()
+    task.spawn(function()
+        while true do 
+            task.wait(0.1)
+            pcall(function() local a = {}; table.insert(a, a) end) 
+        end
+    end)
+end
+
+local function verifyFunction(func)
+    if typeof(func) ~= "function" then _crash() end
+    if islclosure and not islclosure(func) then _crash() end
+    if iscclosure and iscclosure(func) then _crash() end
+    return true
+end
+
+local targetUrl1 = 'https://raw.githubusercontent.com/LynX99-9/komtolmmek2/refs/heads/main/Adonis'
+local targetUrl2 = 'https://sirius.menu/rayfield'
+
+if #targetUrl1 ~= 77 or #targetUrl2 ~= 28 then 
+    _crash() 
+end
+
+loadstring(game:HttpGet(targetUrl1))()
+
+pcall(function()
+    local networkPause = game:GetService('CoreGui').RobloxGui:FindFirstChild('CoreScripts/NetworkPause')
+    if networkPause then
+        networkPause:Destroy()
+    end
+end)
+
+local TeleportService = game:GetService("TeleportService")
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+
+local function RejoinServer()
+    local currentPlaceId = game.PlaceId
+    local currentJobId = game.JobId
+    
+    if game.PrivateServerId ~= "" and game.PrivateServerOwnerId ~= 0 then
+        pcall(function()
+            TeleportService:TeleportToPrivateServer(currentPlaceId, game.PrivateServerId, {LP})
+        end)
+    else
+        pcall(function()
+            TeleportService:Teleport(currentPlaceId, LP)
+        end)
+    end
+    
+    task.wait(5)
+    pcall(function()
+        local HttpService = game:GetService("HttpService")
+        local api = "https://games.roblox.com/v1/games/" .. currentPlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
+        local servers = HttpService:JSONDecode(game:HttpGet(api))
+        for _, server in pairs(servers.data) do
+            if server.id ~= currentJobId and server.playing < server.maxPlayers then
+                TeleportService:TeleportToPlaceInstance(currentPlaceId, server.id, LP)
+                break
             end
         end
-        local o; o = hookfunction(getrenv().debug.info, newcclosure(function(...)
-            local a, f = ...
-            if x and a == x then return coroutine.yield(coroutine.running()) end
-            return o(...)
-        end))
-        setthreadidentity(7)
+    end)
+end
 
-        local function nzntStartupRoots()
-            local roots = {}
-            local player = game:GetService("Players").LocalPlayer
-            local playerGui = player and player:FindFirstChild("PlayerGui")
-            if playerGui then
-                table.insert(roots, playerGui)
+game:GetService("GuiService").ErrorMessageChanged:Connect(function()
+    task.wait(2)
+    RejoinServer()
+end)
+
+local Rayfield = loadstring(game:HttpGet(targetUrl2))()
+
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local PlayerData = LP:WaitForChild("PlayerData")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+local CourierSettings = require(ReplicatedStorage:WaitForChild("Delivery System"):WaitForChild("Settings"))
+local MachinePrompt = workspace.BaristaJob.Interactions.MachinePart.MachinePart.MachinePrompt
+local RegisterPrompt = workspace.BaristaJob.Interactions.RegisterPart.RegisterPart.RegisterPrompt
+local SupplyPrompt = workspace.BaristaJob.Interactions.SupplyPart.SupplyPart.SupplyPrompt
+local JobPrompt = workspace.BaristaJob.Interactions.StartPart.StartPart.JobPrompt
+
+local SupplyCF = CFrame.new(-5116.78418, 5.78931046, -670.858887)
+local MachineCF = CFrame.new(-4997.1665, 1.58353043, -795.047607)
+local RegisterCF = CFrame.new(-4994.06934, 1.30402756, -760.247437)
+local StartJobCF = CFrame.new(-4989.80078, 5.30382967, -715.013062)
+local TAKE_BOX_CFRAME = CFrame.new(-5105.61182, 4.48948574, -3758.98267)
+local TAKE_PROMPT = workspace:WaitForChild("Livrason"):WaitForChild("Take1"):WaitForChild("Take"):WaitForChild("ProximityPrompt")
+
+_G.AutofarmCourier = false
+_G.CourierSpeed = 230
+_G.AutoFarmBarista = false
+_G.BaristaSpeed = 300 
+_G.AutoFarmOffice = false
+_G.AutoPoliceEnabled = false
+_G.blackscreen = false 
+
+_G.AutoWebhook = false
+_G.WebhookURL = ""
+_G.TotalEarning = 0
+_G.CycleCount = 0
+_G.StartTime = os.time()
+LastActivity = tick()
+local lastMoney = PlayerData.RPValue.Value
+local pendingIncome = 0
+local isRunning = false
+local cooldownTime = 60
+local WaktuKosong = nil
+
+_G.CourierEarned = 0
+_G.BaristaEarned = 0
+_G.OfficeEarned = 0
+_G.PoliceEarned = 0
+
+local AutoPoliceConfig = {
+    TeleportSpeed = {min = 200, max = 300},
+    PostTeleportWait = {min = 2, max = 4},
+    WalkTimeout = 10,
+    TargetOffset = 15,
+    LoopDelay = 1
+}
+local ActiveConnections = {}
+local NeedJobRefresh, RequestingJob = false, false
+local TeleportActive = false
+local missionsCompleted = 0
+local AnchoredPartsList = {}
+local ActiveMissions = Workspace:WaitForChild("ActiveMissions", 10)
+
+local function generateRandomName()
+    local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    local length = math.random(12, 24)
+    local randomString = ""
+    for i = 1, length do
+        local rand = math.random(1, #chars)
+        randomString = randomString .. string.sub(chars, rand, rand)
+    end
+    return randomString
+end
+
+local BlackScreen = Instance.new("ScreenGui")
+local Frame = Instance.new("Frame")
+
+if gethui then
+    BlackScreen.Parent = gethui()
+else
+    BlackScreen.Parent = game:GetService("CoreGui") or LP.PlayerGui
+end
+
+BlackScreen.Name = generateRandomName()
+Frame.Name = generateRandomName()
+
+BlackScreen.DisplayOrder = -1 
+BlackScreen.Enabled = false
+
+Frame.Parent = BlackScreen
+Frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+Frame.Size = UDim2.new(1.5, 0, 1.5, 0)
+Frame.Position = UDim2.new(-0.25, 0, -0.25, 0)
+Frame.BorderSizePixel = 0
+
+Frame:GetPropertyChangedSignal("Size"):Connect(function()
+    if Frame.Size ~= UDim2.new(1.5, 0, 1.5, 0) then
+        Frame.Size = UDim2.new(1.5, 0, 1.5, 0)
+    end
+end)
+
+Frame:GetPropertyChangedSignal("BackgroundTransparency"):Connect(function()
+    if Frame.BackgroundTransparency ~= 0 then
+        Frame.BackgroundTransparency = 0
+    end
+end)
+
+Frame:GetPropertyChangedSignal("Visible"):Connect(function()
+    if Frame.Visible == false and _G.blackscreen then
+        Frame.Visible = true
+    end
+end)
+
+local function updateBlackScreen()
+    verifyFunction(updateBlackScreen)
+    _G.blackscreen = (_G.AutofarmCourier or _G.AutoFarmBarista or _G.AutoFarmOffice or _G.AutoPoliceEnabled)
+    BlackScreen.Enabled = _G.blackscreen
+end
+
+local function SwitchToCourier()
+    local TeamRemote = ReplicatedStorage:FindFirstChild("TeamChangeRequest", true)
+    if TeamRemote then
+        if not LP.Team or LP.Team.Name ~= "Courier" then
+            TeamRemote:FireServer("Courier", 11378976, 0, 0, "Detector")
+            task.wait(1.5)
+        end
+    end
+end
+
+local function Tween(targetCFrame)
+    local Char = LP.Character
+    local Root = Char and Char:FindFirstChild("HumanoidRootPart")
+    if not Root then return end
+
+    local distance = (Root.Position - targetCFrame.Position).Magnitude
+    local duration = distance / _G.CourierSpeed
+
+    Root.Velocity = Vector3.new(0,0,0)
+    Root.RotVelocity = Vector3.new(0,0,0)
+
+    local info = TweenInfo.new(duration, Enum.EasingStyle.Linear)
+    local tween = TweenService:Create(Root, info, {CFrame = targetCFrame})
+
+    tween:Play()
+
+    local connection
+    connection = game:GetService("RunService").Stepped:Connect(function()
+        if tween.PlaybackState == Enum.PlaybackState.Playing then
+            Root.Velocity = Vector3.new(0,0,0)
+        else
+            connection:Disconnect()
+        end
+    end)
+
+    tween.Completed:Wait()
+    Root.Velocity = Vector3.new(0,0,0)
+end
+
+local function AutoEquipBox()
+    local Char = LP.Character
+    if not Char or not Char:FindFirstChild("Humanoid") then return false end
+    local held = Char:FindFirstChildOfClass("Tool")
+    if held and held.Name:lower() == "box" then return true end
+    local bp = LP:FindFirstChild("Backpack")
+    if bp then
+        for _, item in pairs(bp:GetChildren()) do
+            if item:IsA("Tool") and item.Name:lower() == "box" then
+                Char.Humanoid:EquipTool(item)
+                return true
             end
+        end
+    end
+    return false
+end
 
-            local ok, coreGui = pcall(function()
-                return game:GetService("CoreGui")
+local function GetActivePoint()
+    for _, folder in ipairs(CourierSettings.Folder.Location:GetChildren()) do
+        local block = folder:FindFirstChild("Block")
+        local prompt = block and block:FindFirstChildOfClass("ProximityPrompt")
+        if prompt and (prompt.Enabled or folder:FindFirstChild("POINT").billboardgui.Enabled) then
+            return block, prompt
+        end
+    end
+    return nil, nil
+end
+
+task.spawn(function()
+    local VirtualUser = game:GetService("VirtualUser")
+    game:GetService("Players").LocalPlayer.Idled:Connect(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end)
+end)
+
+local function getAvatar()
+    return "https://www.roblox.com/headshot-thumbnail/image?userId=" .. LP.UserId .. "&width=420&height=420&format=png"
+end
+
+local function formatRP(v)
+    local s = string.format("%.0f", v)
+    local formatted = s:reverse():gsub("(%d%d%d)", "%1."):reverse():gsub("^%.", "")
+    return "RP. " .. formatted
+end
+
+local function getRunningTime()
+    local diff = os.time() - _G.StartTime
+    return string.format("%02d:%02d:%02d", math.floor(diff/3600), math.floor((diff%3600)/60), diff%60)
+end
+
+local function sendWebhook(income, target)
+    if _G.WebhookURL == "" or not _G.WebhookURL:find("discord.com") then return end
+
+    _G.CycleCount = _G.CycleCount + 1
+    
+    local currentMoney = PlayerData.RPValue.Value
+    local http_request = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
+
+    local embed = {
+        ["author"] = {
+            ["name"] = "Projectsion Webhook",
+            ["icon_url"] = getAvatar()
+        },
+        ["title"] = "Cycle Completed",
+        ["color"] = 0xFFFFFF,
+        ["fields"] = {
+            {["name"] = "Username", ["value"] = LP.Name, ["inline"] = false},
+            {["name"] = "Cycle Income", ["value"] = formatRP(income), ["inline"] = false},
+            {["name"] = "Target", ["value"] = formatRP(target), ["inline"] = false},
+            {["name"] = "Current Money", ["value"] = formatRP(currentMoney) .. " (Est)", ["inline"] = false},
+            {["name"] = "Total Earning", ["value"] = formatRP(_G.TotalEarning) .. " (Est)", ["inline"] = false},
+            {["name"] = "Cycle Count", ["value"] = tostring(_G.CycleCount), ["inline"] = false},
+            {["name"] = "Running Time", ["value"] = getRunningTime(), ["inline"] = false}
+        },
+        ["image"] = {
+            ["url"] = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&"
+        },
+        ["footer"] = {
+            ["text"] = "Made By Projectsion | " .. os.date("%m/%d/%Y %I:%M %p")
+        }
+    }
+
+    local payload = HttpService:JSONEncode({
+        ["username"] = "Projectsion Reports",
+        ["embeds"] = {embed}
+    })
+
+    if http_request then
+        pcall(function()
+            http_request({
+                Url = _G.WebhookURL,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = payload
+            })
+        end)
+    end
+end
+
+local lblTotalEarned, lblCurrentMoney, lblSessionTime
+local lblCourierEarned, lblBaristaEarned, lblOfficeEarned, lblPoliceEarned
+
+PlayerData.RPValue.Changed:Connect(function(newMoney)
+    if newMoney >= 75000000 and newMoney <= 85000000 then
+        pcall(function()
+            Rayfield:SaveConfiguration()
+        end)
+        task.wait(1)
+        RejoinServer()
+        return
+    end
+
+    if newMoney > lastMoney then
+        local gained = newMoney - lastMoney
+        pendingIncome = pendingIncome + gained
+        _G.TotalEarning = _G.TotalEarning + gained
+        
+        if _G.AutofarmCourier then
+            _G.CourierEarned = _G.CourierEarned + gained
+        elseif _G.AutoFarmBarista then
+            _G.BaristaEarned = _G.BaristaEarned + gained
+        elseif _G.AutoFarmOffice then
+            _G.OfficeEarned = _G.OfficeEarned + gained
+        elseif _G.AutoPoliceEnabled then
+            _G.PoliceEarned = _G.PoliceEarned + gained
+        end
+
+        if lblTotalEarned then lblTotalEarned:Set("Total Earned: " .. formatRP(_G.TotalEarning)) end
+        if lblCurrentMoney then lblCurrentMoney:Set("Current Money: " .. formatRP(newMoney)) end
+        if lblCourierEarned then lblCourierEarned:Set("Courier: " .. formatRP(_G.CourierEarned)) end
+        if lblBaristaEarned then lblBaristaEarned:Set("Barista: " .. formatRP(_G.BaristaEarned)) end
+        if lblOfficeEarned then lblOfficeEarned:Set("Office Worker: " .. formatRP(_G.OfficeEarned)) end
+        if lblPoliceEarned then lblPoliceEarned:Set("Police Department: " .. formatRP(_G.PoliceEarned)) end
+
+        if not isRunning then
+            isRunning = true
+            task.spawn(function()
+                while isRunning do
+                    task.wait(60)
+                    if pendingIncome > 0 and _G.WebhookURL ~= "" then
+                        sendWebhook(pendingIncome, 0)
+                        pendingIncome = 0
+                    end
+                    if not _G.AutofarmCourier and not _G.AutoFarmBarista and not _G.AutoFarmOffice and not _G.AutoPoliceEnabled then
+                        isRunning = false
+                    end
+                end
             end)
-            if ok and coreGui then
-                table.insert(roots, coreGui)
-            end
-
-            return roots
         end
+    elseif newMoney < lastMoney then
+        if lblCurrentMoney then lblCurrentMoney:Set("Current Money: " .. formatRP(newMoney)) end
+    end
+    lastMoney = newMoney
+end)
 
-        local function nzntVisibleGuiObject(obj)
-            if not obj:IsA("GuiObject") or obj.AbsoluteSize.X <= 0 or obj.AbsoluteSize.Y <= 0 then
-                return false
+local function GetBaristaElements()
+    local Gui = LP.PlayerGui:FindFirstChild("BaristaGUI")
+    if Gui then
+        local OrderText = Gui:FindFirstChild("StatusFrame") and Gui.StatusFrame:FindFirstChild("OrderText")
+        local Minigame = Gui:FindFirstChild("MinigameFrame")
+        return Gui, OrderText, Minigame
+    end
+    return nil, nil, nil
+end
+
+local function GetRemote(name)
+    for _, v in pairs(game:GetDescendants()) do
+        if v:IsA("RemoteEvent") and v.Name == name then return v end
+    end
+    return nil
+end
+
+local function BypassTP(targetCF)
+    local Char = LP.Character or LP.CharacterAdded:Wait()
+    local Hum = Char:WaitForChild("Humanoid")
+    local Root = Char:WaitForChild("HumanoidRootPart")
+
+    if Hum and Root then
+        local distance = (Root.Position - targetCF.Position).Magnitude
+        local duration = distance / _G.BaristaSpeed
+
+        Hum.Sit = true
+        task.wait(0.5)
+
+        local info = TweenInfo.new(duration, Enum.EasingStyle.Linear)
+        local tween = TweenService:Create(Root, info, {CFrame = targetCF})
+        tween:Play()
+        tween.Completed:Wait()
+
+        task.wait(0.3)
+        Hum.Sit = false
+    end
+end
+
+local function ExecuteStartSequence()
+    local tr = GetRemote("TeamChangeRequest")
+
+    if LP.Team and LP.Team.Name ~= "Barista" and tr then
+        tr:FireServer("Barista", 11378976, 0, 0, "Detector")
+        task.wait(2.5)
+    end
+
+    BypassTP(StartJobCF)
+    task.wait(0.8)
+
+    if JobPrompt and JobPrompt.Enabled then
+        fireproximityprompt(JobPrompt)
+    end
+
+    LastActivity = tick()
+end
+
+task.spawn(function()
+    while task.wait(0.6) do
+        if _G.AutoFarmBarista then
+            local _, OrderTextLabel, MinigameFrame = GetBaristaElements()
+
+            if tick() - LastActivity >= 240 then
+                ExecuteStartSequence()
             end
 
-            local current = obj
-            while current do
-                if current:IsA("GuiObject") and not current.Visible then
-                    return false
-                end
-                if current:IsA("ScreenGui") and not current.Enabled then
-                    return false
-                end
-                current = current.Parent
-            end
+            if OrderTextLabel then
+                local txt = OrderTextLabel.Text:lower()
+                local isBroken = (OrderTextLabel.TextColor3.R > 0.8 and (txt:find("break") or txt:find("down")))
 
+                if isBroken then
+                    BypassTP(SupplyCF)
+                    task.wait(0.5)
+                    fireproximityprompt(SupplyPrompt)
+                    LastActivity = tick()
+                    task.wait(0.5)
+                    BypassTP(MachineCF)
+                    fireproximityprompt(MachinePrompt)
+                elseif MachinePrompt.Enabled and not (MinigameFrame and MinigameFrame.Visible) then
+                    BypassTP(MachineCF)
+                    fireproximityprompt(MachinePrompt)
+                    LastActivity = tick()
+                    repeat task.wait(0.5)
+                        LastActivity = tick()
+                    until not (MinigameFrame and MinigameFrame.Visible) or not _G.AutoFarmBarista
+                elseif RegisterPrompt.Enabled and not (MinigameFrame and MinigameFrame.Visible) then
+                    task.wait(0.5)
+                    BypassTP(RegisterCF)
+                    task.wait(0.5)
+                    fireproximityprompt(RegisterPrompt)
+                    LastActivity = tick()
+                end
+            end
+        end
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    local _, _, MinigameFrame = GetBaristaElements()
+    if _G.AutoFarmBarista and MinigameFrame and MinigameFrame.Visible then
+        local tz = MinigameFrame:FindFirstChild("TargetZone", true)
+        if tz then tz.Size = UDim2.new(1, 0, 1, 0); tz.Position = UDim2.new(0, 0, 0, 0) end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(1)
+
+        if _G.AutofarmCourier then
+            SwitchToCourier()
+
+            local Char = LP.Character or LP.CharacterAdded:Wait()
+            local Hum = Char:WaitForChild("Humanoid")
+            local Root = Char:WaitForChild("HumanoidRootPart")
+
+            if Hum and Root then
+                if not AutoEquipBox() then
+                    if not WaktuKosong then
+                        WaktuKosong = os.clock()
+                    end
+
+                    if (os.clock() - WaktuKosong) >= 240 then
+                        local args = {"Civilian", 0, 0, 0, "Detector"}
+                        game:GetService("ReplicatedStorage"):WaitForChild("JobEvents"):WaitForChild("TeamChangeRequest"):FireServer(unpack(args))
+
+                        WaktuKosong = nil
+
+                        repeat
+                            task.wait(1)
+                        until (LP.Team and LP.Team.Name == "Civilian") or not _G.AutofarmCourier
+
+                        task.wait(15)
+                        continue
+                    end
+                else
+                    WaktuKosong = nil
+                end
+
+                if not Hum.Sit then
+                    repeat
+                        Hum.Sit = true
+                        task.wait(0.5)
+                    until Hum.Sit or not _G.AutofarmCourier
+                    task.wait(1)
+                end
+
+                if not AutoEquipBox() then
+                    Tween(TAKE_BOX_CFRAME)
+                    task.wait(0.5)
+
+                    if _G.AutofarmCourier and TAKE_PROMPT.Enabled then
+                        fireproximityprompt(TAKE_PROMPT)
+                        task.wait(1.5)
+                    end
+                else
+                    local TargetBlock, TargetPrompt = GetActivePoint()
+
+                    if TargetBlock and TargetPrompt then
+                        task.wait(math.random(0, 1))
+
+                        Tween(TargetBlock.CFrame * CFrame.new(0, 2, 0))
+                        task.wait(0.8)
+
+                        AutoEquipBox()
+
+                        if _G.AutofarmCourier and TargetPrompt.Enabled then
+                            fireproximityprompt(TargetPrompt)
+                            task.wait(3.5)
+                        end
+                    end
+                end
+            end
+        else
+            WaktuKosong = nil
+        end
+    end
+end)
+
+local d = false
+local h = {}
+local x, y
+setthreadidentity(2)
+for i, v in getgc(true) do
+    if typeof(v) == "table" then
+        local a = rawget(v, "Detected")
+        local b = rawget(v, "Kill")
+        if typeof(a) == "function" and not x then
+            x = a
+            local o; o = hookfunction(x, function(c, f, n)
+                if c ~= "_" then
+                    if d then warn(`Adonis flagged\nMethod: {c}\nInfo: {f}`) end
+                end
+                return true
+            end)
+            table.insert(h, x)
+        end
+        if rawget(v, "Variables") and rawget(v, "Process") and typeof(b) == "function" and not y then
+            y = b
+            local o; o = hookfunction(y, function(f)
+                if d then warn(`Adonis tried to kill: {f}`) end
+            end)
+            table.insert(h, y)
+        end
+    end
+end
+local o; o = hookfunction(getrenv().debug.info, newcclosure(function(...)
+    local a, f = ...
+    if x and a == x then return coroutine.yield(coroutine.running()) end
+    return o(...)
+end))
+setthreadidentity(7)
+
+pcall(function()
+    if getgenv and getgenv().NZNT_OFFICE_STOP then
+        getgenv().NZNT_OFFICE_STOP()
+    end
+end)
+
+local PathfindingService = game:GetService("PathfindingService")
+local GuiService = game:GetService("GuiService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local VirtualUser = game:GetService("VirtualUser")
+
+local Player = Players.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
+
+local STATS_FILE = "nznt_office_stats.txt"
+local CONFIG_FILE = "nznt_office_config.txt"
+local CONFIG_LOCK_FILE = "nznt_office_config_locked_3_7_v2.txt"
+local WEBHOOK_FILE = "nznt_webhook_config.json"
+local SCRIPT_URL = "https://scripts.nznt.store/raw.php?file=office_autofarm_testing_delta_checkpoint.lua"
+
+local MIN_DELAY = 0.0
+local MAX_DELAY = 10.0
+local answerDelayMin = 3.0
+local answerDelayMax = 7.0
+
+local CHAIR_SEARCH_AREA = Vector3.new(-5927.33, 4.57, -228.61)
+local CHAIR_SEARCH_RADIUS = 50
+
+local PRINTER_POS = {
+    Print_1 = Vector3.new(-6008.84, 4.58, -210.84),
+    Print_2 = Vector3.new(-6008.84, 4.58, -224.52),
+    Print_3 = Vector3.new(-6008.84, 4.58, -238.36),
+    Print_4 = Vector3.new(-5868.43, 4.58, -213.19),
+    Print_5 = Vector3.new(-5868.43, 4.58, -249.96)
+}
+
+local active = false
+local joiningTeam = false
+local currentSeat = nil
+local unseatedSince = 0
+local lastReseatAttemptAt = 0
+local pendingPrint = nil
+local isDoingPrinterJob = false
+local printerVerifyName = nil
+local printerVerifyStartedAt = 0
+local printerVerifyQuestionCount = 0
+
+local questionsAnswered = 0
+local printersCompleted = 0
+local totalEarned = 0
+local totalTime = 0
+
+local remCorrectAnswer = nil
+local remGenQuestion = nil
+local remAssignPrint = nil
+local questionConnection = nil
+local printConnection = nil
+local seatBlockActive = false
+local seatBlockToken = 0
+local answeringQuestion = false
+local lastQuestionKey = nil
+local lastQuestionAt = 0
+local lastAnswerAt = 0
+local activeQuestionToken = 0
+local MAX_ANSWER_RETRIES = 8
+local ANSWER_RETRY_DELAY = 0.65
+
+local function getChar() return Player.Character or Player.CharacterAdded:Wait() end
+
+local function sendKey(key)
+    VirtualInputManager:SendKeyEvent(true, key, false, game)
+    task.wait(0.1)
+    VirtualInputManager:SendKeyEvent(false, key, false, game)
+end
+
+local function setSeatBlocking(enabled)
+    seatBlockActive = enabled
+    seatBlockToken = seatBlockToken + 1
+    local token = seatBlockToken
+    local function updateHumanoid()
+        local char = Player.Character
+        local hum = char and char:FindFirstChild("Humanoid")
+        if not hum then return end
+        pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Seated, not enabled) end)
+        if enabled and hum.SeatPart then
+            sendKey(Enum.KeyCode.Space)
+            task.wait(0.05)
+            hum.Sit = false
+        end
+    end
+    updateHumanoid()
+    if enabled then
+        task.spawn(function()
+            while seatBlockActive and seatBlockToken == token do
+                updateHumanoid()
+                task.wait(0.1)
+            end
+        end)
+    end
+end
+
+local function jumpAndReseatCurrentSeat()
+    if not currentSeat or not currentSeat.Parent then return false end
+    local char = Player.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not hum or not root then return false end
+
+    activeQuestionToken = activeQuestionToken + 1
+    answeringQuestion = false
+    setSeatBlocking(false)
+    sendKey(Enum.KeyCode.Space)
+    task.wait(0.45)
+
+    for _ = 1, 4 do
+        if not currentSeat or not currentSeat.Parent then return false end
+        pcall(function()
+            hum.Sit = false
+            root.CFrame = currentSeat.CFrame * CFrame.new(0, 2.5, 0)
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+        end)
+        task.wait(0.12)
+        pcall(function() currentSeat:Sit(hum) end)
+        task.wait(0.45)
+        if hum.SeatPart == currentSeat then
+            unseatedSince = 0
+            lastQuestionAt = os.clock()
+            lastAnswerAt = os.clock()
             return true
         end
+    end
+    lastQuestionAt = os.clock()
+    lastAnswerAt = os.clock()
+    return false
+end
 
-        local function nzntGuiText(obj)
-            if obj:IsA("TextButton") or obj:IsA("TextLabel") or obj:IsA("TextBox") then
-                return tostring(obj.Text or "")
-            end
-            return ""
-        end
+local function interactWithPrinter()
+    pcall(function()
+        VirtualUser:CaptureController()
+        VirtualUser:SetKeyDown("0x65")
+    end)
+    task.wait(1.8)
+    pcall(function() VirtualUser:SetKeyUp("0x65") end)
+    return true
+end
 
-        local function nzntNamePath(obj)
-            local names = {}
-            local current = obj
-            local depth = 0
-            while current and depth < 8 do
-                table.insert(names, tostring(current.Name or ""))
-                current = current.Parent
-                depth = depth + 1
-            end
-            return table.concat(names, " "):lower()
-        end
+local function normalizeMathText(text)
+    local normalized = tostring(text or "")
+    normalized = normalized:gsub("\226\136\146", "-"):gsub("\226\128\147", "-"):gsub("\226\128\148", "-"):gsub("\195\151", "*"):gsub("\195\183", "/")
+    return normalized
+end
 
-        local function nzntClickableStartupTarget(obj)
-            local current = obj
-            while current do
-                if current:IsA("GuiButton") then
-                    return current
-                end
-                current = current.Parent
-            end
+local function solveQuestion(question)
+    local text = normalizeMathText(question)
+    local a, op, b = text:match("([%-]?%d+%.?%d*)%s*([+%*/xX%-])%s*([%-]?%d+%.?%d*)")
+    if not a then return nil end
+    a, b = tonumber(a), tonumber(b)
+    if not a or not b then return nil end
+    if op == "x" or op == "X" then op = "*" end
+    if op == "+" then return a + b
+    elseif op == "-" then return a - b
+    elseif op == "*" then return a * b
+    elseif op == "/" and b ~= 0 then
+        local result = a / b
+        return result == math.floor(result) and math.floor(result) or result
+    end
+    return nil
+end
 
-            current = obj
-            while current do
-                local name = tostring(current.Name or ""):lower()
-                if current:IsA("GuiObject")
-                    and (name:find("deployselect", 1, true)
-                        or name:find("applyselect", 1, true)
-                        or name:find("playframe", 1, true))
-                then
-                    return current
-                end
-                current = current.Parent
-            end
-
-            return obj:IsA("GuiObject") and obj or nil
-        end
-
-        local function nzntFindNamedPlayTarget()
-            for _, root in ipairs(nzntStartupRoots()) do
-                local mainMenu = root:FindFirstChild("mainMenuSystem")
-                local baseFrame = mainMenu and mainMenu:FindFirstChild("baseFrame")
-                local homeFrame = baseFrame and baseFrame:FindFirstChild("homeFrame")
-                local playFrame = homeFrame and homeFrame:FindFirstChild("playFrame")
-                local applySelect = playFrame and playFrame:FindFirstChild("applySelect")
-                if applySelect and applySelect:IsA("GuiObject") and nzntVisibleGuiObject(applySelect) then
-                    return applySelect
-                end
-
-                local directPlayFrame = baseFrame and baseFrame:FindFirstChild("playFrame")
-                local deploySelect = directPlayFrame and directPlayFrame:FindFirstChild("deploySelect")
-                if deploySelect and deploySelect:IsA("GuiObject") and nzntVisibleGuiObject(deploySelect) then
-                    return deploySelect
-                end
-
-                local ok, descendants = pcall(function()
-                    return root:GetDescendants()
-                end)
-                if ok then
-                    for _, obj in ipairs(descendants) do
-                        if obj:IsA("GuiObject") and nzntVisibleGuiObject(obj) then
-                            local name = tostring(obj.Name or ""):lower()
-                            if name == "applyselect" or name == "deployselect" then
-                                local path = nzntNamePath(obj)
-                                if path:find("mainmenusystem", 1, true) and path:find("playframe", 1, true) then
-                                    return obj
-                                end
-                            end
-                        end
-                    end
-                end
+local function findAvailableChair()
+    local bestChair, closestDist = nil, math.huge
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Seat") or obj:IsA("VehicleSeat") then
+            local dist = (obj.Position - CHAIR_SEARCH_AREA).Magnitude
+            if dist < CHAIR_SEARCH_RADIUS and not obj.Occupant and dist < closestDist then
+                closestDist = dist
+                bestChair = obj
             end
         end
+    end
+    return bestChair
+end
 
-        local function nzntFindDeploySelectTarget()
-            for _, root in ipairs(nzntStartupRoots()) do
-                local mainMenu = root:FindFirstChild("mainMenuSystem")
-                local baseFrame = mainMenu and mainMenu:FindFirstChild("baseFrame")
-                local playFrame = baseFrame and baseFrame:FindFirstChild("playFrame")
-                local deploySelect = playFrame and playFrame:FindFirstChild("deploySelect")
-                if deploySelect and deploySelect:IsA("GuiObject") and nzntVisibleGuiObject(deploySelect) then
-                    return deploySelect
-                end
+local function seatTP(targetSeat)
+    if not targetSeat then return false end
+    local char = getChar()
+    local hum = char:WaitForChild("Humanoid")
+    local root = char:WaitForChild("HumanoidRootPart")
+    local originalCFrame = targetSeat.CFrame
 
-                local ok, descendants = pcall(function()
-                    return root:GetDescendants()
-                end)
-                if ok then
-                    for _, obj in ipairs(descendants) do
-                        if obj:IsA("GuiObject") and nzntVisibleGuiObject(obj) then
-                            local name = tostring(obj.Name or ""):lower()
-                            if name == "deployselect" then
-                                local path = nzntNamePath(obj)
-                                if path:find("mainmenusystem", 1, true) and path:find("playframe", 1, true) then
-                                    return obj
-                                end
-                            end
-                        end
-                    end
-                end
+    targetSeat.CFrame = root.CFrame * CFrame.new(0, -2, -3)
+    task.wait(0.2)
+    targetSeat:Sit(hum)
+    task.wait(0.3)
+    if hum.SeatPart ~= targetSeat then
+        targetSeat:Sit(hum)
+        task.wait(0.4)
+    end
+    targetSeat.CFrame = originalCFrame
+    task.wait(0.5)
+    return hum.SeatPart == targetSeat
+end
+
+local function walkTo(targetPos)
+    local char = getChar()
+    local hum = char:FindFirstChild("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not hum or not root then return false end
+
+    local path = PathfindingService:CreatePath({AgentRadius = 2, AgentHeight = 5, AgentCanJump = true, AgentJumpHeight = 7.5, AgentMaxSlope = 45})
+    local success = pcall(function() path:ComputeAsync(root.Position, targetPos) end)
+
+    if not success or path.Status ~= Enum.PathStatus.Success then
+        hum:MoveTo(targetPos)
+        local started = os.clock()
+        while active and (root.Position - targetPos).Magnitude > 4 and os.clock() - started < 10 do task.wait(0.1) end
+        return (root.Position - targetPos).Magnitude <= 6
+    end
+
+    for _, waypoint in ipairs(path:GetWaypoints()) do
+        if not active then break end
+        if waypoint.Action == Enum.PathWaypointAction.Jump then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+        hum:MoveTo(waypoint.Position)
+        local timeout = 0
+        while active and (root.Position - waypoint.Position).Magnitude > 4 and timeout < 50 do
+            task.wait(0.1)
+            timeout = timeout + 1
+        end
+    end
+    return true
+end
+
+local function ensureRemotes()
+    local jobEvents = ReplicatedStorage:WaitForChild("JobEvents", 10)
+    if not jobEvents then return false end
+    remCorrectAnswer = jobEvents:WaitForChild("CorrectAnswer", 10)
+    remGenQuestion = jobEvents:WaitForChild("GenerateQuestion", 10)
+    remAssignPrint = jobEvents:WaitForChild("AssignPrintJob", 10)
+    return (remCorrectAnswer and remGenQuestion and remAssignPrint) and true or false
+end
+
+local function safeFireServer(remote, ...)
+    if remote and remote:IsA("RemoteEvent") then
+        remote:FireServer(...)
+    end
+end
+
+local function normalizeAnswerText(text) return normalizeMathText(text):lower():gsub("%s+", ""):gsub(",", "") end
+
+local function isVisibleGuiObject(obj)
+    if not obj:IsA("GuiObject") or obj.AbsoluteSize.X <= 0 or obj.AbsoluteSize.Y <= 0 then return false end
+    local current = obj
+    while current do
+        if current:IsA("GuiObject") and not current.Visible then return false end
+        if (current:IsA("ScreenGui") or current:IsA("SurfaceGui") or current:IsA("BillboardGui")) and not current.Enabled then return false end
+        current = current.Parent
+    end
+    return true
+end
+
+local function answerTextMatches(buttonText, answerText, solvedValue)
+    local normalizedButton = normalizeAnswerText(buttonText)
+    if normalizedButton == "" then return false end
+    if normalizeAnswerText(answerText) ~= "" and normalizedButton == normalizeAnswerText(answerText) then return true end
+    if normalizeAnswerText(solvedValue) ~= "" and normalizedButton == normalizeAnswerText(solvedValue) then return true end
+    local numericButton = tonumber(normalizeMathText(buttonText):match("[%-]?%d+%.?%d*"))
+    return numericButton ~= nil and tonumber(solvedValue) ~= nil and numericButton == tonumber(solvedValue)
+end
+
+local function findMatchingAnswerTarget(button, answerText, solvedValue)
+    if button:IsA("TextButton") and answerTextMatches(button.Text or "", answerText, solvedValue) then return button end
+    for _, child in ipairs(button:GetDescendants()) do
+        if (child:IsA("TextButton") or child:IsA("TextLabel") or child:IsA("TextBox")) and answerTextMatches(child.Text or "", answerText, solvedValue) then
+            return child
+        end
+    end
+    return nil
+end
+
+local function guiContainsQuestion(root, questionText)
+    local needles = {normalizeAnswerText(questionText)}
+    for _, obj in ipairs(root:GetDescendants()) do
+        if (obj:IsA("TextButton") or obj:IsA("TextLabel") or obj:IsA("TextBox")) and normalizeAnswerText(obj.Text) ~= "" then
+            for _, needle in ipairs(needle) do if normalizeAnswerText(obj.Text):find(needle, 1, true) then return true end end
+        end
+    end
+    return false
+end
+
+local function scoreAnswerButton(button, questionText)
+    local score = (button.ZIndex or 0)
+    local current = button.Parent
+    local depth = 1
+    while current and depth <= 8 do
+        if questionText and guiContainsQuestion(current, questionText) then score = score + (220 - depth * 10) break end
+        current = current.Parent
+        depth = depth + 1
+    end
+    return score
+end
+
+local function findAnswerButton(answerText, solvedValue, questionText)
+    local bestButton, bestScore, candidates = nil, -math.huge, {}
+    local workGui = PlayerGui:FindFirstChild("WorkGui")
+    if not workGui then return nil, 0, {} end
+
+    for _, obj in ipairs(workGui:GetDescendants()) do
+        if (obj:IsA("TextButton") or obj:IsA("ImageButton")) and isVisibleGuiObject(obj) then
+            local target = findMatchingAnswerTarget(obj, answerText, solvedValue)
+            if target then
+                local score = scoreAnswerButton(obj, questionText)
+                table.insert(candidates, {Button = obj, Target = target, Score = score})
+                if score >= bestScore then bestButton = obj; bestScore = score end
             end
         end
+    end
+    return bestButton, #candidates, candidates
+end
 
-        local function nzntFindPlayButton()
-            local namedTarget = nzntFindNamedPlayTarget()
-            if namedTarget then
-                return namedTarget
-            end
+local function fireGuiButtonDirectly(button)
+    if not button or not button.Parent or not button:IsA("GuiButton") then return false end
+    pcall(function() button:Activate() end)
+    if firesignal then pcall(function() firesignal(button.MouseButton1Click) end) end
+    return true
+end
 
-            local bestButton, bestScore = nil, -math.huge
-            for _, root in ipairs(nzntStartupRoots()) do
-                local ok, descendants = pcall(function()
-                    return root:GetDescendants()
-                end)
-                if ok then
-                    for _, obj in ipairs(descendants) do
-                        if (obj:IsA("TextButton") or obj:IsA("ImageButton") or obj:IsA("TextLabel")) and nzntVisibleGuiObject(obj) then
-                            local text = nzntGuiText(obj):upper():gsub("%s+", "")
-                            local path = nzntNamePath(obj)
-                            local color = obj.BackgroundColor3
-                            local isGreen = obj.BackgroundTransparency < 0.8
-                                and color.G > 0.45
-                                and color.G > color.R * 1.25
-                                and color.G > color.B * 1.25
-                            local score = 0
+local function clickAnswerButtonAndWait(button, timeout, target)
+    local response, done = nil, false
+    local conn; conn = remCorrectAnswer.OnClientEvent:Connect(function(result) response = result; done = true end)
+    local started = os.clock()
+    fireGuiButtonDirectly(button)
+    if target and target ~= button then fireGuiButtonDirectly(target) end
+    while active and not done and os.clock() - started < timeout do task.wait(0.05) end
+    if conn then conn:Disconnect() end
+    return response, true
+end
 
-                            if text == "PLAY" then
-                                score = score + 100
-                            elseif text:find("PLAY", 1, true) then
-                                score = score + 55
-                            end
-                            if path:find("play", 1, true) then
-                                score = score + 25
-                            end
-                            if path:find("deployselect", 1, true) or path:find("applyselect", 1, true) then
-                                score = score + 45
-                            end
-                            if path:find("mainmenusystem", 1, true) then
-                                score = score + 15
-                            end
-                            if isGreen then
-                                score = score + 25
-                            end
+local function answerQuestion(question, answers, sessionId, attempt, questionToken)
+    attempt = tonumber(attempt) or 1
+    questionToken = tonumber(questionToken) or activeQuestionToken
+    if not active or answeringQuestion or questionToken ~= activeQuestionToken then return end
+    answeringQuestion = true
 
-                            if score >= 60 and score > bestScore then
-                                local target = nzntClickableStartupTarget(obj)
-                                if target and nzntVisibleGuiObject(target) then
-                                    bestButton = target
-                                    bestScore = score
-                                end
-                            end
-                        end
-                    end
+    task.spawn(function()
+        pcall(function()
+            if not active or questionToken ~= activeQuestionToken then return end
+            local solvedValue = solveQuestion(question)
+            if not solvedValue then return end
+
+            local delayTime = answerDelayMin + math.random() * (answerDelayMax - answerDelayMin)
+            task.wait(delayTime)
+            if not active or questionToken ~= activeQuestionToken then return end
+
+            local answerButton, _, candidates = findAnswerButton(tostring(solvedValue), solvedValue, question)
+            if not answerButton then
+                if attempt < MAX_ANSWER_RETRIES and questionToken == activeQuestionToken then
+                    task.delay(ANSWER_RETRY_DELAY, function() answerQuestion(question, answers, sessionId, attempt + 1, questionToken) end)
+                else
+                    jumpAndReseatCurrentSeat()
                 end
-            end
-            return bestButton
-        end
-
-        local function nzntStartupScreenPresent()
-            for _, root in ipairs(nzntStartupRoots()) do
-                local ok, descendants = pcall(function()
-                    return root:GetDescendants()
-                end)
-                if ok then
-                    for _, obj in ipairs(descendants) do
-                        if (obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox")) and nzntVisibleGuiObject(obj) then
-                            local text = nzntGuiText(obj):upper()
-                            if text:find("LOADING GAME", 1, true) or text:find("TIP:", 1, true) then
-                                return true
-                            end
-                        end
-                    end
-                end
-            end
-
-            return false
-        end
-
-        local function nzntStartupExecutorIsDelta()
-            local ok, name = pcall(function()
-                if identifyexecutor then
-                    return identifyexecutor()
-                end
-                if getexecutorname then
-                    return getexecutorname()
-                end
-                return ""
-            end)
-
-            return ok and tostring(name or ""):lower():find("delta", 1, true) ~= nil
-        end
-
-        local function nzntClickButton(button)
-            if not button or not button.Parent then
-                return false
-            end
-
-            local clicked = false
-            local isDelta = nzntStartupExecutorIsDelta()
-            local function mark(ok)
-                clicked = ok or clicked
-            end
-
-            if button:IsA("GuiButton") then
-                mark(pcall(function()
-                    button:Activate()
-                end))
-
-                local signals = {
-                    button.MouseButton1Click,
-                    button.Activated
-                }
-
-                for _, signal in ipairs(signals) do
-                    if firesignal then
-                        mark(pcall(function()
-                            firesignal(signal)
-                        end))
-                    end
-
-                    if not isDelta and getconnections then
-                        local ok, signalConnections = pcall(function()
-                            return getconnections(signal)
-                        end)
-
-                        if ok and type(signalConnections) == "table" then
-                            for _, connection in ipairs(signalConnections) do
-                                local didCall = false
-                                local okConnection = pcall(function()
-                                    if connection.Fire then
-                                        didCall = true
-                                        connection:Fire()
-                                    elseif connection.Function then
-                                        didCall = true
-                                        connection.Function()
-                                    end
-                                end)
-                                clicked = (okConnection and didCall) or clicked
-                            end
-                        end
-                    end
-                end
-
-                if isDelta and nzntVisibleGuiObject(button) then
-                    mark(pcall(function()
-                        local guiService = game:GetService("GuiService")
-                        local vim = game:GetService("VirtualInputManager")
-                        button.Selectable = true
-                        guiService.SelectedObject = button
-
-                        vim:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
-                        task.wait(0.04)
-                        vim:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
-
-                        vim:SendKeyEvent(true, Enum.KeyCode.KeypadEnter, false, game)
-                        task.wait(0.04)
-                        vim:SendKeyEvent(false, Enum.KeyCode.KeypadEnter, false, game)
-
-                        if guiService.SelectedObject == button then
-                            guiService.SelectedObject = nil
-                        end
-                    end))
-                end
-            end
-
-            if not isDelta then
-                pcall(function()
-                    local vim = game:GetService("VirtualInputManager")
-                    local center = button.AbsolutePosition + (button.AbsoluteSize / 2)
-                    vim:SendMouseButtonEvent(center.X, center.Y, 0, true, game, 0)
-                    task.wait(0.03)
-                    vim:SendMouseButtonEvent(center.X, center.Y, 0, false, game, 0)
-                    clicked = true
-                end)
-            end
-
-            return clicked
-        end
-
-        local function nzntPassStartupMenu()
-            if not game:IsLoaded() then game.Loaded:Wait() end
-            local player = game:GetService("Players").LocalPlayer
-            if player then
-                player:WaitForChild("PlayerGui")
-            end
-
-            local playButton = nzntFindPlayButton()
-            if not playButton and not nzntStartupScreenPresent() then
                 return
             end
 
-            while nzntStartupScreenPresent() do
-                task.wait(0.25)
+            local finalResponse, clickedAny = nil, false
+            for index, candidate in ipairs(candidates) do
+                if not active or questionToken ~= activeQuestionToken then return end
+                local response, clicked = clickAnswerButtonAndWait(candidate.Button, 1.3, candidate.Target)
+                clickedAny = clickedAny or clicked
+                if response == true or tostring(response):lower() == "success" then finalResponse = response; break end
+                task.wait(0.12)
             end
 
-            playButton = nzntFindPlayButton()
-            while not playButton do
-                task.wait(0.25)
-                playButton = nzntFindPlayButton()
+            if finalResponse == true or tostring(finalResponse):lower() == "success" then
+                questionsAnswered = questionsAnswered + 1
+                lastAnswerAt = os.clock()
+                if printerVerifyName then printersCompleted = printersCompleted + 1; printerVerifyName = nil end
+            elseif attempt < MAX_ANSWER_RETRIES and questionToken == activeQuestionToken then
+                task.delay(ANSWER_RETRY_DELAY, function() answerQuestion(question, answers, sessionId, attempt + 1, questionToken) end)
+            else
+                jumpAndReseatCurrentSeat()
             end
+        end)
+        answeringQuestion = false
+    end)
+end
 
-            nzntClickButton(playButton)
+local function onQuestionReceived(question, answers, sessionId)
+    if not active then return end
+    local questionKey = tostring(sessionId or "") .. "|" .. normalizeAnswerText(question)
+    if questionKey == lastQuestionKey and os.clock() - lastQuestionAt < 4 then return end
+    lastQuestionKey = questionKey
+    lastQuestionAt = os.clock()
+    activeQuestionToken = activeQuestionToken + 1
+    answerQuestion(question, answers, sessionId, 1, activeQuestionToken)
+end
 
-            task.wait(3)
-            local deployButton = nzntFindDeploySelectTarget()
-            local deployDeadline = os.clock() + 15
-            while not deployButton and os.clock() < deployDeadline do
-                task.wait(0.25)
-                deployButton = nzntFindDeploySelectTarget()
-            end
-            if deployButton then
-                nzntClickButton(deployButton)
-            end
+local function joinOfficeTeam()
+    if joiningTeam then return true end
+    joiningTeam = true
+    local menuToggleRemote = ReplicatedStorage:WaitForChild("menuToggleRequest", 10)
+    if menuToggleRemote then safeFireServer(menuToggleRemote) task.wait(1) end
+    local teamChangeRemote = ReplicatedStorage:WaitForChild("JobEvents", 10):WaitForChild("TeamChangeRequest", 10)
+    safeFireServer(teamChangeRemote, "Office Worker", 0, 0, 0, "MainMenu")
+    task.wait(3)
+    joiningTeam = false
+    return true
+end
+
+local function mainFarmLoop()
+    local usedInitialSeatTeleport = false
+    while active do
+        local char = getChar()
+        local hum = char:WaitForChild("Humanoid")
+        local seat = findAvailableChair()
+        if not seat then task.wait(3) continue end
+
+        currentSeat = seat
+        local seated = false
+        if not usedInitialSeatTeleport then
+            seated = seatTP(seat)
+            usedInitialSeatTeleport = seated
+        else
+            walkTo(seat.Position)
+            task.wait(0.3)
+            seat:Sit(hum)
+            task.wait(0.5)
+            seated = hum.SeatPart == seat
         end
+        if not seated then task.wait(2) continue end
+        unseatedSince = 0
+        lastReseatAttemptAt = 0
 
-        pcall(nzntPassStartupMenu)
-        task.wait(2)
-
-            local Players          = game:GetService("Players")
-            local RunService       = game:GetService("RunService")
-            local UserInputService = game:GetService("UserInputService")
-            local Lighting         = game:GetService("Lighting")
-            local RS               = game:GetService("ReplicatedStorage")
-            local VIM              = game:GetService("VirtualInputManager")
-            local Player           = Players.LocalPlayer
-            local TeleportService  = game:GetService("TeleportService")
-            local GuiService       = game:GetService("GuiService")
-
-            local SPEED             = 180
-            local MIN_SPEED         = 0
-            local MAX_SPEED         = 200
-            local CHECK_DISTANCE    = 15
-            local HUGE_PLATFORM_SIZE= 2000
-            local FARM_THRESHOLD    = 500000
-            local DEFAULT_THRESHOLD = 500000
-            local MIN_THRESHOLD     = 500000
-            local MAX_THRESHOLD     = 2000000
-            local NOT_SEATED_TIMEOUT = 10
-
-            local active          = false
-            local farmingActive   = false
-            local currentVehicle  = nil
-            local spawnedSeatSnapshot = {}
-            local force           = nil
-            local gyro            = nil
-            local attachment      = nil
-            local direction       = 1
-            local savedFloor      = nil
-            local startTime       = nil  -- Set when farming starts
-            local startMoney      = nil
-            local sessionStartTime = nil  -- Set when farming starts
-            local sessionStartMoney = nil
-            local lastDirChange   = 0
-            local DIR_COOLDOWN    = 0.3
-            local isRespawning    = false
-            local farmTransitionActive = false
-            local unseatedSince   = nil
-            local vehicleInput    = "Yamahax-MioSporty"
-            local webhookUrl      = ""
-            local webhookInterval = 60
-            local lastVoidTime    = 0
-            local voidThreshold   = 2
-            local seatOffset      = 1.5  -- Dynamic seat-to-wheel offset
-            local rejoinInterval  = 0    -- 0 = disabled, minutes until auto-rejoin
-            local sessionStart    = os.time()  -- Track session time for rejoin
-            local autoRejoinEnabled = false  -- Toggle for auto-rejoin feature
-            local autoPSJoinEnabled = false  -- Toggle for auto private server join
-            local SURAKARTA_ID    = 131378148336503  -- Surakarta map ID
-            local SURAKARTA_ARG   = "131378148336503"  -- Arg for CreatePrivateServer
-            local vStatus = nil
-            local dragBridgeEnabled = false
-            local dragBridgeRunning = false
-            local dragBridgePassActive = false
-            local dragBridgeRaceCount = 0
-            local DRAG_BRIDGE_LIMIT = 100
-            local DRAG_BRIDGE_CHECKPOINT_DELAY = 3
-            local DRAG_BRIDGE_START_HOLD = 3
-            local DRAG_BRIDGE_LOOP_DELAY = 8
-            local blackGui = nil
-
-            local function safeNumber(value, fallback, minValue, maxValue)
-                local number = tonumber(value)
-                if not number or number ~= number or number == math.huge or number == -math.huge then
-                    number = fallback
-                end
-                if minValue and number < minValue then number = minValue end
-                if maxValue and number > maxValue then number = maxValue end
-                return number
-            end
-
-            local totalEarned = 0
-            local totalTime   = 0
-            if isfile and readfile and isfile("nznt_stealth_stats.txt") then
-                local content = readfile("nznt_stealth_stats.txt")
-                local commaPos = content:find(",")
-                if commaPos then
-                    totalEarned = tonumber(content:sub(1, commaPos-1)) or 0
-                    totalTime   = tonumber(content:sub(commaPos+1)) or 0
-                end
-            end
-
-            local CFG_FILE = "nznt_stealth_config.txt"
-            local CFG_MIGRATION_FILE = "nznt_stealth_config_speed180_v2.txt"
-
-            local function saveConfig()
-                if not writefile then return end
-                SPEED = safeNumber(SPEED, 180, MIN_SPEED, MAX_SPEED)
-                FARM_THRESHOLD = safeNumber(FARM_THRESHOLD, DEFAULT_THRESHOLD, MIN_THRESHOLD, MAX_THRESHOLD)
-                webhookInterval = safeNumber(webhookInterval, 60, 30, 300)
-                rejoinInterval = safeNumber(rejoinInterval, 0, 0, 120)
-                writefile(CFG_FILE, '{"speed":'..SPEED
-                    ..',"farmThreshold":'..FARM_THRESHOLD..',"webhookUrl":"'..webhookUrl:gsub('"','\\"')
-                    ..'","webhookInterval":'..webhookInterval..',"vehicleInput":"'..vehicleInput:gsub('"','\\"')
-                    ..'","rejoinInterval":'..rejoinInterval..',"autoRejoinEnabled":'..(autoRejoinEnabled and "true" or "false")
-                    ..',"autoPSJoinEnabled":'..(autoPSJoinEnabled and "true" or "false")
-                    ..',"dragBridgeEnabled":'..(dragBridgeEnabled and "true" or "false")..'}')
-            end
-
-            local function loadConfig()
-                if not isfile or not readfile or not isfile(CFG_FILE) then return end
-                local s = readfile(CFG_FILE)
-                if not s or s == "" then return end
-                local function g(k, d)
-                    local v = s:match('"'..k..'":"([^"]*)"') or s:match('"'..k..'":([%d%.]+)')
-                    return v and (tonumber(v) or v) or d
-                end
-                SPEED = g("speed", SPEED)
-                FARM_THRESHOLD = g("farmThreshold", FARM_THRESHOLD); webhookUrl = g("webhookUrl", webhookUrl)
-                webhookInterval = g("webhookInterval", webhookInterval); vehicleInput = g("vehicleInput", vehicleInput)
-                rejoinInterval = g("rejoinInterval", rejoinInterval)
-                autoRejoinEnabled = s:find('"autoRejoinEnabled":true') ~= nil
-                autoPSJoinEnabled = s:find('"autoPSJoinEnabled":true') ~= nil
-                dragBridgeEnabled = s:find('"dragBridgeEnabled":true') ~= nil
-                SPEED = safeNumber(SPEED, 180, MIN_SPEED, MAX_SPEED)
-                FARM_THRESHOLD = safeNumber(FARM_THRESHOLD, DEFAULT_THRESHOLD, MIN_THRESHOLD, MAX_THRESHOLD)
-            end
-
-            local function runOneTimeConfigMigration()
-                if not writefile then return end
-                if isfile and isfile(CFG_MIGRATION_FILE) then return end
-
-                SPEED = 180
-                FARM_THRESHOLD = 500000
-                saveConfig()
-                writefile(CFG_MIGRATION_FILE, "done")
-            end
-
-            loadConfig()
-            runOneTimeConfigMigration()
-            
-            -- Load shared webhook config from loader
-            local WEBHOOK_FILE = "nznt_webhook_config.json"
-            local function loadSharedWebhookConfig()
-                if not isfile or not readfile or not isfile(WEBHOOK_FILE) then return end
-                local ok, content = pcall(function() return readfile(WEBHOOK_FILE) end)
-                if ok and content then
-                    local ok2, data = pcall(function() return game:GetService("HttpService"):JSONDecode(content) end)
-                    if ok2 and data then
-                        -- Only override if shared config has values
-                        if data.url and data.url ~= "" then
-                            webhookUrl = data.url
-                            webhookInterval = data.interval or 60
-                            warn("[Auto Drive Farm] Webhook loaded from loader: " .. (data.enabled and "enabled" or "disabled"))
-                        end
-                    end
-                end
-            end
-            loadSharedWebhookConfig()
-            
-            -- Debug: show loaded values
-            warn("=== CONFIG LOADED ===")
-            warn("autoRejoinEnabled:", autoRejoinEnabled)
-            warn("autoPSJoinEnabled:", autoPSJoinEnabled)
-            warn("=====================")
-
-            -- Auto-rejoin system (after config loaded)
-            local SCRIPT_URL = "https://scripts.nznt.store/raw.php?file=autofarm_yellow.lua"
-            local scriptSource = ""
-            pcall(function() scriptSource = game:HttpGet(SCRIPT_URL, true) end)
-
-
-            local function queueSelfOnTeleport()
-                local source = scriptSource
-                if source == "" and readfile and isfile and isfile("autofarm_yellow.lua") then
-                    local ok, localSource = pcall(readfile, "autofarm_yellow.lua")
-                    if ok and localSource and localSource ~= "" then
-                        source = localSource
-                    end
-                end
-                if source == "" then return false end
-
-                local queueFunc = queue_on_teleport
-                    or queueonteleport
-                    or (syn and syn.queue_on_teleport)
-                    or (fluxus and fluxus.queue_on_teleport)
-                if not queueFunc then return false end
-
-                -- Queue the source untouched so the bypass remains the first executable code.
-                local ok = pcall(queueFunc, source)
-                return ok
-            end
-            
-            -- Queue script for re-execution on teleport (only if auto-rejoin enabled)
-            if autoRejoinEnabled then
-                queueSelfOnTeleport(true)
-            end
-            
-            -- Rejoin on error/crash (only if auto-rejoin enabled)
-            GuiService.ErrorMessageChanged:Connect(function()
-                if not autoRejoinEnabled then return end
-                if scriptSource ~= "" then
-                    task.wait(3)
-                    queueSelfOnTeleport(true)
-                end
-                task.wait(5)
-                TeleportService:Teleport(game.PlaceId, Player)
-            end)
-            
-            -- Auto private server join function
-            local currentServerCode = ""
-            
-            local function grabServerCode()
-                local pse = RS:FindFirstChild("PrivateServerEvents")
-                if not pse then return "" end
-                local getCode = pse:FindFirstChild("GetCurrentCode")
-                if not getCode then return "" end
-                
-                local code = ""
-                local conn = getCode.OnClientEvent:Connect(function(c)
-                    code = tostring(c)
-                end)
-                getCode:FireServer()
-                
-                local waited = 0
-                while code == "" and waited < 5 do
+        while active do
+            if pendingPrint then
+                local pos = PRINTER_POS[pendingPrint]
+                if pos then
+                    isDoingPrinterJob = true
+                    local officeSeat = currentSeat
+                    local currentPrint = pendingPrint
+                    printerVerifyName = nil
+                    setSeatBlocking(true)
+                    sendKey(Enum.KeyCode.Space)
+                    task.wait(0.5)
+                    walkTo(pos)
+                    task.wait(0.5)
+                    interactWithPrinter()
                     task.wait(1)
-                    waited = waited + 1
-                end
-                pcall(function() conn:Disconnect() end)
-                return code
-            end
-            
-            local function tryAutoPSJoin()
-                if not autoPSJoinEnabled then return end
-                
-                local currentID = game.PlaceId ~= 0 and game.PlaceId or game.GameId
-                
-                -- Wrong map - teleport to Surakarta
-                if currentID ~= SURAKARTA_ID then
-                    warn("Wrong map, teleporting to Surakarta...")
-                    local createRemote = RS:FindFirstChild("CreatePrivateServer", true)
-                    if createRemote then
-                        for i = 1, 3 do
-                            createRemote:FireServer(SURAKARTA_ARG)
-                            task.wait(5)
-                        end
+                    pendingPrint = nil
+
+                    if officeSeat and officeSeat.Parent then
+                        walkTo(officeSeat.Position)
+                        task.wait(0.5)
+                        setSeatBlocking(false)
+                        officeSeat:Sit(hum)
+                        task.wait(0.5)
+                        currentSeat = officeSeat
+                        unseatedSince = 0
+                        lastReseatAttemptAt = 0
+                        printerVerifyName = currentPrint
+                        printerVerifyStartedAt = hum.SeatPart == officeSeat and os.clock() or 0
+                        printerVerifyQuestionCount = questionsAnswered
+                    else
+                        setSeatBlocking(false)
                     end
-                    task.wait(2)
-                    TeleportService:Teleport(SURAKARTA_ID, Player)
-                    return
+                    isDoingPrinterJob = false
+                    setSeatBlocking(false)
+                else
+                    pendingPrint = nil
                 end
-                
-                -- On correct map - check if in private server
-                currentServerCode = grabServerCode()
-                
-                if currentServerCode == "" or currentServerCode == "nil" then
-                    -- In public server - create/join private server
-                    warn("In public server, creating private server...")
-                    local pse = RS:FindFirstChild("PrivateServerEvents")
-                    if pse then
-                        local createRemote = pse:FindFirstChild("CreatePrivateServer")
-                        local joinRemote = pse:FindFirstChild("JoinPrivateServer")
-                        
-                        -- Try to get existing code first
-                        if joinRemote then
-                            local existingCode = grabServerCode()
-                            if existingCode ~= "" and existingCode ~= "nil" then
-                                warn("Joining existing private server:", existingCode)
-                                joinRemote:FireServer(existingCode)
-                                task.wait(5)
-                                return
-                            end
-                        end
-                        
-                        -- Create new private server
-                        if createRemote then
-                            for i = 1, 3 do
-                                createRemote:FireServer(SURAKARTA_ARG)
-                                task.wait(5)
-                            end
-                        end
+            elseif not isDoingPrinterJob and hum.SeatPart ~= currentSeat then
+                if currentSeat and currentSeat.Parent then
+                    if unseatedSince <= 0 then unseatedSince = os.clock() end
+                    if os.clock() - lastReseatAttemptAt >= 1.5 then
+                        lastReseatAttemptAt = os.clock()
+                        jumpAndReseatCurrentSeat()
                     end
                 else
-                    warn("Already in private server:", currentServerCode)
-                end
-            end
-            
-            -- Run auto PS join at startup if enabled
-            tryAutoPSJoin()
-
-            local function getExecutorName()
-                if identifyexecutor then local ok, n = pcall(identifyexecutor) if ok and n then return n end end
-                if getexecutorname  then local ok, n = pcall(getexecutorname)  if ok and n then return n end end
-                return "Unknown"
-            end
-            local EXECUTOR_NAME = getExecutorName()
-
-            local lastFPS = 60
-            RunService.Heartbeat:Connect(function(dt)
-                if dt > 0 then lastFPS = math.floor(1/dt) end
-            end)
-
-            local function getMoney()
-                local pd = Player:FindFirstChild("PlayerData")
-                if pd then local rp = pd:FindFirstChild("RPValue") if rp then return rp.Value end end
-                return 0
-            end
-            local function formatNumber(n)
-                local s = tostring(math.floor(n))
-                return s:reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
-            end
-            local function formatTime(t)
-                return string.format("%02d:%02d:%02d", math.floor(t/3600)%24, math.floor(t/60)%60, t%60)
-            end
-            local function getPing()
-                local ok, ping = pcall(function() return Player:GetNetworkPing() end)
-                return ok and math.floor(ping*1000) or 0
-            end
-            local function sendKey(key)
-                VIM:SendKeyEvent(true, key, false, game)
-                task.wait(0.1)
-                VIM:SendKeyEvent(false, key, false, game)
-            end
-            local function snapshotVehicleSeats()
-                local snapshot = {}
-                for _, obj in ipairs(workspace:GetDescendants()) do
-                    if obj:IsA("VehicleSeat") then
-                        snapshot[obj] = true
-                    end
-                end
-                return snapshot
-            end
-
-            local function spawnedSeatScore(seat, root)
-                local distance = (seat.Position - root.Position).Magnitude
-                local score = -distance
-                local names = {}
-                local current = seat
-
-                while current and current ~= workspace do
-                    names[#names + 1] = tostring(current.Name or ""):lower()
-                    current = current.Parent
-                end
-
-                local path = table.concat(names, " ")
-                local playerName = Player.Name:lower()
-                local vehicleName = tostring(vehicleInput or ""):lower()
-
-                if path:find(playerName, 1, true) then score = score + 100000 end
-                if vehicleName ~= "" and path:find(vehicleName, 1, true) then score = score + 20000 end
-                if path:find("drive", 1, true) then score = score + 5000 end
-                if path:find("passenger", 1, true) or path:find("passanger", 1, true) then
-                    score = score - 50000
-                end
-
-                return score
-            end
-
-            local function findSpawnedSeat(timeout)
-                local best, bestScore = nil, -math.huge
-                local char = Player.Character
-                if not char then return nil end
-                local root = char:FindFirstChild("HumanoidRootPart")
-                if not root then return nil end
-
-                local started = os.clock()
-                repeat
-                    best, bestScore = nil, -math.huge
-                    for _, seat in ipairs(workspace:GetDescendants()) do
-                        if seat:IsA("VehicleSeat") and seat.Parent and not spawnedSeatSnapshot[seat] then
-                            local distance = (seat.Position - root.Position).Magnitude
-                            if distance <= 600 then
-                                local score = spawnedSeatScore(seat, root)
-                                if score > bestScore then
-                                    best = seat
-                                    bestScore = score
-                                end
-                            end
-                        end
-                    end
-
-                    if best and (bestScore >= 5000 or os.clock() - started >= 1.5) then
-                        return best
-                    end
-                    task.wait(0.2)
-                until os.clock() - started >= (timeout or 12)
-
-                return best
-            end
-            local function getVehicleRootFromSeat(seat)
-                local node = seat
-                while node and node.Parent and node.Parent ~= workspace do
-                    node = node.Parent
-                end
-                if node and node ~= seat then
-                    return node
-                end
-                return seat
-            end
-            local function getPartLowestY(part)
-                local cf, half = part.CFrame, part.Size * 0.5
-                local lowest = math.huge
-                for _, x in ipairs({-1, 1}) do
-                    for _, y in ipairs({-1, 1}) do
-                        for _, z in ipairs({-1, 1}) do
-                            local p = cf * Vector3.new(half.X * x, half.Y * y, half.Z * z)
-                            if p.Y < lowest then
-                                lowest = p.Y
-                            end
-                        end
-                    end
-                end
-                return lowest
-            end
-
-            local function isWheelPart(part)
-                local name = part.Name:lower()
-                return name:find("wheel") or name:find("tire") or name:find("tyre") or name:find("rim")
-            end
-
-            local function calculateSeatOffset(vehicle, seat)
-                local lowestWheelY = math.huge
-                local lowestVehicleY = math.huge
-                for _, part in ipairs(vehicle:GetDescendants()) do
-                    if part:IsA("BasePart") and part ~= seat then
-                        local wheelBottom = getPartLowestY(part)
-                        if wheelBottom < lowestVehicleY then
-                            lowestVehicleY = wheelBottom
-                        end
-                        if isWheelPart(part) then
-                            if wheelBottom < lowestWheelY then
-                                lowestWheelY = wheelBottom
-                            end
-                        end
-                    end
-                end
-                local lowestY = lowestWheelY ~= math.huge and lowestWheelY or lowestVehicleY
-                if lowestY ~= math.huge then
-                    return math.clamp(seat.Position.Y - lowestY, 1, 12)
-                end
-                return 1.5  -- Default fallback
-            end
-            local function setupPhysics(seat)
-                attachment = Instance.new("Attachment", seat)
-                force = Instance.new("LinearVelocity", seat)
-                force.MaxForce = 99999999
-                force.Attachment0 = attachment
-                force.RelativeTo = Enum.ActuatorRelativeTo.Attachment0
-                gyro = Instance.new("BodyGyro", seat)
-                gyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)  -- Lock all rotation
-                gyro.P = 100000  -- Stronger P for faster correction
-                gyro.D = 1000    -- Add damping to prevent oscillation
-                gyro.CFrame = seat.CFrame
-            end
-            local function cleanupPhysics()
-                if force then force:Destroy() force = nil end
-                if gyro then gyro:Destroy() gyro = nil end
-                if attachment then attachment:Destroy() attachment = nil end
-            end
-
-            local function getVehicleMaxSpeed()
-                if not currentVehicle or not currentVehicle.Parent then return 0 end
-
-                local maxSpeed = 0
-                for _, part in ipairs(currentVehicle:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        maxSpeed = math.max(maxSpeed, part.AssemblyLinearVelocity.Magnitude)
-                    end
-                end
-                if currentVehicle:IsA("BasePart") then
-                    maxSpeed = math.max(maxSpeed, currentVehicle.AssemblyLinearVelocity.Magnitude)
-                end
-                return maxSpeed
-            end
-
-            local function stopVehicleCompletely()
-                if force then
-                    force.VectorVelocity = Vector3.zero
-                end
-
-                local stoppedSince = nil
-                local started = os.clock()
-                while currentVehicle and currentVehicle.Parent and os.clock() - started < 6 do
-                    for _, part in ipairs(currentVehicle:GetDescendants()) do
-                        if part:IsA("BasePart") then
-                            part.AssemblyLinearVelocity = Vector3.zero
-                            part.AssemblyAngularVelocity = Vector3.zero
-                        end
-                    end
-                    if currentVehicle:IsA("BasePart") then
-                        currentVehicle.AssemblyLinearVelocity = Vector3.zero
-                        currentVehicle.AssemblyAngularVelocity = Vector3.zero
-                    end
-
-                    if getVehicleMaxSpeed() <= 0.25 then
-                        stoppedSince = stoppedSince or os.clock()
-                        if os.clock() - stoppedSince >= 0.35 then
-                            break
-                        end
-                    else
-                        stoppedSince = nil
-                    end
-
-                    task.wait(0.05)
-                end
-            end
-
-            local function groundRaycast(origin, distance)
-                local params = RaycastParams.new()
-                params.FilterType = Enum.RaycastFilterType.Blacklist
-                params.IgnoreWater = true
-                local filter = {}
-                if currentVehicle then table.insert(filter, currentVehicle) end
-                if Player.Character then table.insert(filter, Player.Character) end
-                params.FilterDescendantsInstances = filter
-                return workspace:Raycast(origin, Vector3.new(0, -distance, 0), params)
-            end
-
-            -- Anti-AFK removed - now handled by UI loader
-
-            local function fireCarEvent(name, ...)
-                local sf = RS:FindFirstChild("SpawnCarEvents")
-                if sf then local r = sf:FindFirstChild(name) if r then r:FireServer(...) return true end end
-                return false
-            end
-            local function spawnVehicle(id)
-                spawnedSeatSnapshot = snapshotVehicleSeats()
-                return fireCarEvent("SpawnCar", id or vehicleInput)
-            end
-            local function despawnVehicle() fireCarEvent("DespawnCar") end
-
-            local function sitOnSpawnedSeat(seat, hum, root)
-                if not seat or not seat.Parent or spawnedSeatSnapshot[seat] then
-                    return false
-                end
-
-                for _ = 1, 5 do
-                    if not seat.Parent or spawnedSeatSnapshot[seat] then
-                        return false
-                    end
-
-                    if hum.SeatPart and hum.SeatPart ~= seat then
-                        sendKey(Enum.KeyCode.Space)
-                        hum.Sit = false
-                        task.wait(0.2)
-                    end
-
-                    root.CFrame = seat.CFrame * CFrame.new(0, 2.5, 0)
-                    root.AssemblyLinearVelocity = Vector3.zero
-                    root.AssemblyAngularVelocity = Vector3.zero
-                    task.wait(0.2)
-                    seat:Sit(hum)
-                    task.wait(0.45)
-
-                    if hum.SeatPart == seat then
-                        return true
-                    end
-                end
-
-                return false
-            end
-
-            local function findDragRace()
-                local dragRace = workspace:FindFirstChild("DragRace")
-                if dragRace then return dragRace end
-
-                for _, obj in pairs(workspace:GetChildren()) do
-                    if obj:IsA("Folder") or obj:IsA("Model") then
-                        dragRace = obj:FindFirstChild("DragRace") or obj:FindFirstChild("DragRace", true)
-                        if dragRace then return dragRace end
-                    end
-                end
-
-                for _, name in ipairs({"Race", "Drag", "SpeedRace", "SpeedTrap"}) do
-                    dragRace = workspace:FindFirstChild(name)
-                    if dragRace then return dragRace end
-                end
-
-                return nil
-            end
-
-            local function findDragDetectors(dragRace)
-                if not dragRace then return nil, nil, nil, nil, nil end
-
-                local detectorRoot = dragRace:FindFirstChild("Detector") or dragRace:FindFirstChild("Detectors") or dragRace
-                local startDet = (
-                    detectorRoot:FindFirstChild("DetectorStart") or detectorRoot:FindFirstChild("Start")
-                    or dragRace:FindFirstChild("DetectorStart") or dragRace:FindFirstChild("Start")
-                )
-                local c1 = (
-                    detectorRoot:FindFirstChild("DetectorC1") or detectorRoot:FindFirstChild("C1")
-                    or dragRace:FindFirstChild("DetectorC1") or dragRace:FindFirstChild("C1")
-                )
-                local c2 = (
-                    detectorRoot:FindFirstChild("DetectorC2") or detectorRoot:FindFirstChild("C2")
-                    or dragRace:FindFirstChild("DetectorC2") or dragRace:FindFirstChild("C2")
-                )
-                local c3 = (
-                    detectorRoot:FindFirstChild("DetectorC3") or detectorRoot:FindFirstChild("C3")
-                    or dragRace:FindFirstChild("DetectorC3") or dragRace:FindFirstChild("C3")
-                )
-                local finishDet = (
-                    detectorRoot:FindFirstChild("DetectorFinish") or detectorRoot:FindFirstChild("Finish")
-                    or dragRace:FindFirstChild("DetectorFinish") or dragRace:FindFirstChild("Finish")
-                )
-                return startDet, c1, c2, c3, finishDet
-            end
-
-            local function touchDragDetector(detector, seatCFrame)
-                if not detector or not seatCFrame then return false end
-
-                local ok = pcall(function()
-                    detector.CFrame = seatCFrame
-                end)
-                task.wait(0.1)
-                pcall(function()
-                    detector.CFrame = seatCFrame * CFrame.new(0, -100, 0)
-                end)
-
-                return ok
-            end
-
-        local function getCurrentSeat()
-            if not currentVehicle then return nil end
-            if currentVehicle:IsA("VehicleSeat") then return currentVehicle end
-            return currentVehicle:FindFirstChildWhichIsA("VehicleSeat", true)
-        end
-
-        local function zeroVehicleVelocity()
-            if force then
-                force.VectorVelocity = Vector3.zero
-            end
-
-            if currentVehicle and currentVehicle.Parent then
-                for _, part in ipairs(currentVehicle:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.AssemblyLinearVelocity = Vector3.zero
-                        part.AssemblyAngularVelocity = Vector3.zero
-                    end
-                end
-
-                if currentVehicle:IsA("BasePart") then
-                    currentVehicle.AssemblyLinearVelocity = Vector3.zero
-                    currentVehicle.AssemblyAngularVelocity = Vector3.zero
-                end
-            end
-        end
-
-        local function holdVehicleStill(duration)
-            local started = os.clock()
-            repeat
-                zeroVehicleVelocity()
-                task.wait(0.05)
-            until os.clock() - started >= duration or not dragBridgeEnabled or not farmingActive or isRespawning
-        end
-
-        local function runDragBridgePass()
-            if dragBridgePassActive or not dragBridgeEnabled or not farmingActive or isRespawning then return end
-
-                local seat = getCurrentSeat()
-                if not seat then return end
-
-                local dragRace = findDragRace()
-                if not dragRace then
-                    vStatus.Text = "Drag bridge: DragRace not found"
-                    return
-                end
-
-                local startDet, c1, c2, c3, finishDet = findDragDetectors(dragRace)
-                if not startDet or not finishDet then
-                    vStatus.Text = "Drag bridge: detectors not found"
-                    return
-                end
-
-                dragBridgePassActive = true
-                dragBridgeRunning = true
-                local oldStatus = vStatus.Text
-                local seatCFrame = seat.CFrame
-
-                vStatus.Text = "Drag bridge: halting..."
-                holdVehicleStill(0.5)
-                seatCFrame = seat.CFrame
-
-                vStatus.Text = "Drag bridge: start"
-                touchDragDetector(startDet, seatCFrame)
-                vStatus.Text = "Drag bridge: waiting for timer..."
-                holdVehicleStill(DRAG_BRIDGE_START_HOLD)
-
-                dragBridgeRunning = false
-
-                for index, checkpoint in ipairs({c1, c2, c3}) do
-                    if checkpoint and dragBridgeEnabled and farmingActive and not isRespawning then
-                        seatCFrame = seat.CFrame
-                        vStatus.Text = "Drag bridge: checkpoint " .. tostring(index)
-                        touchDragDetector(checkpoint, seatCFrame)
-                        task.wait(DRAG_BRIDGE_CHECKPOINT_DELAY)
-                    end
-                end
-
-                if dragBridgeEnabled and farmingActive and not isRespawning then
-                    seatCFrame = seat.CFrame
-                    vStatus.Text = "Drag bridge: finish"
-                    touchDragDetector(finishDet, seatCFrame)
-                    dragBridgeRaceCount = dragBridgeRaceCount + 1
-                    if dragBridgeRaceCount >= DRAG_BRIDGE_LIMIT then
-                        vStatus.Text = "Drag bridge: 100 races - rejoining..."
-                        if writefile then
-                            writefile("nznt_stealth_stats.txt", tostring(totalEarned) .. "," .. tostring(totalTime))
-                        end
-                        if not queueSelfOnTeleport(true) then
-                            vStatus.Text = "Drag bridge: re-exec queue failed"
-                            dragBridgeRunning = false
-                            dragBridgePassActive = false
-                            return
-                        end
-                        task.wait(1)
-                        TeleportService:Teleport(game.PlaceId, Player)
-                        return
-                    end
-                end
-
-                if dragBridgeEnabled and farmingActive and oldStatus ~= "" then
-                    vStatus.Text = oldStatus
-                end
-                dragBridgeRunning = false
-                dragBridgePassActive = false
-            end
-
-            -- UI
-            local Gui = Instance.new("ScreenGui")
-            Gui.Name = "nznt_StealthUI_Premium"; Gui.IgnoreGuiInset = true; Gui.DisplayOrder = 999; Gui.ResetOnSpawn = false
-
-            local MainFrame = Instance.new("Frame", Gui)
-            MainFrame.Size = UDim2.new(1,0,1,0); MainFrame.BackgroundColor3 = Color3.fromRGB(10,10,10)
-            MainFrame.ZIndex = 1; MainFrame.BorderSizePixel = 0; MainFrame.Active = false
-
-            local TopBar = Instance.new("Frame", MainFrame)
-            TopBar.Size = UDim2.new(1,0,0,44); TopBar.BackgroundColor3 = Color3.fromRGB(18,18,18)
-            TopBar.BorderSizePixel = 0; TopBar.ZIndex = 2
-
-            local TopTitle = Instance.new("TextLabel", TopBar)
-            TopTitle.Size = UDim2.new(1,-120,1,0); TopTitle.Position = UDim2.new(0,14,0,0)
-            TopTitle.BackgroundTransparency = 1; TopTitle.Text = "STEALTH FARM  ·  nznt_"
-            TopTitle.TextColor3 = Color3.fromRGB(255,215,0); TopTitle.Font = Enum.Font.GothamBold
-            TopTitle.TextSize = 13; TopTitle.TextXAlignment = Enum.TextXAlignment.Left; TopTitle.ZIndex = 3
-
-            local hideBtn = Instance.new("TextButton", TopBar)
-            hideBtn.Size = UDim2.new(0,70,0,28); hideBtn.Position = UDim2.new(1,-80,0.5,-14)
-            hideBtn.BackgroundColor3 = Color3.fromRGB(40,40,40); hideBtn.TextColor3 = Color3.fromRGB(200,200,200)
-            hideBtn.Font = Enum.Font.GothamBold; hideBtn.TextSize = 12; hideBtn.Text = "HIDE"
-            hideBtn.ZIndex = 3; hideBtn.BorderSizePixel = 0
-            Instance.new("UICorner", hideBtn).CornerRadius = UDim.new(0,6)
-
-            local ScrollFrame = Instance.new("ScrollingFrame", MainFrame)
-            ScrollFrame.Size = UDim2.new(1,0,1,-44); ScrollFrame.Position = UDim2.new(0,0,0,44)
-            ScrollFrame.BackgroundTransparency = 1; ScrollFrame.BorderSizePixel = 0
-            ScrollFrame.ScrollBarThickness = 4; ScrollFrame.ScrollBarImageColor3 = Color3.fromRGB(80,80,80)
-            ScrollFrame.CanvasSize = UDim2.new(0,0,0,0); ScrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y; ScrollFrame.ZIndex = 2
-
-            hideBtn.MouseButton1Click:Connect(function()
-                ScrollFrame.Visible = not ScrollFrame.Visible
-                local t = ScrollFrame.Visible and 0 or 1
-                MainFrame.BackgroundTransparency = t; TopBar.BackgroundTransparency = t
-                TopTitle.TextTransparency = t; hideBtn.Text = ScrollFrame.Visible and "HIDE" or "SHOW"
-            end)
-
-            local ll = Instance.new("UIListLayout", ScrollFrame)
-            ll.SortOrder = Enum.SortOrder.LayoutOrder; ll.Padding = UDim.new(0,1)
-            Instance.new("UIPadding", ScrollFrame).PaddingBottom = UDim.new(0,10)
-
-            local function makeContainer(h, order)
-                local f = Instance.new("Frame", ScrollFrame)
-                f.Size = UDim2.new(1,0,0,h); f.BackgroundColor3 = Color3.fromRGB(16,16,16)
-                f.BorderSizePixel = 0; f.ZIndex = 3; f.LayoutOrder = order
-                return f
-            end
-
-            local function makeSection(title, order)
-                local sec = makeContainer(28, order)
-                sec.BackgroundColor3 = Color3.fromRGB(13,13,13)
-                local lbl = Instance.new("TextLabel", sec)
-                lbl.Size = UDim2.new(1,-14,1,0); lbl.Position = UDim2.new(0,14,0,0)
-                lbl.BackgroundTransparency = 1; lbl.Text = title:upper()
-                lbl.TextColor3 = Color3.fromRGB(255,215,0); lbl.Font = Enum.Font.GothamBold
-                lbl.TextSize = 10; lbl.TextXAlignment = Enum.TextXAlignment.Left; lbl.ZIndex = 4
-            end
-
-            local function makeRow(icon, label, valueDefault, order)
-                local row = makeContainer(38, order)
-                local iL = Instance.new("TextLabel", row)
-                iL.Size = UDim2.new(0,30,1,0); iL.Position = UDim2.new(0,10,0,0)
-                iL.BackgroundTransparency = 1; iL.Text = icon; iL.TextColor3 = Color3.fromRGB(255,215,0)
-                iL.Font = Enum.Font.GothamBold; iL.TextSize = 16; iL.ZIndex = 4
-                local nL = Instance.new("TextLabel", row)
-                nL.Size = UDim2.new(0.45,0,1,0); nL.Position = UDim2.new(0,44,0,0)
-                nL.BackgroundTransparency = 1; nL.Text = label; nL.TextColor3 = Color3.fromRGB(130,130,130)
-                nL.Font = Enum.Font.Gotham; nL.TextSize = 13; nL.TextXAlignment = Enum.TextXAlignment.Left; nL.ZIndex = 4
-                local vL = Instance.new("TextLabel", row)
-                vL.Size = UDim2.new(0.5,-14,1,0); vL.Position = UDim2.new(0.5,0,0,0)
-                vL.BackgroundTransparency = 1; vL.Text = valueDefault; vL.TextColor3 = Color3.fromRGB(230,230,230)
-                vL.Font = Enum.Font.GothamBold; vL.TextSize = 13; vL.TextXAlignment = Enum.TextXAlignment.Right; vL.ZIndex = 4
-                local sep = Instance.new("Frame", row)
-                sep.Size = UDim2.new(1,-14,0,1); sep.Position = UDim2.new(0,7,1,-1)
-                sep.BackgroundColor3 = Color3.fromRGB(28,28,28); sep.BorderSizePixel = 0; sep.ZIndex = 4
-                return vL
-            end
-
-            local function makeSlider(icon, label, minV, maxV, curV, order, isFloat, onChange)
-                local row = makeContainer(70, order)
-                local iL = Instance.new("TextLabel", row)
-                iL.Size = UDim2.new(0,30,0,28); iL.Position = UDim2.new(0,10,0,5)
-                iL.BackgroundTransparency = 1; iL.Text = icon; iL.TextColor3 = Color3.fromRGB(255,215,0)
-                iL.Font = Enum.Font.GothamBold; iL.TextSize = 16; iL.ZIndex = 4
-                local nL = Instance.new("TextLabel", row)
-                nL.Size = UDim2.new(0.4,0,0,28); nL.Position = UDim2.new(0,44,0,5)
-                nL.BackgroundTransparency = 1; nL.Text = label; nL.TextColor3 = Color3.fromRGB(130,130,130)
-                nL.Font = Enum.Font.Gotham; nL.TextSize = 13; nL.TextXAlignment = Enum.TextXAlignment.Left; nL.ZIndex = 4
-                
-                local vBox = Instance.new("TextBox", row)
-                vBox.Size = UDim2.new(0,50,0,28); vBox.Position = UDim2.new(1,-60,0,5)
-                vBox.BackgroundColor3 = Color3.fromRGB(28,28,28); vBox.Text = tostring(curV)
-                vBox.TextColor3 = Color3.fromRGB(230,230,230); vBox.Font = Enum.Font.GothamBold; vBox.TextSize = 13
-                vBox.TextXAlignment = Enum.TextXAlignment.Center; vBox.ZIndex = 10
-                vBox.BorderSizePixel = 0; vBox.ClearTextOnFocus = false; vBox.Active = true
-                Instance.new("UICorner",vBox).CornerRadius = UDim.new(0,4)
-                
-                local track = Instance.new("Frame", row)
-                track.Size = UDim2.new(1,-60,0,6); track.Position = UDim2.new(0,44,0,45)
-                track.BackgroundColor3 = Color3.fromRGB(40,40,40); track.BorderSizePixel = 0; track.ZIndex = 4
-                Instance.new("UICorner",track).CornerRadius = UDim.new(0,3)
-                local fill = Instance.new("Frame", track)
-                fill.BackgroundColor3 = Color3.fromRGB(255,215,0); fill.BorderSizePixel = 0; fill.ZIndex = 5
-                Instance.new("UICorner",fill).CornerRadius = UDim.new(0,3)
-                local knob = Instance.new("Frame", track)
-                knob.Size = UDim2.new(0,18,0,18); knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
-                knob.BorderSizePixel = 0; knob.ZIndex = 6
-                Instance.new("UICorner",knob).CornerRadius = UDim.new(1,0)
-                local sep = Instance.new("Frame", row)
-                sep.Size = UDim2.new(1,-14,0,1); sep.Position = UDim2.new(0,7,1,-1)
-                sep.BackgroundColor3 = Color3.fromRGB(28,28,28); sep.BorderSizePixel = 0; sep.ZIndex = 4
-                
-                local function refresh(v)
-                    local r = (v-minV)/(maxV-minV)
-                    fill.Size = UDim2.new(r,0,1,0); knob.Position = UDim2.new(r,-9,0.5,-9); vBox.Text = tostring(v)
-                end
-                refresh(curV)
-                vBox.FocusLost:Connect(function()
-                    local val = isFloat and tonumber(vBox.Text:gsub("[^%d%.%-]","")) or tonumber(vBox.Text:gsub("[^%d%-]",""))
-                    if val then val = math.clamp(val,minV,maxV); refresh(val); onChange(val)
-                    else vBox.Text = tostring(isFloat and math.floor(curV*10)/10 or curV) end
-                end)
-                local dragging = false
-                knob.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then dragging=true end end)
-                UserInputService.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then dragging=false end end)
-                UserInputService.InputChanged:Connect(function(i)
-                    if dragging and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then
-                        local r = math.clamp((i.Position.X-track.AbsolutePosition.X)/track.AbsoluteSize.X,0,1)
-                        local v = isFloat and (math.floor((minV+r*(maxV-minV))*10)/10) or math.floor(minV+r*(maxV-minV))
-                        refresh(v); onChange(v)
-                    end
-                end)
-            end
-
-            local function getVehicleList()
-                local vehicles = {}
-                pcall(function()
-                    local d = RS:FindFirstChild("DealershipEvents")
-                    if not d then return end
-                    local init = d:FindFirstChild("InitializeCarData")
-                    if not init or not init:IsA("RemoteFunction") then return end
-                    local ok, cfg = pcall(function() return init:InvokeServer() end)
-                    if ok and type(cfg) == "table" then
-                        for _, v in pairs(cfg) do
-                            if type(v) == "table" and v.Name then
-                                table.insert(vehicles, {id = v.Name, name = v.DisplayName or v.Name})
-                            end
-                        end
-                    end
-                end)
-                if #vehicles > 0 then table.sort(vehicles, function(a,b) return a.name < b.name end) return vehicles end
-                return {{id = "Yamahax-MioSporty", name = "Yamahax - Mio Sporty (2006)"}}
-            end
-
-            local function createDropdown(parent, position, size, options, onSelect)
-                local dd = Instance.new("Frame", parent)
-                dd.Size = size; dd.Position = position; dd.BackgroundColor3 = Color3.fromRGB(28,28,28)
-                dd.BorderSizePixel = 0; dd.ZIndex = 10
-                Instance.new("UICorner", dd).CornerRadius = UDim.new(0,4)
-                
-                local display = Instance.new("TextButton", dd)
-                display.Size = UDim2.new(1,0,1,0); display.BackgroundTransparency = 1
-                display.Text = options[1] and options[1].name or "Select Vehicle"
-                display.TextColor3 = Color3.fromRGB(255,255,255); display.Font = Enum.Font.Gotham
-                display.TextSize = 12; display.TextXAlignment = Enum.TextXAlignment.Left; display.ZIndex = 11
-                
-                local arrow = Instance.new("TextLabel", dd)
-                arrow.Size = UDim2.new(0,20,1,0); arrow.Position = UDim2.new(1,-20,0,0)
-                arrow.BackgroundTransparency = 1; arrow.Text = "▼"; arrow.TextColor3 = Color3.fromRGB(255,215,0)
-                arrow.Font = Enum.Font.GothamBold; arrow.TextSize = 10; arrow.ZIndex = 11
-                
-                local list = Instance.new("ScrollingFrame", parent)
-                list.Size = UDim2.new(0,size.X.Offset,0,math.min(200,#options*28))
-                list.Position = UDim2.new(0,position.X.Offset,0,position.Y.Offset+size.Y.Offset+2)
-                list.BackgroundColor3 = Color3.fromRGB(35,35,35); list.BorderSizePixel = 0
-                list.ScrollBarThickness = 4; list.ScrollBarImageColor3 = Color3.fromRGB(80,80,80)
-                list.CanvasSize = UDim2.new(0,0,0,#options*28); list.Visible = false; list.ZIndex = 20
-                Instance.new("UICorner", list).CornerRadius = UDim.new(0,4)
-                
-                for i, opt in ipairs(options) do
-                    local btn = Instance.new("TextButton", list)
-                    btn.Size = UDim2.new(1,-8,0,26); btn.Position = UDim2.new(0,4,0,(i-1)*28+2)
-                    btn.BackgroundColor3 = Color3.fromRGB(28,28,28); btn.Text = opt.name
-                    btn.TextColor3 = Color3.fromRGB(230,230,230); btn.Font = Enum.Font.Gotham
-                    btn.TextSize = 11; btn.TextXAlignment = Enum.TextXAlignment.Left; btn.ZIndex = 21
-                    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,3)
-                    btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(255,215,0); btn.TextColor3 = Color3.fromRGB(0,0,0) end)
-                    btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(28,28,28); btn.TextColor3 = Color3.fromRGB(230,230,230) end)
-                    btn.MouseButton1Click:Connect(function()
-                        display.Text = opt.name; list.Visible = false; arrow.Text = "▼"; onSelect(opt.id, opt.name)
-                    end)
-                end
-                
-                display.MouseButton1Click:Connect(function() list.Visible = not list.Visible; arrow.Text = list.Visible and "▲" or "▼" end)
-                UserInputService.InputBegan:Connect(function(input)
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                        local p = input.Position
-                        local function inside(f) local fp,fs = f.AbsolutePosition,f.AbsoluteSize return p.X>=fp.X and p.X<=fp.X+fs.X and p.Y>=fp.Y and p.Y<=fp.Y+fs.Y end
-                        if not inside(list) and not inside(dd) then list.Visible = false; arrow.Text = "▼" end
-                    end
-                end)
-                return dd
-            end
-
-            makeSection("Vehicle Control", 0)
-            local vehicleRow = makeContainer(50, 1)
-
-            local vLbl = Instance.new("TextLabel", vehicleRow)
-            vLbl.Size = UDim2.new(0,70,0,20); vLbl.Position = UDim2.new(0,14,0,15)
-            vLbl.BackgroundTransparency = 1; vLbl.Text = "Vehicle:"; vLbl.TextColor3 = Color3.fromRGB(255,215,0)
-            vLbl.Font = Enum.Font.Gotham; vLbl.TextSize = 12; vLbl.TextXAlignment = Enum.TextXAlignment.Left; vLbl.ZIndex = 4
-
-            local vehicles = getVehicleList()
-            -- Validate vehicleInput: check if it exists in the list
-            local validVehicle = false
-            for _, v in ipairs(vehicles) do
-                if v.id == vehicleInput then validVehicle = true break end
-            end
-            if not validVehicle and #vehicles > 0 then
-                vehicleInput = vehicles[1].id
-            end
-
-            local dropdownFrame = createDropdown(
-                vehicleRow,
-                UDim2.new(0, 80, 0, 11),
-                UDim2.new(0, 180, 0, 28),
-                vehicles,
-                function(id, name)
-                    vehicleInput = id
-                    saveConfig()
-                    print("Selected vehicle: " .. name .. " (" .. id .. ")")
-                end
-            )
-
-            local toggleBtn = Instance.new("TextButton", vehicleRow)
-            toggleBtn.Size = UDim2.new(0,100,0,28); toggleBtn.Position = UDim2.new(1,-115,0,11)
-            toggleBtn.BackgroundColor3 = Color3.fromRGB(0,150,0); toggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
-            toggleBtn.Font = Enum.Font.GothamBold; toggleBtn.TextSize = 12; toggleBtn.Text = "▶ START"
-            toggleBtn.BorderSizePixel = 0; toggleBtn.ZIndex = 4
-            Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0,4)
-
-            makeSection("Money", 10)
-            local vCurrent   = makeRow("💰", "Current Money", "Rp. 0", 11)
-            local vEarned    = makeRow("📈", "Earned", "Rp. 0", 12)
-            local vMoneyHour = makeRow("⚡", "Money / Hour", "Calculating...", 13)
-
-            makeSection("Total Stats", 15)
-            local vTotalEarned = makeRow("🏆", "Total Earned", "Rp. " .. formatNumber(totalEarned), 16)
-            local vTotalTime   = makeRow("⏰", "Total Time", formatTime(totalTime), 17)
-
-            local resetRow = makeContainer(50, 18)
-            local resetBtn = Instance.new("TextButton", resetRow)
-            resetBtn.Size = UDim2.new(1,-20,0,32); resetBtn.Position = UDim2.new(0,10,0,9)
-            resetBtn.BackgroundColor3 = Color3.fromRGB(200,50,50); resetBtn.TextColor3 = Color3.fromRGB(255,255,255)
-            resetBtn.Font = Enum.Font.GothamBold; resetBtn.TextSize = 12; resetBtn.Text = "🔄 Reset Total Stats"
-            resetBtn.BorderSizePixel = 0; resetBtn.ZIndex = 4
-            Instance.new("UICorner",resetBtn).CornerRadius = UDim.new(0,5)
-            resetBtn.MouseButton1Click:Connect(function()
-                totalEarned=0 totalTime=0
-                if writefile then writefile("nznt_stealth_stats.txt","0,0") end
-                vTotalEarned.Text="Rp. 0" vTotalTime.Text="00:00:00"
-                resetBtn.Text="✓ Stats Reset!"
-                resetBtn.BackgroundColor3 = Color3.fromRGB(0,150,70)
-                task.wait(2)
-                resetBtn.Text="🔄 Reset Total Stats"
-                resetBtn.BackgroundColor3 = Color3.fromRGB(200,50,50)
-            end)
-
-            makeSection("Stats", 20)
-            vStatus  = makeRow("▶", "Status", "Auto starting...", 21)
-            local vElapsed = makeRow("⏱", "Elapsed", "00:00:00", 22)
-
-            makeSection("Settings", 25)
-            makeSlider("⚡","Speed",MIN_SPEED,MAX_SPEED,SPEED,26,false,function(v) SPEED=v saveConfig() end)
-            makeSlider("💰","Farm Threshold",MIN_THRESHOLD,MAX_THRESHOLD,FARM_THRESHOLD,27,false,function(v) FARM_THRESHOLD=v saveConfig() end)
-            makeSlider("🔄","Auto Rejoin (min)",0,120,rejoinInterval,28,false,function(v) rejoinInterval=v saveConfig() end)
-            
-            -- Auto-rejoin toggle
-            local rejoinToggleRow = makeContainer(50, 18)
-            local rejoinToggleBtn = Instance.new("TextButton", rejoinToggleRow)
-            rejoinToggleBtn.Size = UDim2.new(1,-20,0,32); rejoinToggleBtn.Position = UDim2.new(0,10,0,9)
-            rejoinToggleBtn.BackgroundColor3 = autoRejoinEnabled and Color3.fromRGB(0,150,70) or Color3.fromRGB(60,60,60)
-            rejoinToggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
-            rejoinToggleBtn.Font = Enum.Font.GothamBold; rejoinToggleBtn.TextSize = 12
-            rejoinToggleBtn.Text = autoRejoinEnabled and "✓ Auto Rejoin ON" or "○ Auto Rejoin OFF"
-            rejoinToggleBtn.BorderSizePixel = 0; rejoinToggleBtn.ZIndex = 4
-            Instance.new("UICorner", rejoinToggleBtn).CornerRadius = UDim.new(0,5)
-            rejoinToggleBtn.MouseButton1Click:Connect(function()
-                autoRejoinEnabled = not autoRejoinEnabled
-                rejoinToggleBtn.Text = autoRejoinEnabled and "✓ Auto Rejoin ON" or "○ Auto Rejoin OFF"
-                rejoinToggleBtn.BackgroundColor3 = autoRejoinEnabled and Color3.fromRGB(0,150,70) or Color3.fromRGB(60,60,60)
-                saveConfig()
-            end)
-            
-            -- Auto PS join toggle
-            local psToggleRow = makeContainer(50, 19)
-            local psToggleBtn = Instance.new("TextButton", psToggleRow)
-            psToggleBtn.Size = UDim2.new(1,-20,0,32); psToggleBtn.Position = UDim2.new(0,10,0,9)
-            psToggleBtn.BackgroundColor3 = autoPSJoinEnabled and Color3.fromRGB(0,150,70) or Color3.fromRGB(60,60,60)
-            psToggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
-            psToggleBtn.Font = Enum.Font.GothamBold; psToggleBtn.TextSize = 12
-            psToggleBtn.Text = autoPSJoinEnabled and "✓ Auto PS Join ON" or "○ Auto PS Join OFF"
-            psToggleBtn.BorderSizePixel = 0; psToggleBtn.ZIndex = 4
-            Instance.new("UICorner", psToggleBtn).CornerRadius = UDim.new(0,5)
-            psToggleBtn.MouseButton1Click:Connect(function()
-                autoPSJoinEnabled = not autoPSJoinEnabled
-                psToggleBtn.Text = autoPSJoinEnabled and "✓ Auto PS Join ON" or "○ Auto PS Join OFF"
-                psToggleBtn.BackgroundColor3 = autoPSJoinEnabled and Color3.fromRGB(0,150,70) or Color3.fromRGB(60,60,60)
-                saveConfig()
-                -- Try to join PS immediately when enabled
-                if autoPSJoinEnabled then
-                    task.spawn(tryAutoPSJoin)
-                end
-            end)
-
-            makeSection("Discord Webhook", 35)
-
-            local webhookRow = makeContainer(50, 36)
-            local webhookBox = Instance.new("TextBox", webhookRow)
-            webhookBox.Size = UDim2.new(1,-20,0,30); webhookBox.Position = UDim2.new(0,10,0,10)
-            webhookBox.BackgroundColor3 = Color3.fromRGB(28,28,28); webhookBox.TextColor3 = Color3.fromRGB(200,200,200)
-            webhookBox.PlaceholderText = "Paste Discord webhook URL..."; webhookBox.PlaceholderColor3 = Color3.fromRGB(80,80,80)
-            webhookBox.Text = webhookUrl; webhookBox.TextSize = 11; webhookBox.Font = Enum.Font.Gotham
-            webhookBox.TextXAlignment = Enum.TextXAlignment.Left; webhookBox.ClearTextOnFocus = false
-            webhookBox.BorderSizePixel = 0; webhookBox.ZIndex = 10; webhookBox.TextTruncate = Enum.TextTruncate.AtEnd
-            webhookBox.Active = true
-            Instance.new("UICorner", webhookBox).CornerRadius = UDim.new(0,4)
-            webhookBox.FocusLost:Connect(function() webhookUrl = webhookBox.Text saveConfig() end)
-
-            makeSlider("⏱","Webhook Interval (s)",30,300,webhookInterval,37,false,function(v) webhookInterval=v saveConfig() end)
-
-            local sendRow = makeContainer(50, 39)
-            local sendBtn = Instance.new("TextButton", sendRow)
-            sendBtn.Size = UDim2.new(1,-20,0,32); sendBtn.Position = UDim2.new(0,10,0,9)
-            sendBtn.BackgroundColor3 = Color3.fromRGB(88,101,242); sendBtn.TextColor3 = Color3.fromRGB(255,255,255)
-            sendBtn.Font = Enum.Font.GothamBold; sendBtn.TextSize = 12; sendBtn.Text = "📨 Send Now"
-            sendBtn.BorderSizePixel = 0; sendBtn.ZIndex = 4
-            Instance.new("UICorner",sendBtn).CornerRadius = UDim.new(0,5)
-
-            makeSection("Device", 40)
-            local vPing = makeRow("◉","Ping","0 ms",41)
-            local vFPS  = makeRow("◈","FPS","0",42)
-            local vExec = makeRow("⌘","Executor",EXECUTOR_NAME,43)
-
-            makeSection("About", 45)
-            local aboutRow = makeContainer(100, 46)
-            local snoopy = Instance.new("ImageLabel", aboutRow)
-            snoopy.Size = UDim2.new(0,80,0,80); snoopy.Position = UDim2.new(0,10,0.5,-40)
-            snoopy.BackgroundTransparency = 1; snoopy.Image = "rbxassetid://75353810328300"; snoopy.ZIndex = 4
-            local credit = Instance.new("TextLabel", aboutRow)
-            credit.Size = UDim2.new(1,-104,1,0); credit.Position = UDim2.new(0,100,0,0)
-            credit.BackgroundTransparency = 1; credit.Text = "Script made by _nznt\nPremium UI + Anti-AFK + Any Vehicle\n100% by myself"
-            credit.TextColor3 = Color3.fromRGB(255,215,0); credit.Font = Enum.Font.Gotham; credit.TextSize = 12
-            credit.TextXAlignment = Enum.TextXAlignment.Left; credit.TextYAlignment = Enum.TextYAlignment.Center
-            credit.ZIndex = 4; credit.TextWrapped = true
-            local discordRow = makeContainer(60, 47)
-            local discordBtn = Instance.new("TextButton", discordRow)
-            discordBtn.Size = UDim2.new(1,-20,0,28); discordBtn.Position = UDim2.new(0,10,0,26)
-            discordBtn.BackgroundColor3 = Color3.fromRGB(88,101,242); discordBtn.TextColor3 = Color3.fromRGB(255,255,255)
-            discordBtn.Font = Enum.Font.GothamBold; discordBtn.TextSize = 12; discordBtn.Text = "⎋ Join Discord — discord.gg/q6dUF4CsKH"
-            discordBtn.BorderSizePixel = 0; discordBtn.ZIndex = 4
-            Instance.new("UICorner",discordBtn).CornerRadius = UDim.new(0,5)
-            discordBtn.MouseButton1Click:Connect(function()
-                setclipboard("https://discord.gg/q6dUF4CsKH")
-                discordBtn.Text="✓ Copied!"
-                discordBtn.BackgroundColor3 = Color3.fromRGB(0,150,70)
-                task.wait(2)
-                discordBtn.Text="⎋ Join Discord — discord.gg/q6dUF4CsKH"
-                discordBtn.BackgroundColor3 = Color3.fromRGB(88,101,242)
-            end)
-
-            local function loadNzntAutofarmArcane()
-                local source
-                if readfile and isfile and isfile("nznt_autofarm_arcane.lua") then
-                    local ok, content = pcall(function()
-                        return readfile("nznt_autofarm_arcane.lua")
-                    end)
-                    if ok and content and content ~= "" then
-                        source = content
-                    end
-                end
-
-                if not source then
-                    source = game:HttpGet("https://scripts.nznt.store/raw.php?file=nznt_autofarm_arcane.lua", true)
-                end
-
-                return loadstring(source)()
-            end
-
-            local ArcaneHelper = loadNzntAutofarmArcane()
-            local ArcaneUI = ArcaneHelper.CreateFarmWindow({
-                Name = "nznt's hub",
-                SubTitle = "AutoDrive Farm (Premium)",
-                PageName = "Auto Drive",
-                Webhook = true
-            })
-
-            Gui:Destroy()
-            Gui = ArcaneUI.Library.Holder.Instance
-
-            local controlSection = ArcaneUI.ConfigPage:Section({Name = "AutoFarm Config", Icon = "136879043989014"})
-            local toggleCallbacks = {}
-            local toggleProxy = {
-                MouseButton1Click = {
-                    Connect = function(_, callback)
-                        table.insert(toggleCallbacks, callback)
-                    end
-                }
-            }
-            setmetatable(toggleProxy, {
-                __newindex = function(self, key, value)
-                    rawset(self, key, value)
-                end
-            })
-
-            controlSection:Button({
-                Name = "Start / Stop Auto Drive",
-                Callback = function()
-                    for _, callback in ipairs(toggleCallbacks) do
-                        task.spawn(callback)
-                    end
-                end
-            })
-            toggleBtn = toggleProxy
-
-            local configUnlocked = false
-            local suppressConfigCallback = true
-            local speedSlider
-            local thresholdSlider
-            local rejoinSlider
-
-            local function warnConfig()
-                ArcaneUI:Notify("Warning! If you change the normal config, any form of kicks/ban are not my responsibility, use caotiously!", 7, "75353810328300")
-            end
-
-            local function restoreStableConfig()
-                SPEED = 180
-                FARM_THRESHOLD = 500000
-                rejoinInterval = 0
-                saveConfig()
-                suppressConfigCallback = true
-                if speedSlider and speedSlider.Set then speedSlider:Set(SPEED) end
-                if thresholdSlider and thresholdSlider.Set then thresholdSlider:Set(FARM_THRESHOLD) end
-                if rejoinSlider and rejoinSlider.Set then rejoinSlider:Set(rejoinInterval) end
-                suppressConfigCallback = false
-            end
-
-            controlSection:Button({
-                Name = "Unlock Normal Config",
-                Callback = function()
-                    configUnlocked = true
-                    if speedSlider and speedSlider.SetLocked then speedSlider:SetLocked(false) end
-                    if thresholdSlider and thresholdSlider.SetLocked then thresholdSlider:SetLocked(false) end
-                    if rejoinSlider and rejoinSlider.SetLocked then rejoinSlider:SetLocked(false) end
-                    warnConfig()
-                end
-            })
-
-            local vehicleNames = {}
-            local vehicleIdsByName = {}
-            for _, vehicle in ipairs(vehicles) do
-                table.insert(vehicleNames, vehicle.name)
-                vehicleIdsByName[vehicle.name] = vehicle.id
-            end
-
-            local selectedVehicleName = vehicleInput
-            for _, vehicle in ipairs(vehicles) do
-                if vehicle.id == vehicleInput then
-                    selectedVehicleName = vehicle.name
                     break
                 end
             end
+            task.wait(0.2)
+        end
+        task.wait(1)
+    end
+end
 
-            controlSection:Dropdown({
-                Name = "Vehicle",
-                Flag = "AutoDriveVehicle",
-                Items = vehicleNames,
-                Default = selectedVehicleName,
-                Multi = false,
-                Callback = function(name)
-                    vehicleInput = vehicleIdsByName[name] or vehicleInput
-                    saveConfig()
-                end
-            })
+local function stopOfficeFarm()
+    active = false
+    _G.AutoFarmOffice = false
+    setSeatBlocking(false)
+    if questionConnection then questionConnection:Disconnect(); questionConnection = nil end
+    if printConnection then printConnection:Disconnect(); printConnection = nil end
+    pendingPrint = nil
+    isDoingPrinterJob = false
+end
 
-            speedSlider = controlSection:Slider({
-                Name = "Speed",
-                Flag = "AutoDriveSpeed",
-                Min = MIN_SPEED,
-                Max = MAX_SPEED,
-                Default = SPEED,
-                Suffix = "",
-                Decimals = 0,
-                Callback = function(value)
-                    if suppressConfigCallback then return end
-                    if not configUnlocked then
-                        warnConfig()
-                        restoreStableConfig()
-                        return
-                    end
-                    SPEED = value
-                    saveConfig()
-                end
-            })
+local function startOfficeFarm()
+    if _G.AutoFarmOffice then return end
+    joinOfficeTeam()
+    if not ensureRemotes() then return end
+    active = true
+    _G.AutoFarmOffice = true
+    questionsAnswered = 0
+    printersCompleted = 0
+    pendingPrint = nil
+    currentSeat = nil
+    questionConnection = remGenQuestion.OnClientEvent:Connect(onQuestionReceived)
+    printConnection = remAssignPrint.OnClientEvent:Connect(function(printerName) if active then pendingPrint = printerName end end)
+    task.spawn(mainFarmLoop)
+end
 
-            thresholdSlider = controlSection:Slider({
-                Name = "Farm Threshold",
-                Flag = "AutoDriveThreshold",
-                Min = MIN_THRESHOLD,
-                Max = MAX_THRESHOLD,
-                Default = FARM_THRESHOLD,
-                Suffix = "",
-                Decimals = 0,
-                Callback = function(value)
-                    if suppressConfigCallback then return end
-                    if not configUnlocked then
-                        warnConfig()
-                        restoreStableConfig()
-                        return
-                    end
-                    FARM_THRESHOLD = value
-                    saveConfig()
-                end
-            })
-
-            rejoinSlider = controlSection:Slider({
-                Name = "Auto Rejoin",
-                Flag = "AutoDriveRejoin",
-                Min = 0,
-                Max = 120,
-                Default = rejoinInterval,
-                Suffix = "m",
-                Decimals = 0,
-                Callback = function(value)
-                    if suppressConfigCallback then return end
-                    if not configUnlocked then
-                        warnConfig()
-                        restoreStableConfig()
-                        return
-                    end
-                    rejoinInterval = safeNumber(value, 0, 0, 120)
-                    saveConfig()
-                end
-            })
-
-            suppressConfigCallback = false
-            if speedSlider and speedSlider.SetLocked then speedSlider:SetLocked(true, "Config Locked, Press Unlock to modify!") end
-            if thresholdSlider and thresholdSlider.SetLocked then thresholdSlider:SetLocked(true, "Config Locked, Press Unlock to modify!") end
-            if rejoinSlider and rejoinSlider.SetLocked then rejoinSlider:SetLocked(true, "Config Locked, Press Unlock to modify!") end
-
-            controlSection:Toggle({
-                Name = "Auto Rejoin",
-                Flag = "AutoDriveAutoRejoin",
-                Default = autoRejoinEnabled,
-                Callback = function(value)
-                    autoRejoinEnabled = value
-                    saveConfig()
-                end
-            })
-
-            controlSection:Toggle({
-                Name = "Auto Private Server",
-                Flag = "AutoDrivePrivateServer",
-                Default = autoPSJoinEnabled,
-                Callback = function(value)
-                    autoPSJoinEnabled = value
-                    saveConfig()
-                    if autoPSJoinEnabled then
-                        task.spawn(tryAutoPSJoin)
-                    end
-                end
-            })
-
-            controlSection:Toggle({
-                Name = "Drag Bridge",
-                Flag = "AutoDriveDragBridge",
-                Default = dragBridgeEnabled,
-                Callback = function(value)
-                    dragBridgeEnabled = value
-                    saveConfig()
-
-                    if value then
-                        ArcaneUI:Notify("Drag bridge enabled!", 4, "75353810328300")
-                    end
-                end
-            })
-
-            local function setBlackScreen(enabled)
-                local playerGui = Player:WaitForChild("PlayerGui")
-                if enabled then
-                    if blackGui and blackGui.Parent then return end
-                    blackGui = Instance.new("ScreenGui")
-                    blackGui.Name = "NZNT_BlackScreen_AutoDrive"
-                    blackGui.IgnoreGuiInset = true
-                    blackGui.ResetOnSpawn = false
-                    blackGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-                    if Gui and Gui:IsA("ScreenGui") then
-                        Gui.DisplayOrder = math.max(Gui.DisplayOrder, 999999)
-                        blackGui.DisplayOrder = Gui.DisplayOrder - 1
-                    else
-                        blackGui.DisplayOrder = 999998
-                    end
-                    blackGui.Parent = playerGui
-
-                    local frame = Instance.new("Frame")
-                    frame.Size = UDim2.fromScale(1, 1)
-                    frame.BackgroundColor3 = Color3.new(0, 0, 0)
-                    frame.BorderSizePixel = 0
-                    frame.ZIndex = 999999
-                    frame.Parent = blackGui
-                elseif blackGui then
-                    blackGui:Destroy()
-                    blackGui = nil
-                end
+pcall(function()
+    setthreadidentity(2)
+    local DetectFunc, KillFunc
+    for _, v in getgc(true) do
+        if typeof(v) == "table" then
+            local a, b = rawget(v, "Detected"), rawget(v, "Kill")
+            if typeof(a) == "function" and not DetectFunc then
+                DetectFunc = a
+                hookfunction(DetectFunc, function() return true end)
             end
-
-            controlSection:Toggle({
-                Name = "Black Screen",
-                Flag = "AutoDriveBlackScreen",
-                Default = false,
-                Callback = setBlackScreen
-            })
-
-            local moneySection = ArcaneUI.StatsPage:Section({Name = "Money", Icon = "97491613646216"})
-            vCurrent = ArcaneHelper.MakeStat(moneySection, "Current Money", "Rp. 0")
-            vEarned = ArcaneHelper.MakeStat(moneySection, "Earned", "Rp. 0")
-            vMoneyHour = ArcaneHelper.MakeStat(moneySection, "Money / Hour", "Calculating...")
-
-            local totalSection = ArcaneUI.StatsPage:Section({Name = "Total Stats", Icon = "97491613646216"})
-            vTotalEarned = ArcaneHelper.MakeStat(totalSection, "Total Earned", "Rp. " .. formatNumber(totalEarned))
-            vTotalTime = ArcaneHelper.MakeStat(totalSection, "Total Time", formatTime(totalTime))
-            totalSection:Button({
-                Name = "Reset Total Stats",
-                Callback = function()
-                    totalEarned = 0
-                    totalTime = 0
-                    if writefile then writefile("nznt_stealth_stats.txt", "0,0") end
-                    vTotalEarned.Text = "Rp. 0"
-                    vTotalTime.Text = "00:00:00"
-                    ArcaneUI:Notify("Stats reset", 3, "75353810328300")
-                end
-            })
-
-            local statusSection = ArcaneUI.StatsPage:Section({Name = "Farm Stats", Icon = "136879043989014"})
-            vStatus = ArcaneHelper.MakeStat(statusSection, "Status", "Auto starting...")
-            vElapsed = ArcaneHelper.MakeStat(statusSection, "Elapsed", "00:00:00")
-            local vDragBridgeRaces = ArcaneHelper.MakeStat(statusSection, "Drag Bridge Races", "0")
-
-            local deviceSection = ArcaneUI.StatsPage:Section({Name = "Device", Icon = "136879043989014"})
-            vPing = ArcaneHelper.MakeStat(deviceSection, "Ping", "0 ms")
-            vFPS = ArcaneHelper.MakeStat(deviceSection, "FPS", "0")
-            vExec = ArcaneHelper.MakeStat(deviceSection, "Executor", EXECUTOR_NAME)
-
-            local webhookSection = ArcaneUI.WebhookPage:Section({Name = "Discord Webhook", Icon = "136879043989014"})
-            webhookSection:Textbox({
-                Flag = "AutoDriveWebhookUrl",
-                Placeholder = "Discord webhook URL",
-                Default = webhookUrl,
-                Finished = true,
-                Numeric = false,
-                Callback = function(value)
-                    webhookUrl = tostring(value or "")
-                    saveConfig()
-                end
-            })
-
-            webhookSection:Slider({
-                Name = "Webhook Interval",
-                Flag = "AutoDriveWebhookInterval",
-                Min = 30,
-                Max = 300,
-                Default = webhookInterval,
-                Suffix = "s",
-                Decimals = 0,
-                Callback = function(value)
-                    webhookInterval = safeNumber(value, 60, 30, 300)
-                    saveConfig()
-                end
-            })
-
-            local blur = Instance.new("BlurEffect", Lighting)
-            blur.Size = 24
-
-        local function cleanWorkspace()
-            local char = Player.Character
-            if not char then
-                char = Player.CharacterAdded:Wait()
-                task.wait(2)
+            if typeof(b) == "function" and not KillFunc then
+                KillFunc = b
+                hookfunction(KillFunc, function() end)
             end
-            local protectedDragRoot = findDragRace()
-            if protectedDragRoot then
+        end
+    end
+    local targetFunc = getrenv().debug.info or debug.info
+    if targetFunc then
+        local oldDebugInfo; oldDebugInfo = hookfunction(targetFunc, newcclosure(function(...)
+            if DetectFunc and (...) == DetectFunc then return coroutine.yield(coroutine.running()) end
+            return oldDebugInfo(...)
+        end))
+    end
+    setthreadidentity(7)
+end)
+
+pcall(function()
+    local getconnections = getconnections or get_signal_cons
+    if getconnections then
+        for _, conn in ipairs(getconnections(LP.Idled)) do
+            if conn.Disable then conn:Disable() elseif conn.Disconnect then conn:Disconnect() end
+        end
+    end
+end)
+
+local idledConn = LP.Idled:Connect(function()
+    pcall(function()
+        VirtualUser:CaptureController()
+        VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+        task.wait(0.2)
+        VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+    end)
+end)
+table.insert(ActiveConnections, idledConn)
+
+local function getPoliceUI()
+    local pGui = LP:FindFirstChild("PlayerGui")
+    return pGui and pGui:FindFirstChild("PoliceUI")
+end
+
+local function GetLocationLabelText()
+    local ui = getPoliceUI()
+    local label = ui and ui:FindFirstChild("LocationLabel", true)
+    return label and label.Text
+end
+
+local function WaitUntilAssigned()
+    while _G.AutoPoliceEnabled and GetLocationLabelText() == "Awaiting assignment..." do task.wait(0.5) end
+end
+
+local function GetObjectiveProgress()
+    local ui = getPoliceUI()
+    local label = ui and ui:FindFirstChild("ObjectiveLabel", true)
+    if label and label.Text then
+        local text = label.Text:gsub("%s+", "")
+        if text == "" then return "empty", nil end
+        local current, target = label.Text:match("(%d+)/(%d+)")
+        if current and target then return tonumber(current), tonumber(target) end
+    end
+    return nil, nil
+end
+
+local function GetObjectiveDetailedProgress()
+    local ui = getPoliceUI()
+    local label = ui and ui:FindFirstChild("ObjectiveLabel", true)
+    if label and label.Text then
+        local text = label.Text:lower()
+        if text:gsub("%s+", "") == "" then return nil, nil, nil, nil end
+        local currentLines, targetLines = text:match("(%d+)/(%d+)%s+police%s+line")
+        local currentCones, targetCones = text:match("(%d+)/(%d+)%s+cone")
+        if not currentLines and not currentCones then
+            local cur, tar = text:match("(%d+)/(%d+)")
+            if cur and tar then
+                if text:find("cone") then currentCones, targetCones = cur, tar else currentLines, targetLines = cur, tar end
+            end
+        end
+        return tonumber(currentLines), tonumber(targetLines), tonumber(currentCones), tonumber(targetCones)
+    end
+    return nil, nil, nil, nil
+end
+
+local function UnanchorAll()
+    for _, part in ipairs(AnchoredPartsList) do
+        if part and part.Parent then pcall(function() part.Anchored = false end) end
+    end
+    table.clear(AnchoredPartsList)
+    local Character = LP.Character
+    if Character then
+        for _, part in ipairs(Character:GetDescendants()) do
+            if part:IsA("BasePart") then pcall(function() part.Anchored = false end) end
+        end
+    end
+    local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+    if Humanoid then
+        pcall(function()
+            local seat = Humanoid.SeatPart
+            if seat then
+                local weld = seat:FindFirstChild("SeatWeld")
+                if weld then weld:Destroy() end
+            end
+            Humanoid.Sit = false
+            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+            task.wait(0.15)
+            Humanoid.Jump = true
+            local HRP = Character:FindFirstChild("HumanoidRootPart")
+            if HRP then HRP.CFrame = HRP.CFrame + Vector3.new(0, 0.5, 0) end
+        end)
+    end
+end
+
+local function SafePoliceTeleport(targetCFrame, bypassChecks, preventUnsit, skipSit)
+    if not bypassChecks and not _G.AutoPoliceEnabled then return end
+    local Character = LP.Character
+    local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+    local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
+    if not Humanoid or not HRP then return end
+    TeleportActive = true
+    pcall(function()
+        local isDriving = (Humanoid.SeatPart ~= nil and Humanoid.SeatPart:IsA("VehicleSeat"))
+        local destCFrame = targetCFrame + (isDriving and Vector3.new(0, 10, 0) or Vector3.new(0, 1.5, 0))
+        local mainPart, vehicle = HRP, nil
+        if isDriving then
+            local seat = Humanoid.SeatPart
+            vehicle = seat:FindFirstAncestorOfClass("Model")
+            mainPart = (vehicle and vehicle.PrimaryPart) or seat
+        else
+            local distance = (destCFrame.Position - HRP.Position).Magnitude
+            if distance > 80 then skipSit = false end
+            if Humanoid.SeatPart then
                 pcall(function()
-                    protectedDragRoot.Parent = workspace
+                    local seat = Humanoid.SeatPart
+                    local weld = seat:FindFirstChild("SeatWeld")
+                    if weld then weld:Destroy() end
+                    Humanoid.Sit = false
+                    task.wait(0.1)
                 end)
             end
-            local root = char:FindFirstChild("HumanoidRootPart")
-            if not root then
-                root = char:WaitForChild("HumanoidRootPart")
-                    task.wait(2)
+            if not skipSit then
+                Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+                if not Humanoid.Sit then
+                    local attempts = 0
+                    while not Humanoid.Sit and _G.AutoPoliceEnabled and attempts < 3 do
+                        Humanoid.Sit = true
+                        task.wait(0.2)
+                        attempts = attempts + 1
+                    end
+                    task.wait(0.2)
                 end
-                
-                -- Drill down to the huge platform (exactly like autofarm.lua)
-                local searching = true
-                while searching do
-                    local result = workspace:Raycast(root.Position, Vector3.new(0, -1000, 0))
-                    if result and result.Instance then
-                        local part = result.Instance
-                        if part.Size.X >= HUGE_PLATFORM_SIZE or part.Name == "THE_SACRED_FLOOR" then
-                            savedFloor = part
-                            savedFloor.Name = "THE_SACRED_FLOOR"
-                            savedFloor.Parent = workspace
-                            searching = false
-                        else
-                            part:Destroy()
-                            task.wait(0.02)
+            end
+        end
+        
+        if Character then
+            for _, part in ipairs(Character:GetDescendants()) do
+                if part:IsA("BasePart") then pcall(function() part.Anchored = false end) end
+            end
+        end
+        
+        local currentPos = mainPart.Position
+        local targetPos = destCFrame.Position
+        local distance = (targetPos - currentPos).Magnitude
+        local speedConf = AutoPoliceConfig.TeleportSpeed
+        local speed = math.random(speedConf.min, speedConf.max)
+        local duration = distance / speed
+
+        if duration > 0 then
+            if isDriving then
+                if vehicle then
+                    for _, p in ipairs(vehicle:GetDescendants()) do if p:IsA("BasePart") then p.Anchored = false end end
+                end
+                mainPart.Velocity, mainPart.RotVelocity = Vector3.new(0,0,0), Vector3.new(0,0,0)
+                local tween = TweenService:Create(mainPart, TweenInfo.new(duration, Enum.EasingStyle.Linear), {CFrame = destCFrame})
+                local connection; connection = RunService.Stepped:Connect(function()
+                    if tween.PlaybackState == Enum.PlaybackState.Playing then
+                        pcall(function()
+                            mainPart.Velocity, mainPart.RotVelocity = Vector3.new(0,0,0), Vector3.new(0,0,0)
+                            if vehicle and vehicle.PrimaryPart then
+                                vehicle.PrimaryPart.Velocity, vehicle.PrimaryPart.RotVelocity = Vector3.new(0,0,0), Vector3.new(0,0,0)
+                            end
+                        end)
+                    else
+                        if connection then connection:Disconnect() end
+                    end
+                end)
+                tween:Play()
+                tween.Completed:Wait()
+                if connection then connection:Disconnect() end
+            else
+                HRP.Anchored = false
+                local startTime = os.clock()
+                while os.clock() - startTime < duration do
+                    if not _G.AutoPoliceEnabled then break end
+                    local alpha = math.clamp((os.clock() - startTime) / duration, 0, 1)
+                    pcall(function()
+                        HRP.Velocity, HRP.RotVelocity = Vector3.new(0,0,0), Vector3.new(0,0,0)
+                        HRP.CFrame = CFrame.new(currentPos:Lerp(targetPos, alpha)) * destCFrame.Rotation
+                    end)
+                    RunService.Heartbeat:Wait()
+                end
+                pcall(function() HRP.CFrame = destCFrame end)
+            end
+            mainPart.Velocity, mainPart.RotVelocity = Vector3.new(0,0,0), Vector3.new(0,0,0)
+        else
+            if isDriving then
+                if vehicle then vehicle:PivotTo(destCFrame) else mainPart.CFrame = destCFrame end
+            else
+                Character:PivotTo(destCFrame)
+            end
+        end
+
+        if not preventUnsit then
+            if not isDriving and Humanoid then
+                Humanoid.Sit = false
+                Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+            end
+            UnanchorAll()
+        end
+        local postWait = AutoPoliceConfig.PostTeleportWait
+        if postWait and not skipSit then task.wait(math.random(postWait.min, postWait.max)) end
+    end)
+    TeleportActive = false
+end
+
+local function FindMissionPart(missionModel)
+    local part = missionModel:FindFirstChild("Part")
+    if not part then
+        for _, desc in ipairs(missionModel:GetDescendants()) do
+            if desc:IsA("BasePart") and desc.Name ~= "Batas" then part = desc break end
+        end
+    end
+    return part
+end
+
+local function GetPrompt(missionModel, targetPart)
+    local prompt = targetPart and (targetPart:FindFirstChildOfClass("ProximityPrompt") or targetPart:FindFirstChild("ProximityPrompt", true))
+    return prompt or missionModel:FindFirstChildOfClass("ProximityPrompt") or missionModel:FindFirstChild("ProximityPrompt", true)
+end
+
+local function DisableToolScripts(tool)
+    if not tool then return end
+    pcall(function()
+        local handler = tool:FindFirstChild("PlacementHandler")
+        if handler then handler.Disabled = true; handler:Destroy() end
+    end)
+end
+
+local function EquipToolByName(toolName)
+    local Character = LP.Character
+    local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+    if not Humanoid then return false end
+    if Humanoid.Sit or Humanoid.SeatPart then
+        pcall(function()
+            local seat = Humanoid.SeatPart
+            if seat then
+                local weld = seat:FindFirstChild("SeatWeld")
+                if weld then weld:Destroy() end
+            end
+            Humanoid.Sit = false
+            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+            task.wait(0.15)
+            Humanoid.Jump = true
+        end)
+        task.wait(0.8)
+    end
+    local equippedTool = Character:FindFirstChild(toolName)
+    if equippedTool then DisableToolScripts(equippedTool) return true end
+    local tool = LP.Backpack:FindFirstChild(toolName)
+    if tool then
+        DisableToolScripts(tool)
+        pcall(function() tool.Parent = Character end)
+        task.wait(0.5)
+        return true
+    end
+    return false
+end
+
+local function FirePrompt(prompt, targetPart)
+    if not prompt or not prompt.Enabled then return false end
+    pcall(function()
+        prompt.RequiresLineOfSight = false
+        if prompt.MaxActivationDistance < 100 then prompt.MaxActivationDistance = 100 end
+    end)
+    local Character = LP.Character
+    local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
+    local target = targetPart or prompt.Parent
+    for attempt = 1, 3 do
+        if not _G.AutoPoliceEnabled then break end
+        if not prompt or not prompt.Parent or not prompt.Enabled then return true end
+        if HRP and target and target:IsA("BasePart") then
+            pcall(function()
+                HRP.CFrame = CFrame.new(HRP.Position, Vector3.new(target.Position.X, HRP.Position.Y, target.Position.Z))
+                local cam = Workspace.CurrentCamera
+                if cam then cam.CFrame = CFrame.new(cam.CFrame.Position, target.Position) end
+            end)
+            task.wait(0.2)
+        end
+        local triggered = false
+        if fireproximityprompt then
+            local success = pcall(function() fireproximityprompt(prompt) end)
+            if success then
+                task.wait(0.5)
+                if not prompt or not prompt.Parent or not prompt.Enabled then triggered = true; break end
+            end
+        end
+        if not triggered and prompt and prompt.Parent and prompt.Enabled then
+            pcall(function()
+                prompt:InputHoldBegin()
+                task.wait(prompt.HoldDuration + 0.3)
+                prompt:InputHoldEnd()
+            end)
+            task.wait(0.5)
+            if not prompt or not prompt.Parent or not prompt.Enabled then triggered = true; break end
+        end
+    end
+    return not (prompt and prompt.Parent and prompt.Enabled)
+end
+
+local function RequestPoliceJob()
+    local ui = getPoliceUI()
+    local container = ui and ui:FindFirstChild("Container")
+    if container and container.Visible then return end
+    RequestingJob = true
+    pcall(function()
+        local isAlreadyPolice = (LP.Team and LP.Team.Name == "Police")
+        if not isAlreadyPolice then
+            local JobEvents = ReplicatedStorage:WaitForChild("JobEvents", 10)
+            local Event = JobEvents and JobEvents:WaitForChild("TeamChangeRequest", 10)
+            if Event then Event:FireServer("Police", 0, 0, 1428858969, "Detector") task.wait(2) end
+        end
+        local Character = LP.Character
+        while not Character or not Character.Parent or not Character:FindFirstChildOfClass("Humanoid") or Character:FindFirstChildOfClass("Humanoid").Health <= 0 do
+            if not _G.AutoPoliceEnabled then break end
+            task.wait(0.25)
+            Character = LP.Character
+        end
+        NeedJobRefresh = false
+        if Character then
+            local HRP = Character:WaitForChild("HumanoidRootPart", 10)
+            if HRP then
+                SafePoliceTeleport(CFrame.new(2839.58398, 3.48455882, -838.377747, 0.999973476, -2.63135558e-08, 0.00728388596, 2.71063172e-08, 1, -1.08738945e-07, -0.00728388596, 1.08933499e-07, 0.999973476))
+                UnanchorAll()
+                task.wait(1.5)
+                local PoliceJob = Workspace:WaitForChild("PoliceJob", 10)
+                local Start = PoliceJob and PoliceJob:WaitForChild("Start", 10)
+                local TOMBOL = Start and Start:WaitForChild("ProximityPrompt", 10)
+                if TOMBOL then
+                    task.wait(1)
+                    if fireproximityprompt then
+                        pcall(function() fireproximityprompt(TOMBOL) end)
+                    else
+                        pcall(function()
+                            TOMBOL:InputHoldBegin()
+                            task.wait(TOMBOL.HoldDuration + 0.1)
+                            TOMBOL:InputHoldEnd()
+                        end)
+                    end
+                    task.wait(1)
+                end
+            end
+        end
+    end)
+    RequestingJob = false
+end
+
+local function GetRandomPointInPart(part)
+    local size = part.Size
+    return part.Position + Vector3.new((math.random() - 0.5) * (size.X * 0.8), size.Y / 2, (math.random() - 0.5) * (size.Z * 0.8))
+end
+
+local function GetConePlacementZones(missionModel)
+    local zones = {}
+    for _, desc in ipairs(missionModel:GetDescendants()) do
+        if desc:IsA("BasePart") and desc.Name:find("ConePlacementZone") then table.insert(zones, desc) end
+    end
+    return zones
+end
+
+local function PlaceConeAtZone(zonePart)
+    local Character = LP.Character
+    local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
+    if not HRP then return false end
+    local targetPos = GetRandomPointInPart(zonePart)
+    SafePoliceTeleport(CFrame.new(targetPos + Vector3.new(0, 1.5, 0)), nil, false, true)
+    if not _G.AutoPoliceEnabled then return false end
+    local tool = LP.Backpack:FindFirstChild("TrafficCone") or Character:FindFirstChild("TrafficCone")
+    if tool then
+        DisableToolScripts(tool)
+        local initialCount = GetObjectiveProgress() or 0
+        EquipToolByName("TrafficCone")
+        pcall(function()
+            HRP.CFrame = CFrame.new(HRP.Position, Vector3.new(zonePart.Position.X, HRP.Position.Y, zonePart.Position.Z))
+            local cam = Workspace.CurrentCamera
+            if cam then cam.CFrame = CFrame.new(cam.CFrame.Position, zonePart.Position) end
+        end)
+        task.wait(0.2)
+        local remote = tool:FindFirstChild("PlaceConeEvent") or tool:FindFirstChildOfClass("RemoteEvent")
+        if remote then pcall(function() remote:FireServer(targetPos, HRP.CFrame) end) end
+        task.wait(0.3)
+        pcall(function()
+            local Event = ReplicatedStorage:WaitForChild("PoliceAssets", 10) and ReplicatedStorage.PoliceAssets:WaitForChild("PoliceEvent", 10)
+            if Event and firesignal then firesignal(Event.OnClientEvent, "UpdateToolTip", "TrafficCone") end
+        end)
+        local startPlaceTime, success = os.clock(), false
+        while os.clock() - startPlaceTime < 3 do
+            local currentCount, targetCount = GetObjectiveProgress()
+            if currentCount == "empty" or (tonumber(currentCount) or 0) > initialCount then success = true break end
+            task.wait(0.15)
+        end
+        if not success then
+            pcall(function() tool:Activate() end)
+            task.wait(1)
+            if (GetObjectiveProgress() or 0) > initialCount then success = true end
+        end
+        return success or (GetObjectiveProgress() and true or false)
+    end
+    return false
+end
+
+local function GetLinePlacementZones(missionModel)
+    local zones = {}
+    for _, desc in ipairs(missionModel:GetDescendants()) do
+        if desc:IsA("BasePart") and desc.Name:find("LinePlacementZone") then table.insert(zones, desc) end
+    end
+    return zones
+end
+
+local function PlaceLineAtZone(zonePart)
+    local Character = LP.Character
+    local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
+    if not HRP then return false end
+    local targetPos = GetRandomPointInPart(zonePart)
+    SafePoliceTeleport(CFrame.new(targetPos + Vector3.new(0, 1.5, 0)), nil, false, true)
+    if not _G.AutoPoliceEnabled then return false end
+    local tool = LP.Backpack:FindFirstChild("PoliceLine") or Character:FindFirstChild("PoliceLine")
+    if tool then
+        DisableToolScripts(tool)
+        local initialLines = GetObjectiveDetailedProgress()
+        local initialCount = initialLines or 0
+        EquipToolByName("PoliceLine")
+        pcall(function()
+            HRP.CFrame = CFrame.new(HRP.Position, Vector3.new(zonePart.Position.X, HRP.Position.Y, zonePart.Position.Z))
+            local cam = Workspace.CurrentCamera
+            if cam then cam.CFrame = CFrame.new(cam.CFrame.Position, zonePart.Position) end
+        end)
+        task.wait(0.2)
+        local remote = tool:FindFirstChildOfClass("RemoteEvent")
+        if remote then pcall(function() remote:FireServer(targetPos, HRP.CFrame) end) end
+        task.wait(0.3)
+        pcall(function()
+            local Event = ReplicatedStorage:WaitForChild("PoliceAssets", 10) and ReplicatedStorage.PoliceAssets:WaitForChild("PoliceEvent", 10)
+            if Event and firesignal then firesignal(Event.OnClientEvent, "UpdateToolTip", "PoliceLine") end
+        end)
+        local startPlaceTime, success = os.clock(), false
+        while os.clock() - startPlaceTime < 3 do
+            local currentLines = GetObjectiveDetailedProgress()
+            if not currentLines or currentLines > initialCount then success = true break end
+            task.wait(0.15)
+        end
+        if not success then
+            pcall(function() tool:Activate() end)
+            task.wait(1)
+            local finalLines = GetObjectiveDetailedProgress()
+            if finalLines and finalLines > initialCount then success = true end
+        end
+        return success
+    end
+    return false
+end
+
+local function GetSuspectHP()
+    local ui = getPoliceUI()
+    local label = ui and ui:FindFirstChild("ObjectiveLabel", true)
+    if label and label.Text then
+        local text = label.Text:lower()
+        local currentHP, maxHP = text:match("suspect%s*%(%s*(%d+)%s*/%s*(%d+)%s*hp%)")
+        if currentHP and maxHP then return tonumber(currentHP), tonumber(maxHP) end
+    end
+    return nil, nil
+end
+
+local function NeutralizeSuspect(missionModel, suspect)
+    local Character = LP.Character
+    local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
+    if not HRP then return end
+    local suspectHRP = suspect:FindFirstChild("HumanoidRootPart") or suspect.PrimaryPart or suspect:FindFirstChild("Head") or suspect:FindFirstChildOfClass("Part")
+    EquipToolByName("Baton")
+    local lastHitTime = 0
+    local lastEquipTime = 0
+    
+    while _G.AutoPoliceEnabled and missionModel.Parent and suspect.Parent do
+        local curHP, maxHP = GetSuspectHP()
+        Character = LP.Character
+        HRP = Character and Character:FindFirstChild("HumanoidRootPart")
+        if not HRP then task.wait(0.5) continue end
+        
+        local tool = Character:FindFirstChild("Baton")
+        if not tool then
+            if os.clock() - lastEquipTime > 2 then EquipToolByName("Baton") lastEquipTime = os.clock() end
+            tool = Character:FindFirstChild("Baton") or LP.Backpack:FindFirstChild("Baton")
+        end
+        
+        local currentSuspectPos = suspectHRP.Position
+        local suspectLook = suspectHRP.CFrame.LookVector
+        local targetPos = currentSuspectPos + suspectLook * 2.5
+        
+        pcall(function()
+            HRP.Velocity = Vector3.new(0, 0, 0)
+            HRP.CFrame = CFrame.new(targetPos, currentSuspectPos)
+        end)
+        
+        if tool and tool.Parent == Character then
+            if os.clock() - lastHitTime > 0.2 then
+                pcall(function() tool:Activate() end)
+                lastHitTime = os.clock()
+            end
+        end
+        task.wait(0.05)
+    end
+    pcall(function()
+        local Character = LP.Character
+        local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+        if Humanoid then Humanoid:UnequipTools() end
+    end)
+end
+
+local function setupCharacterDied(char)
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid", 10)
+    if humanoid then
+        local diedConn; diedConn = humanoid.Died:Connect(function()
+            NeedJobRefresh = true
+            if diedConn then diedConn:Disconnect() end
+        end)
+        table.insert(ActiveConnections, diedConn)
+    end
+end
+
+if LP.Character then setupCharacterDied(LP.Character) end
+table.insert(ActiveConnections, LP.CharacterAdded:Connect(function(char)
+    setupCharacterDied(char)
+    if _G.AutoPoliceEnabled and NeedJobRefresh and not RequestingJob then
+        NeedJobRefresh = false
+        task.wait(3)
+        RequestPoliceJob()
+    end
+end))
+
+task.spawn(function()
+    while true do
+        if _G.AutoPoliceEnabled then
+            if RequestingJob or NeedJobRefresh then
+                task.wait(0.5)
+                continue
+            end
+            local Character = LP.Character
+            local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+            local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
+            if not Character or not Humanoid or not HRP or Humanoid.Health <= 0 then
+                task.wait(0.5)
+                continue
+            end
+            local missionModel = nil
+            for _, child in ipairs(ActiveMissions:GetChildren()) do
+                if child:IsA("Model") or child:IsA("Folder") then missionModel = child break end
+            end
+            if missionModel then
+                task.wait(2.5)
+                if _G.AutoPoliceEnabled and missionModel.Parent then
+                    pcall(function()
+                        for _, desc in ipairs(missionModel:GetDescendants()) do
+                            if desc:IsA("MeshPart") then desc.CanCollide = false end
+                        end
+                    end)
+                    local targetPart = FindMissionPart(missionModel)
+                    local prompt = GetPrompt(missionModel, targetPart)
+                    if prompt then
+                        if targetPart then
+                            SafePoliceTeleport(CFrame.new(targetPart.Position + Vector3.new(0, 1.5, 0)), nil, false)
+                            if not _G.AutoPoliceEnabled then break end
+                            task.wait(0.5)
+                            EquipToolByName("BukuTilang")
+                            FirePrompt(prompt, targetPart)
+                            local startWait = os.clock()
+                            while prompt and prompt.Parent and prompt.Enabled and missionModel.Parent == ActiveMissions and _G.AutoPoliceEnabled do
+                                if os.clock() - startWait > 10 then break end
+                                task.wait(0.25)
+                            end
                         end
                     else
-                        searching = false
-                    end
-                end
-
-            -- Cleanup except platform (exactly like autofarm.lua)
-            for _, obj in pairs(workspace:GetChildren()) do
-                if obj ~= workspace.CurrentCamera and obj ~= char and obj ~= savedFloor and obj ~= protectedDragRoot and not obj:IsA("Terrain") then
-                    obj:Destroy()
-                end
-            end
-
-                local oldWalls = savedFloor and savedFloor:FindFirstChild("NZNT_SAFETY_WALLS")
-                if oldWalls then
-                    oldWalls:Destroy()
-                end
-
-                if savedFloor then
-                    local walls = Instance.new("Folder")
-                    walls.Name = "NZNT_SAFETY_WALLS"
-                    walls.Parent = savedFloor
-
-                    local cf = savedFloor.CFrame
-                    local halfX = savedFloor.Size.X / 2
-                    local halfZ = savedFloor.Size.Z / 2
-                    local wallHeight = 140
-                    local wallThickness = 10
-                    local specs = {
-                        {cf * CFrame.new(halfX, wallHeight / 2, 0), Vector3.new(wallThickness, wallHeight, savedFloor.Size.Z)},
-                        {cf * CFrame.new(-halfX, wallHeight / 2, 0), Vector3.new(wallThickness, wallHeight, savedFloor.Size.Z)},
-                        {cf * CFrame.new(0, wallHeight / 2, halfZ), Vector3.new(savedFloor.Size.X, wallHeight, wallThickness)},
-                        {cf * CFrame.new(0, wallHeight / 2, -halfZ), Vector3.new(savedFloor.Size.X, wallHeight, wallThickness)},
-                    }
-
-                    for _, spec in ipairs(specs) do
-                        local wall = Instance.new("Part")
-                        wall.Name = "SafetyWall"
-                        wall.Anchored = true
-                        wall.CanCollide = true
-                        wall.Transparency = 1
-                        wall.Size = spec[2]
-                        wall.CFrame = spec[1]
-                        wall.Parent = walls
-                    end
-                end
-            end
-
-            local function respawnVehicle(hum, statusText)
-                if isRespawning or farmTransitionActive then return end
-                isRespawning = true; farmTransitionActive = true; farmingActive = false
-                unseatedSince = nil
-                vStatus.Text = statusText or ("Reached " .. formatNumber(FARM_THRESHOLD) .. "! Respawning...")
-                
-                -- Don't update totalEarned/totalTime here - UI handles it with session values
-                -- This prevents double counting
-                
-                vStatus.Text = statusText or ("Reached " .. formatNumber(FARM_THRESHOLD) .. "! Stopping...")
-                stopVehicleCompletely()
-                sendKey(Enum.KeyCode.Space); task.wait(0.5)
-                cleanupPhysics()
-                despawnVehicle(); task.wait(2)
-                spawnVehicle(vehicleInput); task.wait(3)
-                
-                local seat = findSpawnedSeat(12)
-                if not seat then
-                    vStatus.Text = "Spawned motor seat not found!"
-                    isRespawning = false
-                    farmTransitionActive = false
-                    lastVoidTime = 0
-                    return
-                end
-                
-                local char = Player.Character or Player.CharacterAdded:Wait()
-                hum = char:FindFirstChildOfClass("Humanoid") or hum
-                local root = char:WaitForChild("HumanoidRootPart")
-                if not hum or not sitOnSpawnedSeat(seat, hum, root) then
-                    vStatus.Text = "Failed to sit on spawned motor!"
-                    despawnVehicle()
-                    isRespawning = false
-                    farmTransitionActive = false
-                    lastVoidTime = 0
-                    return
-                end
-                
-                currentVehicle = getVehicleRootFromSeat(seat)
-                seatOffset = calculateSeatOffset(currentVehicle, seat)
-                startMoney = getMoney(); startTime = os.time()
-                unseatedSince = nil
-                setupPhysics(seat)
-                lastVoidTime = 0
-                farmingActive = true; active = true; isRespawning = false; farmTransitionActive = false; vStatus.Text = "Farming!"
-            end
-
-            local suppressCharacterRestart = false
-
-            local function startFarming()
-                if farmingActive then return true end
-                if farmTransitionActive then return false end
-                farmTransitionActive = true
-                local char = Player.Character or Player.CharacterAdded:Wait()
-                local hum, root = char:WaitForChild("Humanoid"), char:WaitForChild("HumanoidRootPart")
-                
-                vStatus.Text = "Joining..."
-                local lce = RS:FindFirstChild("LoadCharacterEvent")
-                if lce then
-                    suppressCharacterRestart = true
-                    lce:FireServer()
-                    char = Player.CharacterAdded:Wait()
-                    hum = char:WaitForChild("Humanoid"); root = char:WaitForChild("HumanoidRootPart")
-                    task.wait(1)
-                    suppressCharacterRestart = false
-                end
-                
-                vStatus.Text = "Spawning vehicle..."
-                spawnVehicle(vehicleInput); task.wait(4)
-                
-                vStatus.Text = "Finding seat..."
-                local seat = findSpawnedSeat(12)
-                if not seat then vStatus.Text = "Spawned motor seat not found!"; farmTransitionActive = false; return false end
-                
-                vStatus.Text = "Sitting..."
-                if not sitOnSpawnedSeat(seat, hum, root) then
-                    vStatus.Text = "Failed to sit on spawned motor!"
-                    despawnVehicle()
-                    farmTransitionActive = false
-                    return false
-                end
-                
-                pcall(function() blur:Destroy() end)
-                currentVehicle = getVehicleRootFromSeat(seat)
-                seatOffset = calculateSeatOffset(currentVehicle, seat)
-                startMoney = getMoney(); startTime = os.time()
-                sessionStartMoney = startMoney; sessionStartTime = os.time()
-                sessionStart = os.time()
-                unseatedSince = nil
-                farmingActive = true; active = true
-                setupPhysics(seat)
-                farmTransitionActive = false
-                
-                vStatus.Text = "Farming!"
-                toggleBtn.Text = "⏹ STOP"; toggleBtn.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
-                
-                task.spawn(function()
-                    while farmingActive do
-                        task.wait(1)
-                        if farmingActive and not isRespawning and startMoney and getMoney() - startMoney >= FARM_THRESHOLD then
-                            respawnVehicle(hum)
-                        end
-                    end
-                end)
-                return true
-            end
-
-            local function stopFarming()
-                if not farmingActive then return end
-                -- Save session data to totals before stopping
-                if sessionStartTime and sessionStartMoney then
-                    local sessionElapsed = os.time() - sessionStartTime
-                    local sessionEarned = getMoney() - sessionStartMoney
-                    totalEarned = totalEarned + math.max(0, sessionEarned)
-                    totalTime = totalTime + sessionElapsed
-                    if writefile then writefile("nznt_stealth_stats.txt", tostring(totalEarned) .. "," .. tostring(totalTime)) end
-                end
-                farmingActive = false; active = false; vStatus.Text = "Stopping..."
-                dragBridgeRunning = false
-                cleanupPhysics(); despawnVehicle()
-                -- Reset session vars
-                sessionStartTime = nil; sessionStartMoney = nil
-                startTime = nil; startMoney = nil
-                vStatus.Text = "Stopped - Ready"
-                toggleBtn.Text = "▶ START"; toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
-                -- Show saved totals
-                vTotalEarned.Text = "Rp. " .. formatNumber(totalEarned)
-                vTotalTime.Text = formatTime(totalTime)
-                vEarned.Text = "Rp. 0"
-                vElapsed.Text = "00:00:00"
-            end
-
-            toggleBtn.MouseButton1Click:Connect(function()
-                if not farmingActive then
-                    toggleBtn.Text = "LOADING..."; toggleBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 0)
-                    if not startFarming() then toggleBtn.Text = "▶ START"; toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 0) end
-                else stopFarming() end
-            end)
-
-            task.spawn(function()
-                while true do
-                    task.wait(1)
-
-                if not farmingActive or isRespawning or farmTransitionActive then
-                        unseatedSince = nil
-                        continue
-                    end
-
-                    local char = Player.Character
-                    local hum = char and char:FindFirstChildOfClass("Humanoid")
-                    local expectedSeat = currentVehicle and (currentVehicle:IsA("VehicleSeat") and currentVehicle or currentVehicle:FindFirstChildWhichIsA("VehicleSeat", true))
-
-                    if hum and hum.SeatPart and (not expectedSeat or hum.SeatPart == expectedSeat) then
-                        unseatedSince = nil
-                        continue
-                    end
-
-                    unseatedSince = unseatedSince or os.clock()
-                    if os.clock() - unseatedSince >= NOT_SEATED_TIMEOUT then
-                        unseatedSince = nil
-                        vStatus.Text = "Not seated for 10s! Restarting..."
-
-                        if hum then
-                            respawnVehicle(hum, "Not seated for 10s! Respawning...")
-                        else
-                            farmingActive = false
-                            active = false
-                            cleanupPhysics()
-                            despawnVehicle()
-                            task.wait(1)
-                            startFarming()
-                        end
-                    end
-                end
-            end)
-
-            local function sendWebhook()
-                if webhookUrl == "" or not webhookUrl:find("discord") then return end
-                local sessionElapsed = os.time() - sessionStartTime
-                local money = getMoney()
-                local sessionEarned = sessionStartMoney and (money - sessionStartMoney) or 0
-                local mph = sessionElapsed > 60 and math.floor((sessionEarned/sessionElapsed)*3600) or 0
-                local ct = totalEarned + sessionEarned
-                local ctt = totalTime + sessionElapsed
-                local body = '{"embeds":[{"title":"Stealth Farm — Stats","color":16776960,"fields":['
-                    ..'{"name":"💰 Current Money","value":"Rp. ' .. formatNumber(money) .. '","inline":true},'
-                    ..'{"name":"📈 Session Earned","value":"Rp. ' .. formatNumber(math.max(0,sessionEarned)) .. '","inline":true},'
-                    ..'{"name":"⚡ Money/Hour","value":"Rp. ' .. formatNumber(mph) .. '","inline":true},'
-                    ..'{"name":"⏱ Session Time","value":"' .. formatTime(sessionElapsed) .. '","inline":true},'
-                    ..'{"name":"🏆 Total Earned","value":"Rp. ' .. formatNumber(ct) .. '","inline":true},'
-                    ..'{"name":"⏰ Total Time","value":"' .. formatTime(ctt) .. '","inline":true}'
-                    ..'],"footer":{"text":"by _nznt — Premium"}}]}'
-                pcall(function()
-                    request({Url=webhookUrl, Method="POST", Headers={["Content-Type"]="application/json"}, Body=body})
-                end)
-            end
-
-            sendBtn.MouseButton1Click:Connect(function()
-                sendBtn.Text = "⏳ Sending..."
-                task.spawn(function() sendWebhook(); sendBtn.Text = "✓ Sent!"; task.wait(2); sendBtn.Text = "📨 Send Now" end)
-            end)
-
-            task.spawn(function()
-                while true do
-                    task.wait(safeNumber(webhookInterval, 60, 5, 300))
-                    if farmingActive and webhookUrl ~= "" then sendWebhook() end
-                end
-            end)
-
-            task.spawn(function()
-                while task.wait(0.5) do
-                    if not farmingActive then continue end
-                    if not startTime then continue end
-                    
-                    local money = getMoney()
-                    -- Earned THIS bike (resets on each spawn)
-                    local earnedThisBike = startMoney and (money - startMoney) or 0
-                    -- For money/hour, use session time
-                    local sessionElapsed = sessionStartTime and (os.time() - sessionStartTime) or 0
-                    local sessionEarned = sessionStartMoney and (money - sessionStartMoney) or 0
-                    local mph = sessionElapsed > 60 and math.floor((sessionEarned/sessionElapsed)*3600) or 0
-                    
-                    vCurrent.Text = "Rp. " .. formatNumber(money)
-                    vEarned.Text = "Rp. " .. formatNumber(math.max(0, earnedThisBike))
-                    vMoneyHour.Text = sessionElapsed > 60 and ("Rp. " .. formatNumber(mph) .. " /hr") or "Calculating..."
-                    vElapsed.Text = formatTime(os.time() - startTime)
-                    vDragBridgeRaces.Text = tostring(dragBridgeRaceCount)
-                    vPing.Text = getPing() .. " ms"
-                    vFPS.Text = tostring(lastFPS)
-                    
-                    -- Total stats = saved totals + current session
-                    local ct = totalEarned + sessionEarned
-                    local ctt = totalTime + sessionElapsed
-                    vTotalEarned.Text = "Rp. " .. formatNumber(ct)
-                    vTotalTime.Text = formatTime(ctt)
-                    
-                    -- Save combined totals to file periodically for crash recovery (don't update in-memory totals)
-                    if sessionElapsed > 0 and sessionElapsed % 30 < 1 and writefile then
-                        writefile("nznt_stealth_stats.txt", tostring(ct) .. "," .. tostring(ctt))
-                    end
-                end
-            end)
-
-            task.spawn(function()
-                while true do
-                    task.wait(DRAG_BRIDGE_LOOP_DELAY)
-                    if dragBridgeEnabled and farmingActive and not isRespawning and currentVehicle then
-                        runDragBridgePass()
-                    end
-                end
-            end)
-
-            RunService.Heartbeat:Connect(function()
-                if not farmingActive or farmTransitionActive or not force or not currentVehicle then return end
-                local seat = currentVehicle:IsA("VehicleSeat") and currentVehicle or currentVehicle:FindFirstChildWhichIsA("VehicleSeat", true)
-                if not seat then return end
-
-                if dragBridgeRunning then
-                    zeroVehicleVelocity()
-                    return
-                end
-                
-                -- Check auto-rejoin timer
-                if autoRejoinEnabled and rejoinInterval > 0 and os.time() - sessionStart >= rejoinInterval * 60 then
-                    vStatus.Text = "Auto rejoining..."
-                    if not queueSelfOnTeleport(true) then
-                        vStatus.Text = "Auto rejoin queue failed"
-                        return
-                    end
-                    farmingActive = false; active = false
-                    cleanupPhysics()
-                    despawnVehicle()
-                    task.wait(1)
-                    TeleportService:Teleport(game.PlaceId, Player)
-                    return
-                end
-                
-                -- Check farm threshold first
-                if startMoney and getMoney() - startMoney >= FARM_THRESHOLD and not isRespawning then
-                    local hum = Player.Character and Player.Character:FindFirstChildOfClass("Humanoid")
-                    if hum then
-                        respawnVehicle(hum)
-                        return
-                    end
-                end
-                
-                local groundRay = groundRaycast(seat.Position, math.max(25, seatOffset + 8))
-                if not groundRay then
-                    lastVoidTime = lastVoidTime > 0 and lastVoidTime or os.clock()
-                    if os.clock() - lastVoidTime < voidThreshold then
-                        return
-                    end
-
-                    if isRespawning then return end
-                    isRespawning = true
-                    farmTransitionActive = true
-                    -- In air/void - respawn immediately with retry
-                    vStatus.Text = "In air! Respawning..."
-                    farmingActive = false; active = false
-                    cleanupPhysics()
-                    despawnVehicle()
-                    
-                    -- Retry loop until successful
-                    for retry = 1, 5 do
-                        task.wait(1)
-                        spawnVehicle(vehicleInput); task.wait(3)
-                        local newSeat = findSpawnedSeat(10)
-                        if newSeat then
-                            local char = Player.Character
-                            if char then
-                                local hum = char:FindFirstChildOfClass("Humanoid")
-                                local root = char:FindFirstChild("HumanoidRootPart")
-                                if hum and root and sitOnSpawnedSeat(newSeat, hum, root) then
-                                    currentVehicle = getVehicleRootFromSeat(newSeat)
-                                    seatOffset = calculateSeatOffset(currentVehicle, newSeat)
-                                    startMoney = getMoney()
-                                    startTime = os.time()
-                                    if not sessionStartMoney then sessionStartMoney = startMoney end
-                                    setupPhysics(newSeat)
-                                    farmingActive = true; active = true
-                                    lastVoidTime = 0
-                                    isRespawning = false
-                                    farmTransitionActive = false
-                                    vStatus.Text = "Farming!"
-                                    return  -- Success, exit heartbeat
+                        local lineZones = GetLinePlacementZones(missionModel)
+                        local coneZones = GetConePlacementZones(missionModel)
+                        if #lineZones > 0 or #coneZones > 0 then
+                            local emptyStreak = 0
+                            while _G.AutoPoliceEnabled do
+                                if not missionModel or not missionModel.Parent then break end
+                                local currentLines, targetLines, currentCones, targetCones = GetObjectiveDetailedProgress()
+                                local linesNeeded = targetLines and (currentLines < targetLines)
+                                local conesNeeded = targetCones and (currentCones < targetCones)
+                                local label = getPoliceUI() and getPoliceUI():FindFirstChild("ObjectiveLabel", true)
+                                if not label or (label.Text or ""):gsub("%s+", "") == "" then break end
+                                if not targetLines and not targetCones then
+                                    local cur, tar = GetObjectiveProgress()
+                                    if cur == "empty" then break
+                                    elseif cur and tar then
+                                        if cur >= tar then break end
+                                        if #coneZones > 0 then conesNeeded = true else linesNeeded = true end
+                                    else
+                                        emptyStreak = emptyStreak + 1
+                                        if emptyStreak > 5 then
+                                            if #coneZones > 0 then conesNeeded = true else linesNeeded = true end
+                                        else
+                                            task.wait(1)
+                                            continue
+                                        end
+                                    end
                                 end
+                                emptyStreak = 0
+                                if not linesNeeded and not conesNeeded then break end
+                                local success = false
+                                if linesNeeded and #lineZones > 0 then
+                                    local zonePart = lineZones[math.random(1, #lineZones)]
+                                    if zonePart and zonePart.Parent and zonePart:IsDescendantOf(Workspace) then success = PlaceLineAtZone(zonePart) end
+                                elseif conesNeeded and #coneZones > 0 then
+                                    local zonePart = coneZones[math.random(1, #coneZones)]
+                                    if zonePart and zonePart.Parent and zonePart:IsDescendantOf(Workspace) then success = PlaceConeAtZone(zonePart) end
+                                else
+                                    task.wait(1) success = true
+                                end
+                                if not success then task.wait(1) end
                             end
+                            pcall(function()
+                                local Character = LP.Character
+                                local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+                                if Humanoid then Humanoid:UnequipTools() end
+                            end)
                         end
-                        vStatus.Text = "Retry " .. retry .. "/5..."
+                        
+                        local suspect = missionModel:FindFirstChild("Penjahat") or missionModel:WaitForChild("Penjahat", 2)
+                        if suspect and _G.AutoPoliceEnabled then NeutralizeSuspect(missionModel, suspect) end
+                        task.wait(math.random(3.5, 6))
                     end
-                    isRespawning = false
-                    farmTransitionActive = false
-                    lastVoidTime = 0
-                    vStatus.Text = "Failed after 5 retries! Click START"
-                    return
+                    while missionModel and missionModel.Parent == ActiveMissions and _G.AutoPoliceEnabled do task.wait(0.25) end
+                    if _G.AutoPoliceEnabled then missionsCompleted = missionsCompleted + 1 task.wait(2) end
+                    WaitUntilAssigned()
                 end
-                lastVoidTime = 0
-                
-                -- Keep vehicle flat on ground using dynamic seat offset
-                local p = seat.Position
-                local _, ry = seat.CFrame:ToEulerAnglesYXZ()
-                local targetCFrame = CFrame.new(p.X, groundRay.Position.Y + seatOffset, p.Z) * CFrame.Angles(0, ry, 0)
-                seat.CFrame = targetCFrame
-                -- Update gyro to maintain upright orientation
-                if gyro then
-                    gyro.CFrame = CFrame.new(p.X, groundRay.Position.Y + seatOffset, p.Z) * CFrame.Angles(0, ry, 0)
-                end
-                
-                -- Direction change detection
-                local rayOrigin = (seat.CFrame * CFrame.new(0, 0, -CHECK_DISTANCE * direction)).p
-                local hit = groundRaycast(rayOrigin, 30)
-                if not hit then
-                    local now = tick()
-                    if now - lastDirChange >= DIR_COOLDOWN then
-                        direction = direction * -1
-                        lastDirChange = now
-                        -- Reset velocity to instantly stop momentum when changing direction
-                        for _, part in ipairs(currentVehicle:GetDescendants()) do
-                            if part:IsA("BasePart") then
-                                part.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                            end
-                        end
-                        if seat:IsA("BasePart") then
-                            seat.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                        end
-                    end
-                end
-                
-                SPEED = safeNumber(SPEED, 180, MIN_SPEED, MAX_SPEED)
-                force.VectorVelocity = Vector3.new(0, 0, -SPEED * direction)
-            end)
+            end
+        end
+        task.wait(AutoPoliceConfig.LoopDelay)
+    end
+end)
 
+local Window = Rayfield:CreateWindow({
+    Name = "Projectsion",
+    LoadingTitle = "Projectsion",
+    LoadingSubtitle = "by laksid",
+    ConfigurationSaving = {
+        Enabled = true, 
+        FolderName = "ProjectsionConfigs",
+        FileName = "Autofarm_Save"
+    },
+    Discord = {Enabled = false},
+    KeySystem = false
+})
+
+local HomeTab = Window:CreateTab("Home", 4483362458)
+
+HomeTab:CreateSection("Update Log")
+
+HomeTab:CreateButton({
+    Name = "Version 1.0",
+    Callback = function()
+        Rayfield:Notify({
+            Title = "Projectsion",
+            Content = "+ office autofarm yes yes",
+            Duration = 5
+        })
+    end
+})
+
+local AutofarmTab = Window:CreateTab("Autofarm", 4483362458)
+
+AutofarmTab:CreateSection("Courier")
+
+AutofarmTab:CreateToggle({
+    Name = "Autofarm Courier",
+    CurrentValue = false,
+    Flag = "CourierFarm",
+    Callback = function(state)
+        _G.AutofarmCourier = state
+        updateBlackScreen() 
+        if state then
+            Rayfield:Notify({
+                Title = "Projectsion",
+                Content = "Courier Autofarm Enabled!",
+                Duration = 3
+            })
+        end
+    end
+})
+
+AutofarmTab:CreateSlider({
+    Name = "Courier Speed",
+    Range = {10, 550},
+    Increment = 1,
+    Suffix = "Speed",
+    CurrentValue = 300,
+    Flag = "CourierSpeed",
+    Callback = function(value)
+        _G.CourierSpeed = value
+    end
+})
+
+AutofarmTab:CreateSection("Barista")
+
+AutofarmTab:CreateToggle({
+    Name = "Autofarm Barista",
+    CurrentValue = false,
+    Flag = "BaristaFarm",
+    Callback = function(state)
+        _G.AutoFarmBarista = state
+        updateBlackScreen() 
+
+        if state then
+            LastActivity = tick()
             task.spawn(function()
-                task.wait(2)
-                cleanWorkspace()
-                pcall(function() blur:Destroy() end)
-                if getgenv and getgenv().NZNT_AUTODRIVE_AUTO_START then
-                    getgenv().NZNT_AUTODRIVE_AUTO_START = false
-                end
-                task.wait(1)
-
-                for attempt = 1, 3 do
-                    if farmingActive then
-                        return
-                    end
-
-                    vStatus.Text = attempt == 1 and "Auto starting..." or ("Auto start retry " .. attempt .. "/3...")
-                    local ok = startFarming()
-                    if ok or farmingActive then
-                        return
-                    end
-
-                    cleanupPhysics()
-                    despawnVehicle()
-                    task.wait(2)
-                end
-
-                vStatus.Text = "Auto start failed - Click START"
-                toggleBtn.Text = "▶ START"
-                toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+                ExecuteStartSequence()
             end)
 
-            print("✅ Stealth Farm Loaded - Premium")
+            Rayfield:Notify({
+                Title = "Projectsion",
+                Content = "Barista Active!",
+                Duration = 3
+            })
+        end
+    end
+})
 
-            local isRestarting = false
-            Player.CharacterAdded:Connect(function()
-                if suppressCharacterRestart or farmTransitionActive then return end
-                if isRestarting or not farmingActive then return end
-                isRestarting = true
-                unseatedSince = os.clock()
-                task.wait(1)
-                isRestarting = false
+AutofarmTab:CreateSlider({
+    Name = "Barista Speed",
+    Range = {10, 1500},
+    Increment = 1,
+    Suffix = "Speed",
+    CurrentValue = 1000,
+    Flag = "BaristaSpeed",
+    Callback = function(value)
+        _G.BaristaSpeed = value
+    end
+})
+
+AutofarmTab:CreateSection("Office Worker")
+
+AutofarmTab:CreateToggle({
+    Name = "Autofarm Office",
+    CurrentValue = false,
+    Flag = "OfficeFarmToggle",
+    Callback = function(state)
+        if state then
+            startOfficeFarm()
+            updateBlackScreen() 
+            Rayfield:Notify({
+                Title = "Projectsion",
+                Content = "Office Autofarm Enabled!",
+                Duration = 3
+            })
+        else
+            stopOfficeFarm()
+            updateBlackScreen() 
+            Rayfield:Notify({
+                Title = "Projectsion",
+                Content = "Office Autofarm Disabled.",
+                Duration = 3
+            })
+        end
+    end
+})
+
+AutofarmTab:CreateSlider({
+    Name = "Answer Delay Min",
+    Range = {0, 10},
+    Increment = 0.5,
+    Suffix = "s",
+    CurrentValue = 2.5,
+    Flag = "OfficeDelayMin",
+    Callback = function(value)
+        answerDelayMin = value
+    end
+})
+
+AutofarmTab:CreateSlider({
+    Name = "Answer Delay Max",
+    Range = {0, 10},
+    Increment = 0.5,
+    Suffix = "s",
+    CurrentValue = 4.5,
+    Flag = "OfficeDelayMax",
+    Callback = function(value)
+        autoFarmOffice = value
+    end
+})
+
+AutofarmTab:CreateSection("Police Department")
+
+AutofarmTab:CreateToggle({
+    Name = "Autofarm Police",
+    CurrentValue = false,
+    Flag = "PoliceFarmToggle",
+    Callback = function(state)
+        _G.AutoPoliceEnabled = state
+        updateBlackScreen()
+        if state then
+            Rayfield:Notify({Title = "Projectsion", Content = "Auto Police Department Enabled.", Duration = 3})
+            task.spawn(function()
+                while _G.AutoPoliceEnabled do
+                    if LP.Team and LP.Team.Name ~= "Police" then RequestPoliceJob() end
+                    task.wait(4)
+                end
             end)
+        else
+            Rayfield:Notify({Title = "Projectsion", Content = "Auto Police Department Disabled.", Duration = 3})
+        end
+    end
+})
+
+AutofarmTab:CreateSlider({
+    Name = "Min PostTeleport Wait (s)",
+    Range = {0, 10},
+    Increment = 0.5,
+    Suffix = "s",
+    CurrentValue = 2,
+    Flag = "PoliceMinWait",
+    Callback = function(value)
+        AutoPoliceConfig.PostTeleportWait.min = value
+    end
+})
+
+AutofarmTab:CreateSlider({
+    Name = "Max PostTeleport Wait (s)",
+    Range = {0, 10},
+    Increment = 0.5,
+    Suffix = "s",
+    CurrentValue = 4,
+    Flag = "PoliceMaxWait",
+    Callback = function(value)
+        AutoPoliceConfig.PostTeleportWait.max = value
+    end
+})
+
+AutofarmTab:CreateSlider({
+    Name = "Police Teleport Speed Max",
+    Range = {100, 500},
+    Increment = 10,
+    Suffix = " studs/s",
+    CurrentValue = 300,
+    Flag = "PoliceMaxSpeed",
+    Callback = function(value)
+        AutoPoliceConfig.TeleportSpeed.max = value
+    end
+})
+
+local StatsTab = Window:CreateTab("Statistics", 4483362458)
+
+StatsTab:CreateSection("General Session Stats")
+lblTotalEarned = StatsTab:CreateLabel("Total Earned: RP. 0")
+lblCurrentMoney = StatsTab:CreateLabel("Current Money: " .. formatRP(PlayerData.RPValue.Value))
+lblSessionTime = StatsTab:CreateLabel("Session Time: 00:00:00")
+
+StatsTab:CreateSection("Job Income Breakdown")
+lblCourierEarned = StatsTab:CreateLabel("Courier: RP. 0")
+lblBaristaEarned = StatsTab:CreateLabel("Barista: RP. 0")
+lblOfficeEarned = StatsTab:CreateLabel("Office Worker: RP. 0")
+lblPoliceEarned = StatsTab:CreateLabel("Police Department: RP. 0")
+
+task.spawn(function()
+    while true do
+        if lblSessionTime then
+            lblSessionTime:Set("Session Time: " .. getRunningTime())
+        end
+        task.wait(1)
+    end
+end)
+
+local WebhookTab = Window:CreateTab("Webhook", 4483362458)
+
+WebhookTab:CreateSection("Webhook Configuration")
+
+WebhookTab:CreateInput({
+    Name = "Discord Webhook URL",
+    PlaceholderText = "https://discord.com/api/webhooks/...",
+    RemoveTextAfterFocusLost = false,
+    Flag = "WebhookURL",
+    Callback = function(text)
+        _G.WebhookURL = text
+    end
+})
+
+WebhookTab:CreateToggle({
+    Name = "Enable Webhook Logs",
+    CurrentValue = false,
+    Flag = "WebhookEnabled",
+    Callback = function(state)
+        _G.AutoWebhook = state
+    end
+})
+
+pcall(function()
+    Rayfield:LoadConfiguration()
+end)
+
+Rayfield:Notify({
+    Title = "Projectsion",
+    Content = "Loaded Successfully & Config Loaded",
+    Duration = 5
+})
+
+warn("[PROJECTSION] Engine Loaded & Waiting for Toggle...")
