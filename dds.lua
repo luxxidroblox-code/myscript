@@ -1,5 +1,5 @@
 -- ============================================
--- STEALTH DRIVE - DYNAMIC INVENTORY EDITION
+-- STEALTH DRIVE - DYNAMIC INVENTORY EDITION (FIXED HTTP 400)
 -- Auto-detects owned vehicles from player data
 -- ============================================
 
@@ -29,54 +29,47 @@ local attachment       = nil
 local heartbeatConn    = nil
 
 -- ============================================
--- DYNAMIC INVENTORY SCANNER (Mencari Motor di Dex/Data)
+-- DYNAMIC INVENTORY SCANNER
 -- ============================================
 local OwnedVehicles = {}
 
 local function scanInventory()
     table.clear(OwnedVehicles)
     
-    -- Mencari folder inventaris yang umum di data player
     local playerData = Player:FindFirstChild("PlayerData") or Player:FindFirstChild("Data")
     local inventory = Player:FindFirstChild("Inventory") or (playerData and (playerData:FindFirstChild("Inventory") or playerData:FindFirstChild("Vehicles") or playerData:FindFirstChild("OwnedCars")))
     
     if inventory then
         for _, item in pairs(inventory:GetChildren()) do
-            -- Memasukkan nama objek/value ke dalam daftar motor
             if item:IsA("ValueBase") then
-                -- Jika datanya berupa BoolValue/StringValue (contoh: item.Name = "MioSporty", Value = true)
                 if item.Value == true or typeof(item.Value) == "string" then
                     table.insert(OwnedVehicles, item.Name)
                 end
             else
-                -- Jika datanya berupa Folder/Part/Configuration di dalam inventaris
                 table.insert(OwnedVehicles, item.Name)
             end
         end
     end
     
-    -- Cadangan: Jika inventaris kosong/tidak ketemu, beri opsi default agar tidak eror
     if #OwnedVehicles == 0 then
         table.insert(OwnedVehicles, "Yamahax-MioSporty")
         table.insert(OwnedVehicles, "Honda-Beat")
     end
     
-    -- Set default selection ke motor pertama yang ditemukan
     selectedVehicle = OwnedVehicles[1]
 end
 
--- Jalankan scan pertama kali sebelum UI dibuat
 scanInventory()
 
 -- ============================================
--- RAYFIELD UI SETUP
+-- RAYFIELD UI SETUP (MENGGUNAKAN LINK GITHUB RAW RESMI)
 -- ============================================
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua'))()
 
 local Window = Rayfield:CreateWindow({
    Name = "Stealth Drive Premium",
    LoadingTitle = "Scanning Vehicles...",
-   LoadingSubtitle = "by _nznt (Inventory Scan)",
+   LoadingSubtitle = "by _nznt (Fixed Load)",
    ConfigurationSaving = { Enabled = false }
 })
 
@@ -90,7 +83,6 @@ local SettingsTab = Window:CreateTab("Settings", 4483362458)
 local function spawnVehicle(vehicleId)
     local sf = RS:FindFirstChild("SpawnCarEvents") or RS:FindFirstChild("CarEvents") or RS:FindFirstChild("VehicleEvents")
     if sf then
-        -- Mencari remote untuk spawn (menyesuaikan nama remote umum)
         local r = sf:FindFirstChild("SpawnCar") or sf:FindFirstChild("SpawnVehicle") or sf:FindFirstChild("Spawn")
         if r and r:IsA("RemoteEvent") then 
             r:FireServer(vehicleId) 
@@ -115,7 +107,6 @@ local function startAutoDrive()
     spawnVehicle(selectedVehicle)
     task.wait(3)
 
-    -- Cari VehicleSeat terdekat
     local seat = nil
     local closestDistance = math.huge
     for _, obj in pairs(workspace:GetChildren()) do
@@ -130,7 +121,7 @@ local function startAutoDrive()
     end
 
     if not seat then
-        Rayfield:Notify({Title = "Error", Content = "Motor tidak ditemukan! Pastikan kamu berada dekat tempat spawn.", Duration = 5})
+        Rayfield:Notify({Title = "Error", Content = "Motor tidak ditemukan!", Duration = 5})
         return false
     end
 
@@ -156,7 +147,6 @@ end
 -- UI ELEMENTS (MAIN TAB)
 -- ============================================
 
--- Dropdown otomatis terisi berdasarkan isi Data/Inventory kamu
 local VehicleDropdown = MainTab:CreateDropdown({
    Name = "Pilih Motor (Dari Inventory)",
    Options = OwnedVehicles,
@@ -168,7 +158,6 @@ local VehicleDropdown = MainTab:CreateDropdown({
    end,
 })
 
--- Tombol untuk scan ulang jika kamu baru beli motor baru di game
 MainTab:CreateButton({
    Name = "🔄 Refresh Daftar Motor",
    Callback = function()
