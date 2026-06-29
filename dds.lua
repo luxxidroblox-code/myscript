@@ -36,33 +36,47 @@ end)
 local TeleportService = game:GetService("TeleportService")
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
+local GuiService = game:GetService("GuiService")
 
 local function RejoinServer()
-    local currentPlaceId = game.PlaceId
-    local currentJobId = game.JobId
+    local place_id = game.PlaceId
+    local job_id   = game.JobId
     
-    if game.PrivateServerId ~= "" and game.PrivateServerOwnerId ~= 0 then
-        pcall(function()
-            TeleportService:TeleportToPrivateServer(currentPlaceId, game.PrivateServerId, {LP})
-        end)
-    else
-        pcall(function()
-            TeleportService:Teleport(currentPlaceId, LP)
-        end)
+    if not place_id or not job_id or job_id == "" then
+        return false
     end
     
-    task.wait(5)
-    pcall(function()
-        local HttpService = game:GetService("HttpService")
-        local api = "https://games.roblox.com/v1/games/" .. currentPlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
-        local servers = HttpService:JSONDecode(game:HttpGet(api))
-        for _, server in pairs(servers.data) do
-            if server.id ~= currentJobId and server.playing < server.maxPlayers then
-                TeleportService:TeleportToPlaceInstance(currentPlaceId, server.id, LP)
-                break
-            end
+    if #Players:GetPlayers() <= 1 then
+        LP:Kick("\nRejoining")
+        task.wait(0.5)
+        TeleportService:Teleport(place_id, LP)
+        return true
+    end
+    
+    local error_connection
+    error_connection = GuiService.ErrorMessageChanged:Connect(function(errorMessage, errorCode)
+        if errorMessage:find("Unauthorized") or errorMessage:find("private") then
+            error_connection:Disconnect()
+            TeleportService:Teleport(place_id, LP)
         end
     end)
+    
+    local success, result = pcall(function()
+        TeleportService:TeleportToPlaceInstance(place_id, job_id, LP)
+    end)
+    
+    if not success then
+        if error_connection then error_connection:Disconnect() end
+        TeleportService:Teleport(place_id, LP)
+    end
+    
+    task.delay(10, function()
+        if error_connection then
+            error_connection:Disconnect()
+        end
+    end)
+    
+    return true
 end
 
 game:GetService("GuiService").ErrorMessageChanged:Connect(function()
@@ -603,7 +617,6 @@ pcall(function()
 end)
 
 local PathfindingService = game:GetService("PathfindingService")
-local GuiService = game:GetService("GuiService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local VirtualUser = game:GetService("VirtualUser")
 
@@ -745,7 +758,7 @@ end
 
 local function normalizeMathText(text)
     local normalized = tostring(text or "")
-    normalized = normalized:gsub("\226\136\146", "-"):gsub("\226\128\147", "-"):gsub("\226\128\148", "-"):gsub("\195\151", "*"):gsub("\195\183", "/")
+    normalized = normalized:gsub("\226\136\146", "-"):gsub("\226\128\147", "-"):gsub("\226\128\148", "-"):gsub("\120", "*"):gsub("\247", "/")
     return normalized
 end
 
@@ -880,7 +893,7 @@ local function guiContainsQuestion(root, questionText)
     local needles = {normalizeAnswerText(questionText)}
     for _, obj in ipairs(root:GetDescendants()) do
         if (obj:IsA("TextButton") or obj:IsA("TextLabel") or obj:IsA("TextBox")) and normalizeAnswerText(obj.Text) ~= "" then
-            for _, needle in ipairs(needle) do if normalizeAnswerText(obj.Text):find(needle, 1, true) then return true end end
+            for _, needle in ipairs(needles) do if normalizeAnswerText(obj.Text):find(needle, 1, true) then return true end end
         end
     end
     return false
