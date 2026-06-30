@@ -44,6 +44,7 @@ local RunService = game:GetService("RunService")
 local PlayerData = LP:WaitForChild("PlayerData")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
+local TeleportService = game:GetService("TeleportService")
 
 local CourierSettings = require(ReplicatedStorage:WaitForChild("Delivery System"):WaitForChild("Settings"))
 local MachinePrompt = workspace.BaristaJob.Interactions.MachinePart.MachinePart.MachinePrompt
@@ -106,6 +107,22 @@ local function generateRandomName()
         randomString = randomString .. string.sub(chars, rand, rand)
     end
     return randomString
+end
+
+local function RejoinServer()
+    Rayfield:Notify({
+        Title = "Projectsion",
+        Content = "Rejoining server...",
+        Duration = 3
+    })
+    task.wait(0.5)
+    pcall(function()
+        if #Players:GetPlayers() <= 1 then
+            TeleportService:Teleport(game.PlaceId, LP)
+        else
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LP)
+        end
+    end)
 end
 
 local BlackScreen = Instance.new("ScreenGui")
@@ -1746,6 +1763,13 @@ HomeTab:CreateButton({
             Content = "+ office autofarm yes yes",
             Duration = 5
         })
+    end
+})
+
+HomeTab:CreateButton({
+    Name = "Rejoin Server",
+    Callback = function()
+        RejoinServer()
     end
 })
 
