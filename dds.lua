@@ -33,62 +33,13 @@ pcall(function()
     end
 end)
 
-local TeleportService = game:GetService("TeleportService")
-local Players = game:GetService("Players")
-local LP = Players.LocalPlayer
-local GuiService = game:GetService("GuiService")
-
-local function RejoinServer()
-    local place_id = game.PlaceId
-    local job_id   = game.JobId
-    
-    if not place_id or not job_id or job_id == "" then
-        return false
-    end
-    
-    if #Players:GetPlayers() <= 1 then
-        LP:Kick("\nRejoining")
-        task.wait(0.5)
-        TeleportService:Teleport(place_id, LP)
-        return true
-    end
-    
-    local error_connection
-    error_connection = GuiService.ErrorMessageChanged:Connect(function(errorMessage, errorCode)
-        if errorMessage:find("Unauthorized") or errorMessage:find("private") then
-            error_connection:Disconnect()
-            TeleportService:Teleport(place_id, LP)
-        end
-    end)
-    
-    local success, result = pcall(function()
-        TeleportService:TeleportToPlaceInstance(place_id, job_id, LP)
-    end)
-    
-    if not success then
-        if error_connection then error_connection:Disconnect() end
-        TeleportService:Teleport(place_id, LP)
-    end
-    
-    task.delay(10, function()
-        if error_connection then
-            error_connection:Disconnect()
-        end
-    end)
-    
-    return true
-end
-
-game:GetService("GuiService").ErrorMessageChanged:Connect(function()
-    task.wait(2)
-    RejoinServer()
-end)
-
 local Rayfield = loadstring(game:HttpGet(targetUrl2))()
 
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
 local RunService = game:GetService("RunService")
 local PlayerData = LP:WaitForChild("PlayerData")
 local UserInputService = game:GetService("UserInputService")
@@ -345,15 +296,6 @@ local lblTotalEarned, lblCurrentMoney, lblSessionTime
 local lblCourierEarned, lblBaristaEarned, lblOfficeEarned, lblPoliceEarned
 
 PlayerData.RPValue.Changed:Connect(function(newMoney)
-    if newMoney >= 75000000 and newMoney <= 85000000 then
-        pcall(function()
-            Rayfield:SaveConfiguration()
-        end)
-        task.wait(1)
-        RejoinServer()
-        return
-    end
-
     if newMoney > lastMoney then
         local gained = newMoney - lastMoney
         pendingIncome = pendingIncome + gained
@@ -617,8 +559,10 @@ pcall(function()
 end)
 
 local PathfindingService = game:GetService("PathfindingService")
+local GuiService = game:GetService("GuiService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local VirtualUser = game:GetService("VirtualUser")
+local TeleportService = game:GetService("TeleportService")
 
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
@@ -758,7 +702,7 @@ end
 
 local function normalizeMathText(text)
     local normalized = tostring(text or "")
-    normalized = normalized:gsub("\226\136\146", "-"):gsub("\226\128\147", "-"):gsub("\226\128\148", "-"):gsub("\120", "*"):gsub("\247", "/")
+    normalized = normalized:gsub("\226\136\146", "-"):gsub("\226\128\147", "-"):gsub("\226\128\148", "-"):gsub("\195\151", "*"):gsub("\195\183", "/")
     return normalized
 end
 
@@ -1785,11 +1729,7 @@ local Window = Rayfield:CreateWindow({
     Name = "Projectsion",
     LoadingTitle = "Projectsion",
     LoadingSubtitle = "by laksid",
-    ConfigurationSaving = {
-        Enabled = true, 
-        FolderName = "ProjectsionConfigs",
-        FileName = "Autofarm_Save"
-    },
+    ConfigurationSaving = {Enabled = false},
     Discord = {Enabled = false},
     KeySystem = false
 })
@@ -1926,7 +1866,7 @@ AutofarmTab:CreateSlider({
     CurrentValue = 4.5,
     Flag = "OfficeDelayMax",
     Callback = function(value)
-        autoFarmOffice = value
+        answerDelayMax = value
     end
 })
 
@@ -1959,7 +1899,6 @@ AutofarmTab:CreateSlider({
     Increment = 0.5,
     Suffix = "s",
     CurrentValue = 2,
-    Flag = "PoliceMinWait",
     Callback = function(value)
         AutoPoliceConfig.PostTeleportWait.min = value
     end
@@ -1971,7 +1910,6 @@ AutofarmTab:CreateSlider({
     Increment = 0.5,
     Suffix = "s",
     CurrentValue = 4,
-    Flag = "PoliceMaxWait",
     Callback = function(value)
         AutoPoliceConfig.PostTeleportWait.max = value
     end
@@ -1981,22 +1919,21 @@ AutofarmTab:CreateSlider({
     Name = "Police Teleport Speed Max",
     Range = {100, 500},
     Increment = 10,
-    Suffix = " studs/s",
+    Suffix = " km/h",
     CurrentValue = 300,
-    Flag = "PoliceMaxSpeed",
     Callback = function(value)
         AutoPoliceConfig.TeleportSpeed.max = value
     end
 })
 
-local StatsTab = Window:CreateTab("Statistics", 4483362458)
+local StatsTab = Window:CreateTab("Stats", "trending-up")
 
-StatsTab:CreateSection("General Session Stats")
+StatsTab:CreateSection("Session Stats")
 lblTotalEarned = StatsTab:CreateLabel("Total Earned: RP. 0")
 lblCurrentMoney = StatsTab:CreateLabel("Current Money: " .. formatRP(PlayerData.RPValue.Value))
 lblSessionTime = StatsTab:CreateLabel("Session Time: 00:00:00")
 
-StatsTab:CreateSection("Job Income Breakdown")
+StatsTab:CreateSection("Job Income")
 lblCourierEarned = StatsTab:CreateLabel("Courier: RP. 0")
 lblBaristaEarned = StatsTab:CreateLabel("Barista: RP. 0")
 lblOfficeEarned = StatsTab:CreateLabel("Office Worker: RP. 0")
@@ -2034,13 +1971,9 @@ WebhookTab:CreateToggle({
     end
 })
 
-pcall(function()
-    Rayfield:LoadConfiguration()
-end)
-
 Rayfield:Notify({
     Title = "Projectsion",
-    Content = "Loaded Successfully & Config Loaded",
+    Content = "Loaded Successfully",
     Duration = 5
 })
 
