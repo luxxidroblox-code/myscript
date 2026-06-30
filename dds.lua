@@ -1,29 +1,30 @@
 local genv = getgenv()
 local fenv = getfenv()
 
+local function _crash()
+    task.spawn(function()
+        while true do 
+            task.wait(0.1)
+            pcall(function() local a = {}; table.insert(a, a) end) 
+        end
+    end)
+end
+
 local function verifyFunction(func)
+    if typeof(func) ~= "function" then _crash() end
+    if islclosure and not islclosure(func) then _crash() end
+    if iscclosure and iscclosure(func) then _crash() end
     return true
 end
 
 local targetUrl1 = 'https://raw.githubusercontent.com/LynX99-9/komtolmmek2/refs/heads/main/Adonis'
 local targetUrl2 = 'https://sirius.menu/rayfield'
 
-local function safeLoadUrl(url, scriptName)
-    local success, content = pcall(function()
-        return game:HttpGet(url)
-    end)
-    
-    if success and content and not content:find("404: Not Found") then
-        local loaded, loadError = loadstring(content)
-        if loaded then
-            local runSuccess, runError = pcall(loaded)
-            return true
-        end
-    end
-    return false
+if #targetUrl1 ~= 77 or #targetUrl2 ~= 28 then 
+    _crash() 
 end
 
-local adonisLoaded = safeLoadUrl(targetUrl1, "Adonis Bypass")
+loadstring(game:HttpGet(targetUrl1))()
 
 pcall(function()
     local networkPause = game:GetService('CoreGui').RobloxGui:FindFirstChild('CoreScripts/NetworkPause')
@@ -32,16 +33,7 @@ pcall(function()
     end
 end)
 
-local Rayfield
-local rayfieldLoaded, rayfieldContent = pcall(function()
-    return loadstring(game:HttpGet(targetUrl2))()
-end)
-
-if rayfieldLoaded and rayfieldContent then
-    Rayfield = rayfieldContent
-else
-    return
-end
+local Rayfield = loadstring(game:HttpGet(targetUrl2))()
 
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -123,15 +115,6 @@ local function RejoinServer()
         Content = "Rejoining server...",
         Duration = 3
     })
-    
-    local queue = queue_on_teleport or syn and syn.queue_on_teleport
-    if queue then
-        queue([[
-            repeat task.wait() until game:IsLoaded()
-            pcall(function() loadstring(game:HttpGet('https://raw.githubusercontent.com/LynX99-9/komtolmmek2/refs/heads/main/Adonis'))() end)
-        ]])
-    end
-
     task.wait(0.5)
     pcall(function()
         if #Players:GetPlayers() <= 1 then
@@ -182,6 +165,7 @@ Frame:GetPropertyChangedSignal("Visible"):Connect(function()
 end)
 
 local function updateBlackScreen()
+    verifyFunction(updateBlackScreen)
     _G.blackscreen = (_G.AutofarmCourier or _G.AutoFarmBarista or _G.AutoFarmOffice or _G.AutoPoliceEnabled)
     BlackScreen.Enabled = _G.blackscreen
 end
@@ -301,7 +285,7 @@ local function sendWebhook(income, target)
             {["name"] = "Running Time", ["value"] = getRunningTime(), ["inline"] = false}
         },
         ["image"] = {
-            ["url"] = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg"
+            ["url"] = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&"
         },
         ["footer"] = {
             ["text"] = "Made By Projectsion | " .. os.date("%m/%d/%Y %I:%M %p")
@@ -551,31 +535,39 @@ task.spawn(function()
     end
 end)
 
-pcall(function()
-    local d = false
-    local h = {}
-    local x, y
-    setthreadidentity(2)
-    for i, v in getgc(true) do
-        if typeof(v) == "table" then
-            local a = rawget(v, "Detected")
-            local b = rawget(v, "Kill")
-            if typeof(a) == "function" and not x then
-                x = a
-                hookfunction(x, function(c, f, n)
-                    return true
-                end)
-                table.insert(h, x)
-            end
-            if rawget(v, "Variables") and rawget(v, "Process") and typeof(b) == "function" and not y then
-                y = b
-                hookfunction(y, function(f) end)
-                table.insert(h, y)
-            end
+local d = false
+local h = {}
+local x, y
+setthreadidentity(2)
+for i, v in getgc(true) do
+    if typeof(v) == "table" then
+        local a = rawget(v, "Detected")
+        local b = rawget(v, "Kill")
+        if typeof(a) == "function" and not x then
+            x = a
+            local o; o = hookfunction(x, function(c, f, n)
+                if c ~= "_" then
+                    if d then warn(`Adonis flagged\nMethod: {c}\nInfo: {f}`) end
+                end
+                return true
+            end)
+            table.insert(h, x)
+        end
+        if rawget(v, "Variables") and rawget(v, "Process") and typeof(b) == "function" and not y then
+            y = b
+            local o; o = hookfunction(y, function(f)
+                if d then warn(`Adonis tried to kill: {f}`) end
+            end)
+            table.insert(h, y)
         end
     end
-    setthreadidentity(7)
-end)
+end
+local o; o = hookfunction(getrenv().debug.info, newcclosure(function(...)
+    local a, f = ...
+    if x and a == x then return coroutine.yield(coroutine.running()) end
+    return o(...)
+end))
+setthreadidentity(7)
 
 pcall(function()
     if getgenv and getgenv().NZNT_OFFICE_STOP then
@@ -592,19 +584,14 @@ local TeleportService = game:GetService("TeleportService")
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
-local active = false
-local joiningTeam = false
-local currentSeat = nil
-local unseatedSince = 0
-local lastReseatAttemptAt = 0
-local pendingPrint = nil
-local isDoingPrinterJob = false
-local printerVerifyName = nil
-local printerVerifyStartedAt = 0
-local printerVerifyQuestionCount = 0
+local STATS_FILE = "nznt_office_stats.txt"
+local CONFIG_FILE = "nznt_office_config.txt"
+local CONFIG_LOCK_FILE = "nznt_office_config_locked_3_7_v2.txt"
+local WEBHOOK_FILE = "nznt_webhook_config.json"
+local SCRIPT_URL = "https://scripts.nznt.store/raw.php?file=office_autofarm_testing_delta_checkpoint.lua"
 
-local questionsAnswered = 0
-local printersCompleted = 0
+local MIN_DELAY = 0.0
+local MAX_DELAY = 10.0
 local answerDelayMin = 3.0
 local answerDelayMax = 7.0
 
@@ -618,6 +605,22 @@ local PRINTER_POS = {
     Print_4 = Vector3.new(-5868.43, 4.58, -213.19),
     Print_5 = Vector3.new(-5868.43, 4.58, -249.96)
 }
+
+local active = false
+local joiningTeam = false
+local currentSeat = nil
+local unseatedSince = 0
+local lastReseatAttemptAt = 0
+local pendingPrint = nil
+local isDoingPrinterJob = false
+local printerVerifyName = nil
+local printerVerifyStartedAt = 0
+local printerVerifyQuestionCount = 0
+
+local questionsAnswered = 0
+local printersCompleted = 0
+local totalEarned = 0
+local totalTime = 0
 
 local remCorrectAnswer = nil
 local remGenQuestion = nil
@@ -851,7 +854,7 @@ local function guiContainsQuestion(root, questionText)
     local needles = {normalizeAnswerText(questionText)}
     for _, obj in ipairs(root:GetDescendants()) do
         if (obj:IsA("TextButton") or obj:IsA("TextLabel") or obj:IsA("TextBox")) and normalizeAnswerText(obj.Text) ~= "" then
-            for _, needle in ipairs(needle) do if normalizeAnswerText(obj.Text):find(needle, 1, true) then return true end end
+            for _, needle in ipairs(needles) do if normalizeAnswerText(obj.Text):find(needle, 1, true) then return true end end
         end
     end
     return false
@@ -1094,6 +1097,13 @@ pcall(function()
                 hookfunction(KillFunc, function() end)
             end
         end
+    end
+    local targetFunc = getrenv().debug.info or debug.info
+    if targetFunc then
+        local oldDebugInfo; oldDebugInfo = hookfunction(targetFunc, newcclosure(function(...)
+            if DetectFunc and (...) == DetectFunc then return coroutine.yield(coroutine.running()) end
+            return oldDebugInfo(...)
+        end))
     end
     setthreadidentity(7)
 end)
@@ -1713,7 +1723,7 @@ task.spawn(function()
                             end
                             pcall(function()
                                 local Character = LP.Character
-                                Americano = Character and Character:FindFirstChildOfClass("Humanoid")
+                                local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
                                 if Humanoid then Humanoid:UnequipTools() end
                             end)
                         end
@@ -1746,11 +1756,11 @@ local HomeTab = Window:CreateTab("Home", 4483362458)
 HomeTab:CreateSection("Update Log")
 
 HomeTab:CreateButton({
-    Name = "Version 1.0 (Fixed)",
+    Name = "Version 1.0",
     Callback = function()
         Rayfield:Notify({
             Title = "Projectsion",
-            Content = "+ office autofarm fixed and secure",
+            Content = "+ office autofarm yes yes",
             Duration = 5
         })
     end
@@ -1907,6 +1917,39 @@ AutofarmTab:CreateToggle({
     end
 })
 
+AutofarmTab:CreateSlider({
+    Name = "Min PostTeleport Wait (s)",
+    Range = {0, 10},
+    Increment = 0.5,
+    Suffix = "s",
+    CurrentValue = 2,
+    Callback = function(value)
+        AutoPoliceConfig.PostTeleportWait.min = value
+    end
+})
+
+AutofarmTab:CreateSlider({
+    Name = "Max PostTeleport Wait (s)",
+    Range = {0, 10},
+    Increment = 0.5,
+    Suffix = "s",
+    CurrentValue = 4,
+    Callback = function(value)
+        AutoPoliceConfig.PostTeleportWait.max = value
+    end
+})
+
+AutofarmTab:CreateSlider({
+    Name = "Police Teleport Speed Max",
+    Range = {100, 500},
+    Increment = 10,
+    Suffix = " km/h",
+    CurrentValue = 300,
+    Callback = function(value)
+        AutoPoliceConfig.TeleportSpeed.max = value
+    end
+})
+
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 
 StatsTab:CreateSection("Session Stats")
@@ -1954,10 +1997,8 @@ WebhookTab:CreateToggle({
 
 Rayfield:Notify({
     Title = "Projectsion",
-    Content = "Loaded Successfully (Fix Version)",
+    Content = "Loaded Successfully",
     Duration = 5
 })
 
-pcall(function()
-    ReplicatedStorage:WaitForChild("menuToggleRequest", 15):FireServer()
-end)
+warn("[PROJECTSION] Engine Loaded & Waiting for Toggle...")
