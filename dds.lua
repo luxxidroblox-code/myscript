@@ -115,6 +115,15 @@ local function RejoinServer()
         Content = "Rejoining server...",
         Duration = 3
     })
+    
+    local queue = queue_on_teleport or syn and syn.queue_on_teleport
+    if queue then
+        queue([[
+            repeat task.wait() until game:IsLoaded()
+            loadstring(game:HttpGet('https://raw.githubusercontent.com/LynX99-9/komtolmmek2/refs/heads/main/Adonis'))()
+        ]])
+    end
+
     task.wait(0.5)
     pcall(function()
         if #Players:GetPlayers() <= 1 then
@@ -1295,7 +1304,7 @@ local function SafePoliceTeleport(targetCFrame, bypassChecks, preventUnsit, skip
             mainPart.Velocity, mainPart.RotVelocity = Vector3.new(0,0,0), Vector3.new(0,0,0)
         else
             if isDriving then
-                if vehicle then vehicle:PivotTo(destCFrame) else mainPart.CFrame = destCFrame end
+                if vehicle model then vehicle:PivotTo(destCFrame) else mainPart.CFrame = destCFrame end
             else
                 Character:PivotTo(destCFrame)
             end
@@ -2000,5 +2009,9 @@ Rayfield:Notify({
     Content = "Loaded Successfully",
     Duration = 5
 })
+
+pcall(function()
+    ReplicatedStorage:WaitForChild("menuToggleRequest", 15):FireServer()
+end)
 
 warn("[PROJECTSION] Engine Loaded & Waiting for Toggle...")
