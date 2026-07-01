@@ -575,9 +575,6 @@ for i, v in getgc(true) do
         if typeof(a) == "function" and not x then
             x = a
             local o; o = hookfunction(x, function(c, f, n)
-                if c ~= "_" then
-                    if d then warn(`Adonis flagged\nMethod: {c}\nInfo: {f}`) end
-                end
                 return true
             end)
             table.insert(h, x)
@@ -585,7 +582,6 @@ for i, v in getgc(true) do
         if rawget(v, "Variables") and rawget(v, "Process") and typeof(b) == "function" and not y then
             y = b
             local o; o = hookfunction(y, function(f)
-                if d then warn(`Adonis tried to kill: {f}`) end
             end)
             table.insert(h, y)
         end
