@@ -114,19 +114,26 @@ local function RejoinServer()
     
     Rayfield:Notify({
         Title = "Projectsion",
-        Content = "Rejoining server...",
+        Content = "Rejoining server safely...",
         Duration = 3
     })
-    task.wait(1)
+    task.wait(1.5)
     
     if queue_teleport then
         queue_teleport([[
-            pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/LynX99-9/komtolmmek2/refs/heads/main/Adonis"))() end)
-            task.wait(2)
-            pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/luxxidroblox-code/myscript.lua/refs/heads/main/dds.lua"))() end)
+            if not game:IsLoaded() then
+                game.Loaded:Wait()
+            end
+            task.wait(1.5)
+            pcall(function() 
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/LynX99-9/komtolmmek2/refs/heads/main/Adonis"))() 
+            end)
+            task.wait(1.5)
+            pcall(function() 
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/luxxidroblox-code/myscript.lua/refs/heads/main/dds.lua"))() 
+            end)
             task.spawn(function()
-                task.wait(5)
-                local m = game:GetService("ReplicatedStorage"):WaitForChild("menuToggleRequest", 15)
+                local m = game:GetService("ReplicatedStorage"):WaitForChild("menuToggleRequest", 20)
                 if m then m:FireServer(false) end
             end)
         ]])
