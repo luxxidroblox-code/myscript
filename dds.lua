@@ -1,4 +1,4 @@
-local genv = getgenv()
+Local genv = getgenv()
 local fenv = getfenv()
 
 local function _crash()
@@ -1774,7 +1774,11 @@ local Window = Rayfield:CreateWindow({
     Name = "Projectsion",
     LoadingTitle = "Projectsion",
     LoadingSubtitle = "by laksid",
-    ConfigurationSaving = {Enabled = false},
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "ProjectsionConfig",
+        FileName = "AutofarmSettings"
+    },
     Discord = {Enabled = false},
     KeySystem = false
 })
@@ -2030,3 +2034,5 @@ Rayfield:Notify({
 })
 
 warn("[PROJECTSION] Engine Loaded & Waiting for Toggle...")
+
+Rayfield:LoadConfiguration()
