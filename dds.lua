@@ -110,12 +110,28 @@ local function generateRandomName()
 end
 
 local function RejoinServer()
+    local queue_teleport = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
+    
     Rayfield:Notify({
         Title = "Projectsion",
         Content = "Rejoining server...",
         Duration = 3
     })
-    task.wait(0.5)
+    task.wait(1)
+    
+    if queue_teleport then
+        queue_teleport([[
+            pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/LynX99-9/komtolmmek2/refs/heads/main/Adonis"))() end)
+            task.wait(2)
+            pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/luxxidroblox-code/myscript.lua/refs/heads/main/dds.lua"))() end)
+            task.spawn(function()
+                task.wait(5)
+                local m = game:GetService("ReplicatedStorage"):WaitForChild("menuToggleRequest", 15)
+                if m then m:FireServer(false) end
+            end)
+        ]])
+    end
+    
     pcall(function()
         if #Players:GetPlayers() <= 1 then
             TeleportService:Teleport(game.PlaceId, LP)
@@ -473,6 +489,14 @@ task.spawn(function()
             local Root = Char:WaitForChild("HumanoidRootPart")
 
             if Hum and Root then
+                local BoxTempatAmbil = workspace:FindFirstChild("Livrason") and workspace.Livrason:FindFirstChild("Take1")
+                local TargetBlock, TargetPrompt = GetActivePoint()
+                
+                if not BoxTempatAmbil or (AutoEquipBox() and not TargetBlock) then
+                    RejoinServer()
+                    break
+                end
+
                 if not AutoEquipBox() then
                     if not WaktuKosong then
                         WaktuKosong = os.clock()
@@ -512,8 +536,6 @@ task.spawn(function()
                         task.wait(1.5)
                     end
                 else
-                    local TargetBlock, TargetPrompt = GetActivePoint()
-
                     if TargetBlock and TargetPrompt then
                         task.wait(math.random(0, 1))
 
@@ -579,7 +601,6 @@ local PathfindingService = game:GetService("PathfindingService")
 local GuiService = game:GetService("GuiService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local VirtualUser = game:GetService("VirtualUser")
-local TeleportService = game:GetService("TeleportService")
 
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
