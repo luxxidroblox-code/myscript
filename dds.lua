@@ -72,6 +72,8 @@ _G.WebhookURL = ""
 _G.TotalEarning = 0
 _G.CycleCount = 0
 _G.StartTime = os.time()
+local lastActionTime = os.time()
+local STUCK_THRESHOLD = 15
 LastActivity = tick()
 local lastMoney = PlayerData.RPValue.Value
 local pendingIncome = 0
@@ -147,6 +149,24 @@ local function RejoinServer()
         end
     end)
 end
+
+task.spawn(function()
+    while task.wait(1) do
+        if _G.AutofarmCourier and LP.Team and LP.Team.Name == "Courier" then
+            if os.time() - lastActionTime > STUCK_THRESHOLD then
+                Rayfield:Notify({
+                    Title = "Anti-Cheat Block Detected",
+                    Content = "Gagal mendapatkan kotak/destinasi. Melakukan Rejoin...",
+                    Duration = 5,
+                    Image = 4483362458,
+                })
+                task.wait(1)
+                RejoinServer()
+                break
+            end
+        end
+    end
+end)
 
 local BlackScreen = Instance.new("ScreenGui")
 local Frame = Instance.new("Frame")
@@ -495,7 +515,7 @@ task.spawn(function()
             local Hum = Char:WaitForChild("Humanoid")
             local Root = Char:WaitForChild("HumanoidRootPart")
 
-            if Hum and Root then
+            if Hum and Root and Hum.Health > 0 then
                 local BoxTempatAmbil = workspace:FindFirstChild("Livrason") and workspace.Livrason:FindFirstChild("Take1")
                 local TargetBlock, TargetPrompt = GetActivePoint()
                 
@@ -541,11 +561,17 @@ task.spawn(function()
                     if _G.AutofarmCourier and TAKE_PROMPT.Enabled then
                         fireproximityprompt(TAKE_PROMPT)
                         task.wait(1.5)
+                        
+                        local freshBox = Char:WaitForChild("Box", 2) or LP.Backpack:FindFirstChild("Box")
+                        if freshBox then
+                            lastActionTime = os.time()
+                        end
                     end
                 else
                     if TargetBlock and TargetPrompt then
                         task.wait(math.random(0, 1))
 
+                        if Hum.SeatPart then Hum.SeatPart:Sit(nil) end 
                         Tween(TargetBlock.CFrame * CFrame.new(0, 2, 0))
                         task.wait(0.8)
 
@@ -554,12 +580,17 @@ task.spawn(function()
                         if _G.AutofarmCourier and TargetPrompt.Enabled then
                             fireproximityprompt(TargetPrompt)
                             task.wait(3.5)
+                            
+                            if not Char:FindFirstChild("Box") and not LP.Backpack:FindFirstChild("Box") then
+                                lastActionTime = os.time()
+                            end
                         end
                     end
                 end
             end
         else
             WaktuKosong = nil
+            lastActionTime = os.time() 
         end
     end
 end)
@@ -1616,13 +1647,13 @@ local function NeutralizeSuspect(missionModel, suspect)
             tool = Character:FindFirstChild("Baton") or LP.Backpack:FindFirstChild("Baton")
         end
         
-        local currentSuspectPos = suspectHRP.Position
+        local suspectPos = suspectHRP.Position
         local suspectLook = suspectHRP.CFrame.LookVector
-        local targetPos = currentSuspectPos + suspectLook * 2.5
+        local targetPos = suspectPos + suspectLook * 2.5
         
         pcall(function()
             HRP.Velocity = Vector3.new(0, 0, 0)
-            HRP.CFrame = CFrame.new(targetPos, currentSuspectPos)
+            HRP.CFrame = CFrame.new(targetPos, suspectPos)
         end)
         
         if tool and tool.Parent == Character then
