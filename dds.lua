@@ -1,4 +1,4 @@
-Local genv = getgenv()
+local genv = getgenv()
 local fenv = getfenv()
 
 local function _crash()
@@ -1831,7 +1831,7 @@ AutofarmTab:CreateSlider({
     Range = {10, 550},
     Increment = 1,
     Suffix = "Speed",
-    CurrentValue = 300,
+    CurrentValue = 230,
     Flag = "CourierSpeed",
     Callback = function(value)
         _G.CourierSpeed = value
@@ -1868,7 +1868,7 @@ AutofarmTab:CreateSlider({
     Range = {10, 1500},
     Increment = 1,
     Suffix = "Speed",
-    CurrentValue = 1000,
+    CurrentValue = 300,
     Flag = "BaristaSpeed",
     Callback = function(value)
         _G.BaristaSpeed = value
@@ -1907,7 +1907,7 @@ AutofarmTab:CreateSlider({
     Range = {0, 10},
     Increment = 0.5,
     Suffix = "s",
-    CurrentValue = 2.5,
+    CurrentValue = 3.0,
     Flag = "OfficeDelayMin",
     Callback = function(value)
         answerDelayMin = value
@@ -1919,7 +1919,7 @@ AutofarmTab:CreateSlider({
     Range = {0, 10},
     Increment = 0.5,
     Suffix = "s",
-    CurrentValue = 4.5,
+    CurrentValue = 7.0,
     Flag = "OfficeDelayMax",
     Callback = function(value)
         answerDelayMax = value
@@ -1955,6 +1955,7 @@ AutofarmTab:CreateSlider({
     Increment = 0.5,
     Suffix = "s",
     CurrentValue = 2,
+    Flag = "PoliceMinWait",
     Callback = function(value)
         AutoPoliceConfig.PostTeleportWait.min = value
     end
@@ -1966,6 +1967,7 @@ AutofarmTab:CreateSlider({
     Increment = 0.5,
     Suffix = "s",
     CurrentValue = 4,
+    Flag = "PoliceMaxWait",
     Callback = function(value)
         AutoPoliceConfig.PostTeleportWait.max = value
     end
@@ -1977,6 +1979,7 @@ AutofarmTab:CreateSlider({
     Increment = 10,
     Suffix = " km/h",
     CurrentValue = 300,
+    Flag = "PoliceMaxSpeed",
     Callback = function(value)
         AutoPoliceConfig.TeleportSpeed.max = value
     end
