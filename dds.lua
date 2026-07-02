@@ -150,6 +150,10 @@ local function RejoinServer()
     end)
 end
 
+local function resetStuckTimer()
+    lastActionTime = os.time()
+end
+
 task.spawn(function()
     while task.wait(1) do
         if _G.AutofarmCourier and LP.Team and LP.Team.Name == "Courier" then
@@ -564,7 +568,7 @@ task.spawn(function()
                         
                         local freshBox = Char:WaitForChild("Box", 2) or LP.Backpack:FindFirstChild("Box")
                         if freshBox then
-                            lastActionTime = os.time()
+                            resetStuckTimer()
                         end
                     end
                 else
@@ -581,14 +585,16 @@ task.spawn(function()
                             fireproximityprompt(TargetPrompt)
                             task.wait(3.5)
                             
-                            lastActionTime = os.time()
+                            if not Char:FindFirstChild("Box") and not LP.Backpack:FindFirstChild("Box") then
+                                resetStuckTimer()
+                            end
                         end
                     end
                 end
             end
         else
             WaktuKosong = nil
-            lastActionTime = os.time() 
+            resetStuckTimer()
         end
     end
 end)
@@ -1354,7 +1360,7 @@ local function SafePoliceTeleport(targetCFrame, bypassChecks, preventUnsit, skip
             end
         end
 
-        if not preventUnsit do
+        if not preventUnsit then
             if not isDriving and Humanoid then
                 Humanoid.Sit = false
                 Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
