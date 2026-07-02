@@ -72,8 +72,6 @@ _G.WebhookURL = ""
 _G.TotalEarning = 0
 _G.CycleCount = 0
 _G.StartTime = os.time()
-local lastActionTime = os.time()
-local STUCK_THRESHOLD = 120
 LastActivity = tick()
 local lastMoney = PlayerData.RPValue.Value
 local pendingIncome = 0
@@ -85,9 +83,6 @@ _G.CourierEarned = 0
 _G.BaristaEarned = 0
 _G.OfficeEarned = 0
 _G.PoliceEarned = 0
-
-local gagalAmbilBoxCount = 0
-local BATAS_GAGAL_REJOIN = 3
 
 local AutoPoliceConfig = {
     TeleportSpeed = {min = 200, max = 300},
@@ -117,12 +112,17 @@ end
 local function RejoinServer()
     local queue_teleport = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
     
+    _G.AutofarmCourier = false
+    _G.AutoFarmBarista = false
+    _G.AutoFarmOffice = false
+    _G.AutoPoliceEnabled = false
+    
     Rayfield:Notify({
         Title = "Projectsion",
         Content = "Rejoining server safely...",
         Duration = 3
     })
-    task.wait(1.5)
+    task.wait(5)
     
     if queue_teleport then
         queue_teleport([[
@@ -153,26 +153,18 @@ local function RejoinServer()
     end)
 end
 
-local function resetStuckTimer()
-    lastActionTime = os.time()
-end
-
 task.spawn(function()
-    while task.wait(1) do
-        if _G.AutofarmCourier and LP.Team and LP.Team.Name == "Courier" then
-            if os.time() - lastActionTime > STUCK_THRESHOLD then
-                Rayfield:Notify({
-                    Title = "Anti-Cheat Block Detected",
-                    Content = "Sistem mendeteksi stuck. Mencoba Rejoin...",
-                    Duration = 5,
-                    Image = 4483362458,
-                })
-                task.wait(1)
-                RejoinServer()
-                break
-            end
-        else
-            resetStuckTimer()
+    while task.wait(2) do
+        if _G.TotalEarning >= 80000000 then
+            Rayfield:Notify({
+                Title = "Target Reached",
+                Content = "Total earned mencakup batas. Memulai Rejoin...",
+                Duration = 5,
+                Image = 4483362458,
+            })
+            task.wait(1)
+            RejoinServer()
+            break
         end
     end
 end)
@@ -570,27 +562,6 @@ task.spawn(function()
                     if _G.AutofarmCourier and TAKE_PROMPT.Enabled then
                         fireproximityprompt(TAKE_PROMPT)
                         task.wait(1.5)
-                        
-                        local freshBox = Char:WaitForChild("Box", 2) or LP.Backpack:FindFirstChild("Box")
-                        if freshBox then
-                            gagalAmbilBoxCount = 0
-                            resetStuckTimer()
-                        else
-                            gagalAmbilBoxCount = gagalAmbilBoxCount + 1
-                            warn("[PROJECTSION] Gagal dapet box. Percobaan ke: " .. tostring(gagalAmbilBoxCount))
-                            
-                            if gagalAmbilBoxCount >= BATAS_GAGAL_REJOIN then
-                                Rayfield:Notify({
-                                    Title = "Courier Stuck Detected",
-                                    Content = "Gagal mendapatkan box berturut-turut. Mencoba Rejoin...",
-                                    Duration = 5,
-                                    Image = 4483362458,
-                                })
-                                task.wait(1)
-                                RejoinServer()
-                                break
-                            end
-                        end
                     end
                 else
                     if TargetBlock and TargetPrompt then
@@ -605,18 +576,12 @@ task.spawn(function()
                         if _G.AutofarmCourier and TargetPrompt.Enabled then
                             fireproximityprompt(TargetPrompt)
                             task.wait(3.5)
-                            
-                            if not Char:FindFirstChild("Box") and not LP.Backpack:FindFirstChild("Box") then
-                                resetStuckTimer()
-                            end
                         end
                     end
                 end
             end
         else
             WaktuKosong = nil
-            gagalAmbilBoxCount = 0
-            resetStuckTimer()
         end
     end
 end)
