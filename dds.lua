@@ -581,9 +581,7 @@ task.spawn(function()
                             fireproximityprompt(TargetPrompt)
                             task.wait(3.5)
                             
-                            if not Char:FindFirstChild("Box") and not LP.Backpack:FindFirstChild("Box") then
-                                lastActionTime = os.time()
-                            end
+                            lastActionTime = os.time()
                         end
                     end
                 end
@@ -1356,7 +1354,7 @@ local function SafePoliceTeleport(targetCFrame, bypassChecks, preventUnsit, skip
             end
         end
 
-        if not preventUnsit then
+        if not preventUnsit do
             if not isDriving and Humanoid then
                 Humanoid.Sit = false
                 Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
