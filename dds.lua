@@ -73,7 +73,7 @@ _G.TotalEarning = 0
 _G.CycleCount = 0
 _G.StartTime = os.time()
 local lastActionTime = os.time()
-local STUCK_THRESHOLD = 60
+local STUCK_THRESHOLD = 120
 LastActivity = tick()
 local lastMoney = PlayerData.RPValue.Value
 local pendingIncome = 0
@@ -160,7 +160,7 @@ task.spawn(function()
             if os.time() - lastActionTime > STUCK_THRESHOLD then
                 Rayfield:Notify({
                     Title = "Anti-Cheat Block Detected",
-                    Content = "Gagal mendapatkan kotak/destinasi. Melakukan Rejoin...",
+                    Content = "Sistem mendeteksi stuck. Mencoba Rejoin...",
                     Duration = 5,
                     Image = 4483362458,
                 })
@@ -168,6 +168,8 @@ task.spawn(function()
                 RejoinServer()
                 break
             end
+        else
+            resetStuckTimer()
         end
     end
 end)
@@ -524,8 +526,8 @@ task.spawn(function()
                 local TargetBlock, TargetPrompt = GetActivePoint()
                 
                 if not BoxTempatAmbil or (AutoEquipBox() and not TargetBlock) then
-                    RejoinServer()
-                    break
+                    task.wait(2)
+                    continue
                 end
 
                 if not AutoEquipBox() then
@@ -913,7 +915,7 @@ local function guiContainsQuestion(root, questionText)
     local needles = {normalizeAnswerText(questionText)}
     for _, obj in ipairs(root:GetDescendants()) do
         if (obj:IsA("TextButton") or obj:IsA("TextLabel") or obj:IsA("TextBox")) and normalizeAnswerText(obj.Text) ~= "" then
-            for _, needle in ipairs(needles) do if normalizeAnswerText(obj.Text):find(needle, 1, true) then return true end end
+            for _, needle in ipairs(needle) do if normalizeAnswerText(obj.Text):find(needle, 1, true) then return true end end
         end
     end
     return false
