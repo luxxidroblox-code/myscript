@@ -86,6 +86,9 @@ _G.BaristaEarned = 0
 _G.OfficeEarned = 0
 _G.PoliceEarned = 0
 
+local gagalAmbilBoxCount = 0
+local BATAS_GAGAL_REJOIN = 3
+
 local AutoPoliceConfig = {
     TeleportSpeed = {min = 200, max = 300},
     PostTeleportWait = {min = 2, max = 4},
@@ -570,7 +573,23 @@ task.spawn(function()
                         
                         local freshBox = Char:WaitForChild("Box", 2) or LP.Backpack:FindFirstChild("Box")
                         if freshBox then
+                            gagalAmbilBoxCount = 0
                             resetStuckTimer()
+                        else
+                            gagalAmbilBoxCount = gagalAmbilBoxCount + 1
+                            warn("[PROJECTSION] Gagal dapet box. Percobaan ke: " .. tostring(gagalAmbilBoxCount))
+                            
+                            if gagalAmbilBoxCount >= BATAS_GAGAL_REJOIN then
+                                Rayfield:Notify({
+                                    Title = "Courier Stuck Detected",
+                                    Content = "Gagal mendapatkan box berturut-turut. Mencoba Rejoin...",
+                                    Duration = 5,
+                                    Image = 4483362458,
+                                })
+                                task.wait(1)
+                                RejoinServer()
+                                break
+                            end
                         end
                     end
                 else
@@ -596,6 +615,7 @@ task.spawn(function()
             end
         else
             WaktuKosong = nil
+            gagalAmbilBoxCount = 0
             resetStuckTimer()
         end
     end
@@ -915,7 +935,7 @@ local function guiContainsQuestion(root, questionText)
     local needles = {normalizeAnswerText(questionText)}
     for _, obj in ipairs(root:GetDescendants()) do
         if (obj:IsA("TextButton") or obj:IsA("TextLabel") or obj:IsA("TextBox")) and normalizeAnswerText(obj.Text) ~= "" then
-            for _, needle in ipairs(needle) do if normalizeAnswerText(obj.Text):find(needle, 1, true) then return true end end
+            for _, needle in ipairs(needles) do if normalizeAnswerText(obj.Text):find(needle, 1, true) then return true end end
         end
     end
     return false
