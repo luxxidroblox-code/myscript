@@ -112,46 +112,33 @@ local function generateRandomName()
 end
 
 local function getInventoryMotorcycles()
-    local list = {}
-    local inventory = LP:FindFirstChild("Inventory") or (LP:FindFirstChild("Data") and LP.Data:FindFirstChild("Vehicles"))
-    
-    if inventory then
-        for _, v in pairs(inventory:GetChildren()) do
-            local name = v.Name
-            local isMotor = false
-            
-            if v:IsA("ValueBase") and v.Value == "Motorcycle" then
-                isMotor = true
-            elseif v:GetAttribute("Type") == "Motorcycle" or v:GetAttribute("VehicleType") == "Motorcycle" then
-                isMotor = true
-            elseif name:lower():find("bike") or name:lower():find("motor") or name:lower():find("ninja") or name:lower():find("cbr") or name:lower():find("mio") or name:lower():find("beat") then
-                isMotor = true
+    local out = {}
+    pcall(function()
+        local d = game:GetService("ReplicatedStorage"):FindFirstChild("DealershipEvents")
+        local init = d and d:FindFirstChild("InitializeCarData")
+        if not init or not init:IsA("RemoteFunction") then return end
+        local ok, cfg = pcall(function() return init:InvokeServer() end)
+        local Player = game:GetService("Players").LocalPlayer
+        local playerData = Player:FindFirstChild("PlayerData")
+        local ownedFolder = playerData and (playerData:FindFirstChild("OwnedCars") or playerData:FindFirstChild("Vehicles") or playerData:FindFirstChild("Inventory"))
+        if ok and type(cfg) == "table" and ownedFolder then
+            local ownedIDs = {}
+            for _, car in ipairs(ownedFolder:GetChildren()) do
+                ownedIDs[car.Name] = true
             end
-            
-            if isMotor then
-                table.insert(list, name)
-            end
-        end
-    end
-    
-    if #list == 0 then
-        local pGui = LP:FindFirstChild("PlayerGui")
-        if pGui and (pGui:FindFirstChild("Garage") or pGui:FindFirstChild("Menu")) then
-            for _, v in pairs(pGui:GetDescendants()) do
-                if v:IsA("TextLabel") and (v.Text:lower():find("bike") or v.Text:lower():find("motor")) then
-                    if not table.find(list, v.Text) then
-                        table.insert(list, v.Text)
-                    end
+            for _, v in pairs(cfg) do
+                if type(v) == "table" and v.Name and ownedIDs[v.Name] then
+                    table.insert(out, v.DisplayName or v.Name)
                 end
             end
         end
+    end)
+    if #out == 0 then
+        return {"Yamahax - Mio Sporty (2006)"}
+    else
+        table.sort(out, function(a, b) return a < b end)
     end
-    
-    if #list == 0 then
-        list = {"No Motorcycle Detected"}
-    end
-    
-    return list
+    return out
 end
 
 local function RejoinServer()
