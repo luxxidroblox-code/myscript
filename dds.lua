@@ -98,6 +98,7 @@ local NZNT_DRAG_ACTIVE = false
 local NZNT_DRIVE_SPEED = 250
 local NZNT_DRIVE_THRESHOLD = 500000
 local NZNT_SELECTED_VEHICLE = "Yamahax-MioSporty"
+local NZNT_DRAG_SELECTED_VEHICLE = "Yamahax-MioSporty"
 local NZNT_DRIVE_EARNED = 0
 local NZNT_DRAG_EARNED = 0
 
@@ -133,23 +134,25 @@ for _, v in ipairs(nzntVehicleList) do
     nzntVehicleIds[v.name] = v.id
 end
 
--- Fungsi main auto drive
+-- Fungsi main auto drive (tanpa hub)
 local function startNzntDrive()
     if NZNT_DRIVE_ACTIVE then return end
     NZNT_DRIVE_ACTIVE = true
     NZNT_DRIVE_EARNED = 0
     
-    local driveScript = [[
-        getgenv().NZNT_AUTODRIVE_SPEED = ]] .. NZNT_DRIVE_SPEED .. [[
-        getgenv().NZNT_AUTODRIVE_THRESHOLD = ]] .. NZNT_DRIVE_THRESHOLD .. [[
-        getgenv().NZNT_AUTODRIVE_VEHICLE = "]] .. NZNT_SELECTED_VEHICLE .. [["
-        getgenv().NZNT_AUTODRIVE_AUTO_START = true
-        getgenv().NZNT_DRIVE_EARNED = 0
-        loadstring(game:HttpGet("https://scripts.nznt.store/raw.php?file=autofarm_yellow.lua", true))()
-    ]]
+    -- Inject langsung ke getgenv tanpa UI
+    getgenv().NZNT_AUTODRIVE_SPEED = NZNT_DRIVE_SPEED
+    getgenv().NZNT_AUTODRIVE_THRESHOLD = NZNT_DRIVE_THRESHOLD
+    getgenv().NZNT_AUTODRIVE_VEHICLE = NZNT_SELECTED_VEHICLE
+    getgenv().NZNT_AUTODRIVE_AUTO_START = true
+    getgenv().NZNT_DRIVE_EARNED = 0
     
+    -- Load script NZNT tapi bypass UI
     local success, err = pcall(function()
-        loadstring(driveScript)()
+        local scriptContent = game:HttpGet("https://scripts.nznt.store/raw.php?file=autofarm_yellow.lua", true)
+        -- Hapus bagian UI
+        local modifiedScript = scriptContent:gsub("loadNzntAutofarmArcane%(%)", "function() end")
+        loadstring(modifiedScript)()
     end)
     
     if not success then
@@ -183,22 +186,22 @@ local function stopNzntDrive()
     })
 end
 
--- Auto Drag Quest
+-- Auto Drag Quest (tanpa hub)
 local function startNzntDrag()
     if NZNT_DRAG_ACTIVE then return end
     NZNT_DRAG_ACTIVE = true
     NZNT_DRAG_EARNED = 0
     
-    local dragScript = [[
-        getgenv().NZNT_DRAG_AUTO_START = true
-        getgenv().NZNT_DRAG_COMPLETE_TIME = 9
-        getgenv().NZNT_DRAG_LIMIT = 100
-        getgenv().NZNT_DRAG_EARNED = 0
-        loadstring(game:HttpGet("https://scripts.nznt.store/raw.php?file=drag_bridge_autofarm.lua", true))()
-    ]]
+    getgenv().NZNT_DRAG_AUTO_START = true
+    getgenv().NZNT_DRAG_COMPLETE_TIME = 9
+    getgenv().NZNT_DRAG_LIMIT = 100
+    getgenv().NZNT_DRAG_VEHICLE = NZNT_DRAG_SELECTED_VEHICLE
+    getgenv().NZNT_DRAG_EARNED = 0
     
     local success, err = pcall(function()
-        loadstring(dragScript)()
+        local scriptContent = game:HttpGet("https://scripts.nznt.store/raw.php?file=drag_bridge_autofarm.lua", true)
+        local modifiedScript = scriptContent:gsub("loadNzntAutofarmArcane%(%)", "function() end")
+        loadstring(modifiedScript)()
     end)
     
     if not success then
@@ -2202,7 +2205,7 @@ AutofarmTab:CreateSlider({
 })
 
 AutofarmTab:CreateDropdown({
-    Name = "Select Motor",
+    Name = "Select Motor (Drive)",
     Options = nzntVehicleNames,
     CurrentOption = nzntVehicleNames[1] or "Yamahax - Mio Sporty (2006)",
     Flag = "NzntVehicleSelect",
@@ -2212,7 +2215,7 @@ AutofarmTab:CreateDropdown({
             NZNT_SELECTED_VEHICLE = selectedId
             Rayfield:Notify({
                 Title = "Projectsion",
-                Content = "Motor dipilih: " .. option,
+                Content = "Motor Drive dipilih: " .. option,
                 Duration = 2
             })
         end
@@ -2232,6 +2235,24 @@ AutofarmTab:CreateToggle({
             stopNzntDrag()
         end
         updateBlackScreen()
+    end
+})
+
+AutofarmTab:CreateDropdown({
+    Name = "Select Motor (Drag)",
+    Options = nzntVehicleNames,
+    CurrentOption = nzntVehicleNames[1] or "Yamahax - Mio Sporty (2006)",
+    Flag = "NzntDragVehicleSelect",
+    Callback = function(option)
+        local selectedId = nzntVehicleIds[option]
+        if selectedId then
+            NZNT_DRAG_SELECTED_VEHICLE = selectedId
+            Rayfield:Notify({
+                Title = "Projectsion",
+                Content = "Motor Drag dipilih: " .. option,
+                Duration = 2
+            })
+        end
     end
 })
 
