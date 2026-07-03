@@ -92,7 +92,7 @@ local missionsCompleted = 0
 local AnchoredPartsList = {}
 local ActiveMissions = Workspace:WaitForChild("ActiveMissions", 10)
 
--- ================ AUTO DRIVE NZNT (TAMBAHAN) ================
+-- ================ AUTO DRIVE & AUTO DRAG CUSTOM ================
 local NZNT_DRIVE_ACTIVE = false
 local NZNT_DRAG_ACTIVE = false
 local NZNT_DRIVE_SPEED = 250
@@ -102,83 +102,168 @@ local NZNT_DRAG_SELECTED_VEHICLE = "Yamahax-MioSporty"
 local NZNT_DRIVE_EARNED = 0
 local NZNT_DRAG_EARNED = 0
 
--- Vehicle list dari NZNT
-local function getNzntVehicles()
-    local vehicles = {}
-    pcall(function()
-        local d = ReplicatedStorage:FindFirstChild("DealershipEvents")
-        local init = d and d:FindFirstChild("InitializeCarData")
-        if init and init:IsA("RemoteFunction") then
-            local ok, cfg = pcall(function() return init:InvokeServer() end)
-            if ok and type(cfg) == "table" then
-                for _, v in pairs(cfg) do
-                    if type(v) == "table" and v.Name then
-                        vehicles[#vehicles + 1] = {id = v.Name, name = v.DisplayName or v.Name}
-                    end
-                end
-            end
-        end
-    end)
-    if #vehicles == 0 then
-        vehicles = {{id = "Yamahax-MioSporty", name = "Yamahax - Mio Sporty (2006)"}}
-    end
-    table.sort(vehicles, function(a,b) return a.name < b.name end)
-    return vehicles
-end
-
-local nzntVehicleList = getNzntVehicles()
-local nzntVehicleNames = {}
+-- Vehicle list
+local nzntVehicleNames = {
+    "Yamahax - Mio Sporty (2006)",
+    "Yamahax - NMAX (2021)",
+    "Yamahax - Aerox (2022)",
+    "Honda - Beat (2023)",
+    "Honda - Vario (2023)",
+    "Suzuki - Address (2022)",
+    "Yamahax - XSR (2023)",
+    "Honda - CBR (2022)"
+}
 local nzntVehicleIds = {}
-for _, v in ipairs(nzntVehicleList) do
-    table.insert(nzntVehicleNames, v.name)
-    nzntVehicleIds[v.name] = v.id
+for _, name in ipairs(nzntVehicleNames) do
+    local id = name:gsub(" %(.*%)", ""):gsub(" - ", "-"):gsub(" ", "")
+    nzntVehicleIds[name] = id
 end
 
--- Fungsi main auto drive (tanpa hub)
+-- ================ AUTO DRIVE FUNCTION ================
 local function startNzntDrive()
     if NZNT_DRIVE_ACTIVE then return end
     NZNT_DRIVE_ACTIVE = true
     NZNT_DRIVE_EARNED = 0
     
-    -- Inject langsung ke getgenv tanpa UI
-    getgenv().NZNT_AUTODRIVE_SPEED = NZNT_DRIVE_SPEED
-    getgenv().NZNT_AUTODRIVE_THRESHOLD = NZNT_DRIVE_THRESHOLD
-    getgenv().NZNT_AUTODRIVE_VEHICLE = NZNT_SELECTED_VEHICLE
-    getgenv().NZNT_AUTODRIVE_AUTO_START = true
-    getgenv().NZNT_DRIVE_EARNED = 0
-    
-    -- Load script NZNT tapi bypass UI
-    local success, err = pcall(function()
-        local scriptContent = game:HttpGet("https://scripts.nznt.store/raw.php?file=autofarm_yellow.lua", true)
-        -- Hapus bagian UI
-        local modifiedScript = scriptContent:gsub("loadNzntAutofarmArcane%(%)", "function() end")
-        loadstring(modifiedScript)()
+    task.spawn(function()
+        local RS = ReplicatedStorage
+        local Workspace = game:GetService("Workspace")
+        
+        local function spawnVehicle(id)
+            local sf = RS:FindFirstChild("SpawnCarEvents")
+            if sf then
+                local r = sf:FindFirstChild("SpawnCar")
+                if r then r:FireServer(id or NZNT_SELECTED_VEHICLE) end
+            end
+        end
+        
+        local function despawnVehicle()
+            local sf = RS:FindFirstChild("SpawnCarEvents")
+            if sf then
+                local r = sf:FindFirstChild("DespawnCar")
+                if r then r:FireServer() end
+            end
+        end
+        
+        local function findClosestSeat()
+            local char = LP.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if not root then return nil end
+            local best, bestDist = nil, math.huge
+            for _, obj in ipairs(Workspace:GetChildren()) do
+                local seat = obj:FindFirstChildWhichIsA("VehicleSeat", true)
+                if seat then
+                    local dist = (seat.Position - root.Position).Magnitude
+                    if dist < bestDist then best, bestDist = seat, dist end
+                end
+            end
+            return best
+        end
+        
+        local function getMoney()
+            local pd = LP:FindFirstChild("PlayerData")
+            if pd then
+                local rp = pd:FindFirstChild("RPValue")
+                if rp then return rp.Value end
+            end
+            return 0
+        end
+        
+        while NZNT_DRIVE_ACTIVE do
+            task.wait(1)
+            local char = LP.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if not char or not hum or not root then 
+                task.wait(2)
+                continue 
+            end
+            
+            spawnVehicle(NZNT_SELECTED_VEHICLE)
+            task.wait(3)
+            
+            local seat = findClosestSeat()
+            if not seat then 
+                task.wait(2)
+                continue 
+            end
+            
+            root.CFrame = seat.CFrame * CFrame.new(0, 2, 0)
+            task.wait(1)
+            seat:Sit(hum)
+            task.wait(2)
+            
+            if hum.SeatPart ~= seat then
+                task.wait(2)
+                continue
+            end
+            
+            local startMoney = getMoney()
+            local force = Instance.new("LinearVelocity", seat)
+            force.MaxForce = 99999999
+            force.Attachment0 = Instance.new("Attachment", seat)
+            force.RelativeTo = Enum.ActuatorRelativeTo.Attachment0
+            
+            local gyro = Instance.new("BodyGyro", seat)
+            gyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+            gyro.P = 100000
+            gyro.D = 1000
+            
+            local direction = 1
+            local lastDirChange = 0
+            
+            while NZNT_DRIVE_ACTIVE and hum.SeatPart == seat do
+                task.wait(0.05)
+                
+                if getMoney() - startMoney >= NZNT_DRIVE_THRESHOLD then
+                    break
+                end
+                
+                local params = RaycastParams.new()
+                params.FilterDescendantsInstances = {seat}
+                local ground = Workspace:Raycast(seat.Position, Vector3.new(0, -15, 0), params)
+                if not ground then
+                    task.wait(0.5)
+                    continue
+                end
+                
+                local height = ground.Position.Y + 1.5
+                local targetCF = CFrame.new(seat.Position.X, height, seat.Position.Z) * CFrame.Angles(0, seat.Orientation.Y, 0)
+                seat.CFrame = targetCF
+                
+                local frontPos = (seat.CFrame * CFrame.new(0, 0, -8 * direction)).p
+                local frontCheck = Workspace:Raycast(frontPos, Vector3.new(0, -5, 0), params)
+                if not frontCheck then
+                    if tick() - lastDirChange > 1 then
+                        direction = direction * -1
+                        lastDirChange = tick()
+                    end
+                end
+                
+                force.VectorVelocity = Vector3.new(0, 0, -NZNT_DRIVE_SPEED * direction)
+                gyro.CFrame = targetCF
+            end
+            
+            pcall(function()
+                if force then force:Destroy() end
+                if gyro then gyro:Destroy() end
+            end)
+            
+            despawnVehicle()
+            task.wait(2)
+        end
     end)
     
-    if not success then
-        Rayfield:Notify({
-            Title = "Projectsion",
-            Content = "Gagal start Auto Drive: " .. tostring(err),
-            Duration = 5
-        })
-        NZNT_DRIVE_ACTIVE = false
-    else
-        Rayfield:Notify({
-            Title = "Projectsion",
-            Content = "Auto Drive Active! Speed: " .. NZNT_DRIVE_SPEED,
-            Duration = 3
-        })
-    end
+    Rayfield:Notify({
+        Title = "Projectsion",
+        Content = "Auto Drive Active! Speed: " .. NZNT_DRIVE_SPEED,
+        Duration = 3
+    })
 end
 
 local function stopNzntDrive()
     if not NZNT_DRIVE_ACTIVE then return end
     NZNT_DRIVE_ACTIVE = false
-    pcall(function()
-        if getgenv and getgenv().NZNT_AUTODRIVE_STOP then
-            getgenv().NZNT_AUTODRIVE_STOP()
-        end
-    end)
     Rayfield:Notify({
         Title = "Projectsion",
         Content = "Auto Drive Stopped",
@@ -186,48 +271,158 @@ local function stopNzntDrive()
     })
 end
 
--- Auto Drag Quest (tanpa hub)
+-- ================ AUTO DRAG FUNCTION ================
 local function startNzntDrag()
     if NZNT_DRAG_ACTIVE then return end
     NZNT_DRAG_ACTIVE = true
     NZNT_DRAG_EARNED = 0
     
-    getgenv().NZNT_DRAG_AUTO_START = true
-    getgenv().NZNT_DRAG_COMPLETE_TIME = 9
-    getgenv().NZNT_DRAG_LIMIT = 100
-    getgenv().NZNT_DRAG_VEHICLE = NZNT_DRAG_SELECTED_VEHICLE
-    getgenv().NZNT_DRAG_EARNED = 0
-    
-    local success, err = pcall(function()
-        local scriptContent = game:HttpGet("https://scripts.nznt.store/raw.php?file=drag_bridge_autofarm.lua", true)
-        local modifiedScript = scriptContent:gsub("loadNzntAutofarmArcane%(%)", "function() end")
-        loadstring(modifiedScript)()
+    task.spawn(function()
+        local RS = ReplicatedStorage
+        local Workspace = game:GetService("Workspace")
+        
+        local function spawnVehicle(id)
+            local sf = RS:FindFirstChild("SpawnCarEvents")
+            if sf then
+                local r = sf:FindFirstChild("SpawnCar")
+                if r then r:FireServer(id or NZNT_DRAG_SELECTED_VEHICLE) end
+            end
+        end
+        
+        local function despawnVehicle()
+            local sf = RS:FindFirstChild("SpawnCarEvents")
+            if sf then
+                local r = sf:FindFirstChild("DespawnCar")
+                if r then r:FireServer() end
+            end
+        end
+        
+        local function findClosestSeat()
+            local char = LP.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if not root then return nil end
+            local best, bestDist = nil, math.huge
+            for _, obj in ipairs(Workspace:GetChildren()) do
+                local seat = obj:FindFirstChildWhichIsA("VehicleSeat", true)
+                if seat then
+                    local dist = (seat.Position - root.Position).Magnitude
+                    if dist < bestDist then best, bestDist = seat, dist end
+                end
+            end
+            return best
+        end
+        
+        local function findDragRace()
+            local drag = Workspace:FindFirstChild("DragRace")
+            if drag then return drag end
+            for _, obj in ipairs(Workspace:GetChildren()) do
+                if obj:IsA("Folder") or obj:IsA("Model") then
+                    local found = obj:FindFirstChild("DragRace") or obj:FindFirstChild("DragRace", true)
+                    if found then return found end
+                end
+            end
+            return nil
+        end
+        
+        local function findDetectors(dragRace)
+            if not dragRace then return nil, nil, nil, nil, nil end
+            local startDet = dragRace:FindFirstChild("DetectorStart") or dragRace:FindFirstChild("Start")
+            local finishDet = dragRace:FindFirstChild("DetectorFinish") or dragRace:FindFirstChild("Finish")
+            local c1 = dragRace:FindFirstChild("DetectorC1") or dragRace:FindFirstChild("C1")
+            local c2 = dragRace:FindFirstChild("DetectorC2") or dragRace:FindFirstChild("C2")
+            local c3 = dragRace:FindFirstChild("DetectorC3") or dragRace:FindFirstChild("C3")
+            return startDet, c1, c2, c3, finishDet
+        end
+        
+        local function touchDetector(detector, seatCF)
+            if not detector or not seatCF then return false end
+            pcall(function()
+                detector.CFrame = seatCF
+                task.wait(0.1)
+                detector.CFrame = seatCF * CFrame.new(0, -200, 0)
+            end)
+            return true
+        end
+        
+        local raceCount = 0
+        
+        while NZNT_DRAG_ACTIVE do
+            task.wait(1)
+            local char = LP.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if not char or not hum or not root then 
+                task.wait(2)
+                continue 
+            end
+            
+            local dragRace = findDragRace()
+            if not dragRace then
+                task.wait(5)
+                continue
+            end
+            
+            spawnVehicle(NZNT_DRAG_SELECTED_VEHICLE)
+            task.wait(3)
+            
+            local seat = findClosestSeat()
+            if not seat then 
+                task.wait(2)
+                continue 
+            end
+            
+            root.CFrame = seat.CFrame * CFrame.new(0, 2, 0)
+            task.wait(1)
+            seat:Sit(hum)
+            task.wait(2)
+            
+            if hum.SeatPart ~= seat then
+                task.wait(2)
+                continue
+            end
+            
+            local startDet, c1, c2, c3, finishDet = findDetectors(dragRace)
+            if not startDet or not finishDet then
+                task.wait(2)
+                continue
+            end
+            
+            local seatCF = seat.CFrame
+            
+            -- Touch Start
+            touchDetector(startDet, seatCF)
+            task.wait(0.5)
+            
+            -- Touch Checkpoints (kalo ada)
+            if c1 then touchDetector(c1, seatCF) task.wait(0.3) end
+            if c2 then touchDetector(c2, seatCF) task.wait(0.3) end
+            if c3 then touchDetector(c3, seatCF) task.wait(0.3) end
+            
+            -- WAIT 9 DETIK (sesuai permintaan)
+            task.wait(9)
+            
+            -- Touch Finish
+            touchDetector(finishDet, seatCF)
+            task.wait(1)
+            
+            raceCount = raceCount + 1
+            
+            -- Despawn
+            despawnVehicle()
+            task.wait(2)
+        end
     end)
     
-    if not success then
-        Rayfield:Notify({
-            Title = "Projectsion",
-            Content = "Gagal start Auto Drag: " .. tostring(err),
-            Duration = 5
-        })
-        NZNT_DRAG_ACTIVE = false
-    else
-        Rayfield:Notify({
-            Title = "Projectsion",
-            Content = "Auto Drag Active! Selesai 9 detik!",
-            Duration = 3
-        })
-    end
+    Rayfield:Notify({
+        Title = "Projectsion",
+        Content = "Auto Drag Active! Selesai 9 detik!",
+        Duration = 3
+    })
 end
 
 local function stopNzntDrag()
     if not NZNT_DRAG_ACTIVE then return end
     NZNT_DRAG_ACTIVE = false
-    pcall(function()
-        if getgenv and getgenv().NZNT_DRAG_STOP then
-            getgenv().NZNT_DRAG_STOP()
-        end
-    end)
     Rayfield:Notify({
         Title = "Projectsion",
         Content = "Auto Drag Stopped",
@@ -235,6 +430,7 @@ local function stopNzntDrag()
     })
 end
 
+-- ================ GENERATE RANDOM NAME ================
 local function generateRandomName()
     local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     local length = math.random(12, 24)
@@ -246,6 +442,7 @@ local function generateRandomName()
     return randomString
 end
 
+-- ================ REJOIN SERVER ================
 local function RejoinServer()
     local queue_teleport = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
     
@@ -308,6 +505,7 @@ task.spawn(function()
     end
 end)
 
+-- ================ BLACK SCREEN ================
 local BlackScreen = Instance.new("ScreenGui")
 local Frame = Instance.new("Frame")
 
@@ -329,30 +527,13 @@ Frame.Size = UDim2.new(1.5, 0, 1.5, 0)
 Frame.Position = UDim2.new(-0.25, 0, -0.25, 0)
 Frame.BorderSizePixel = 0
 
-Frame:GetPropertyChangedSignal("Size"):Connect(function()
-    if Frame.Size ~= UDim2.new(1.5, 0, 1.5, 0) then
-        Frame.Size = UDim2.new(1.5, 0, 1.5, 0)
-    end
-end)
-
-Frame:GetPropertyChangedSignal("BackgroundTransparency"):Connect(function()
-    if Frame.BackgroundTransparency ~= 0 then
-        Frame.BackgroundTransparency = 0
-    end
-end)
-
-Frame:GetPropertyChangedSignal("Visible"):Connect(function()
-    if Frame.Visible == false and _G.blackscreen then
-        Frame.Visible = true
-    end
-end)
-
 local function updateBlackScreen()
     verifyFunction(updateBlackScreen)
     _G.blackscreen = (_G.AutofarmCourier or _G.AutoFarmBarista or _G.AutoFarmOffice or _G.AutoPoliceEnabled or NZNT_DRIVE_ACTIVE or NZNT_DRAG_ACTIVE)
     BlackScreen.Enabled = _G.blackscreen
 end
 
+-- ================ COURIER FUNCTIONS ================
 local function SwitchToCourier()
     local TeamRemote = ReplicatedStorage:FindFirstChild("TeamChangeRequest", true)
     if TeamRemote then
@@ -420,6 +601,7 @@ local function GetActivePoint()
     return nil, nil
 end
 
+-- ================ ANTI AFK ================
 task.spawn(function()
     local VirtualUser = game:GetService("VirtualUser")
     game:GetService("Players").LocalPlayer.Idled:Connect(function()
@@ -428,6 +610,7 @@ task.spawn(function()
     end)
 end)
 
+-- ================ FORMAT FUNCTIONS ================
 local function getAvatar()
     return "https://www.roblox.com/headshot-thumbnail/image?userId=" .. LP.UserId .. "&width=420&height=420&format=png"
 end
@@ -443,6 +626,7 @@ local function getRunningTime()
     return string.format("%02d:%02d:%02d", math.floor(diff/3600), math.floor((diff%3600)/60), diff%60)
 end
 
+-- ================ WEBHOOK ================
 local function sendWebhook(income, target)
     if _G.WebhookURL == "" or not _G.WebhookURL:find("discord.com") then return end
 
@@ -492,10 +676,12 @@ local function sendWebhook(income, target)
     end
 end
 
+-- ================ LABELS ================
 local lblTotalEarned, lblCurrentMoney, lblSessionTime
 local lblCourierEarned, lblBaristaEarned, lblOfficeEarned, lblPoliceEarned
 local lblNzntDriveEarned, lblNzntDragEarned
 
+-- ================ MONEY TRACKER ================
 PlayerData.RPValue.Changed:Connect(function(newMoney)
     if newMoney > lastMoney then
         local gained = newMoney - lastMoney
@@ -546,6 +732,7 @@ PlayerData.RPValue.Changed:Connect(function(newMoney)
     lastMoney = newMoney
 end)
 
+-- ================ BARISTA FUNCTIONS ================
 local function GetBaristaElements()
     local Gui = LP.PlayerGui:FindFirstChild("BaristaGUI")
     if Gui then
@@ -651,6 +838,7 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
+-- ================ COURIER LOOP ================
 task.spawn(function()
     while true do
         task.wait(1)
@@ -732,6 +920,7 @@ task.spawn(function()
     end
 end)
 
+-- ================ ANTI DETECT ================
 local d = false
 local h = {}
 local x, y
@@ -762,6 +951,7 @@ local o; o = hookfunction(getrenv().debug.info, newcclosure(function(...)
 end))
 setthreadidentity(7)
 
+-- ================ OFFICE FARM ================
 pcall(function()
     if getgenv and getgenv().NZNT_OFFICE_STOP then
         getgenv().NZNT_OFFICE_STOP()
@@ -775,17 +965,6 @@ local VirtualUser = game:GetService("VirtualUser")
 
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
-
-local STATS_FILE = "nznt_office_stats.txt"
-local CONFIG_FILE = "nznt_office_config.txt"
-local CONFIG_LOCK_FILE = "nznt_office_config_locked_3_7_v2.txt"
-local WEBHOOK_FILE = "nznt_webhook_config.json"
-local SCRIPT_URL = "https://scripts.nznt.store/raw.php?file=office_autofarm_testing_delta_checkpoint.lua"
-
-local MIN_DELAY = 0.0
-local MAX_DELAY = 10.0
-local answerDelayMin = 3.0
-local answerDelayMax = 7.0
 
 local CHAIR_SEARCH_AREA = Vector3.new(-5927.33, 4.57, -228.61)
 local CHAIR_SEARCH_RADIUS = 50
@@ -806,14 +985,11 @@ local lastReseatAttemptAt = 0
 local pendingPrint = nil
 local isDoingPrinterJob = false
 local printerVerifyName = nil
-local printerVerifyStartedAt = 0
-local printerVerifyQuestionCount = 0
-
 local questionsAnswered = 0
 local printersCompleted = 0
-local totalEarned = 0
-local totalTime = 0
 
+local answerDelayMin = 3.0
+local answerDelayMax = 7.0
 local remCorrectAnswer = nil
 local remGenQuestion = nil
 local remAssignPrint = nil
@@ -824,7 +1000,6 @@ local seatBlockToken = 0
 local answeringQuestion = false
 local lastQuestionKey = nil
 local lastQuestionAt = 0
-local lastAnswerAt = 0
 local activeQuestionToken = 0
 local MAX_ANSWER_RETRIES = 8
 local ANSWER_RETRY_DELAY = 0.65
@@ -890,12 +1065,10 @@ local function jumpAndReseatCurrentSeat()
         if hum.SeatPart == currentSeat then
             unseatedSince = 0
             lastQuestionAt = os.clock()
-            lastAnswerAt = os.clock()
             return true
         end
     end
     lastQuestionAt = os.clock()
-    lastAnswerAt = os.clock()
     return false
 end
 
@@ -1137,7 +1310,6 @@ local function answerQuestion(question, answers, sessionId, attempt, questionTok
 
             if finalResponse == true or tostring(finalResponse):lower() == "success" then
                 questionsAnswered = questionsAnswered + 1
-                lastAnswerAt = os.clock()
                 if printerVerifyName then printersCompleted = printersCompleted + 1; printerVerifyName = nil end
             elseif attempt < MAX_ANSWER_RETRIES and questionToken == activeQuestionToken then
                 task.delay(ANSWER_RETRY_DELAY, function() answerQuestion(question, answers, sessionId, attempt + 1, questionToken) end)
@@ -1222,7 +1394,6 @@ local function mainFarmLoop()
                         unseatedSince = 0
                         lastReseatAttemptAt = 0
                         printerVerifyName = currentPrint
-                        printerVerifyStartedAt = hum.SeatPart == officeSeat and os.clock() or 0
                         printerVerifyQuestionCount = questionsAnswered
                     else
                         setSeatBlocking(false)
@@ -1274,6 +1445,7 @@ local function startOfficeFarm()
     task.spawn(mainFarmLoop)
 end
 
+-- ================ ANTI DETECT ================
 pcall(function()
     setthreadidentity(2)
     local DetectFunc, KillFunc
@@ -1319,6 +1491,7 @@ local idledConn = LP.Idled:Connect(function()
 end)
 table.insert(ActiveConnections, idledConn)
 
+-- ================ POLICE FUNCTIONS ================
 local function getPoliceUI()
     local pGui = LP:FindFirstChild("PlayerGui")
     return pGui and pGui:FindFirstChild("PoliceUI")
@@ -1536,8 +1709,7 @@ local function EquipToolByName(toolName)
     if Humanoid.Sit or Humanoid.SeatPart then
         pcall(function()
             local seat = Humanoid.SeatPart
-            if seat then
-                local weld = seat:FindFirstChild("SeatWeld")
+            if seat then                local weld = seat:FindFirstChild("SeatWeld")
                 if weld then weld:Destroy() end
             end
             Humanoid.Sit = false
@@ -1934,6 +2106,7 @@ task.spawn(function()
     end
 end)
 
+-- ================ RAYFIELD UI ================
 local Window = Rayfield:CreateWindow({
     Name = "Projectsion",
     LoadingTitle = "Projectsion",
@@ -2175,13 +2348,6 @@ AutofarmTab:CreateSlider({
     Flag = "NzntDriveSpeed",
     Callback = function(value)
         NZNT_DRIVE_SPEED = value
-        if NZNT_DRIVE_ACTIVE then
-            pcall(function()
-                if getgenv and getgenv().NZNT_SET_SPEED then
-                    getgenv().NZNT_SET_SPEED(value)
-                end
-            end)
-        end
     end
 })
 
@@ -2194,13 +2360,6 @@ AutofarmTab:CreateSlider({
     Flag = "NzntDriveThreshold",
     Callback = function(value)
         NZNT_DRIVE_THRESHOLD = value
-        if NZNT_DRIVE_ACTIVE then
-            pcall(function()
-                if getgenv and getgenv().NZNT_SET_THRESHOLD then
-                    getgenv().NZNT_SET_THRESHOLD(value)
-                end
-            end)
-        end
     end
 })
 
