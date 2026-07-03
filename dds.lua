@@ -111,6 +111,49 @@ local function generateRandomName()
     return randomString
 end
 
+local function getInventoryMotorcycles()
+    local list = {}
+    local inventory = LP:FindFirstChild("Inventory") or (LP:FindFirstChild("Data") and LP.Data:FindFirstChild("Vehicles"))
+    
+    if inventory then
+        for _, v in pairs(inventory:GetChildren()) do
+            local name = v.Name
+            local isMotor = false
+            
+            if v:IsA("ValueBase") and v.Value == "Motorcycle" then
+                isMotor = true
+            elseif v:GetAttribute("Type") == "Motorcycle" or v:GetAttribute("VehicleType") == "Motorcycle" then
+                isMotor = true
+            elseif name:lower():find("bike") or name:lower():find("motor") or name:lower():find("ninja") or name:lower():find("cbr") or name:lower():find("mio") or name:lower():find("beat") then
+                isMotor = true
+            end
+            
+            if isMotor then
+                table.insert(list, name)
+            end
+        end
+    end
+    
+    if #list == 0 then
+        local pGui = LP:FindFirstChild("PlayerGui")
+        if pGui and (pGui:FindFirstChild("Garage") or pGui:FindFirstChild("Menu")) then
+            for _, v in pairs(pGui:GetDescendants()) do
+                if v:IsA("TextLabel") and (v.Text:lower():find("bike") or v.Text:lower():find("motor")) then
+                    if not table.find(list, v.Text) then
+                        table.insert(list, v.Text)
+                    end
+                end
+            end
+        end
+    end
+    
+    if #list == 0 then
+        list = {"No Motorcycle Detected"}
+    end
+    
+    return list
+end
+
 local function RejoinServer()
     local queue_teleport = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
     
@@ -1449,7 +1492,7 @@ local function FirePrompt(prompt, targetPart)
             pcall(function()
                 prompt:InputHoldBegin()
                 task.wait(prompt.HoldDuration + 0.3)
-                prompt:InputHoldEnd()
+                pcall(function() prompt:InputHoldEnd() end)
             end)
             task.wait(0.5)
             if not prompt or not prompt.Parent or not prompt.Enabled then triggered = true; break end
@@ -1885,20 +1928,6 @@ AutofarmTab:CreateToggle({
     end
 })
 
-AutofarmTab:CreateSlider({
-    Name = "Barista Speed",
-    Range = {10, 1500},
-    Increment = 1,
-    Suffix = "Speed",
-    CurrentValue = 300,
-    Flag = "BaristaSpeed",
-    Callback = function(value)
-        _G.BaristaSpeed = value
-    end
-})
-
-AutofarmTab:CreateSection("Office Worker")
-
 AutofarmTab:CreateToggle({
     Name = "Autofarm Office",
     CurrentValue = false,
@@ -2038,14 +2067,16 @@ AutofarmTab:CreateSlider({
     end
 })
 
-AutofarmTab:CreateDropdown({
+local motorcycleList = getInventoryMotorcycles()
+
+local DragMotorDropdown = AutofarmTab:CreateDropdown({
     Name = "Select Motorcycle (Drag)",
-    Options = {"Motor A", "Motor B", "Motor C"},
-    CurrentOption = "",
+    Options = motorcycleList,
+    CurrentOption = {motorcycleList[1]},
     MultipleOptions = false,
     Flag = "DragMotorDropdown",
     Callback = function(option)
-        _G.DragQuestMotor = option
+        _G.DragQuestMotor = option[1]
     end
 })
 
@@ -2092,14 +2123,23 @@ AutofarmTab:CreateSlider({
     end
 })
 
-AutofarmTab:CreateDropdown({
+local DriveMotorDropdown = AutofarmTab:CreateDropdown({
     Name = "Select Motorcycle (Drive)",
-    Options = {"Motor A", "Motor B", "Motor C"},
-    CurrentOption = "",
+    Options = motorcycleList,
+    CurrentOption = {motorcycleList[1]},
     MultipleOptions = false,
     Flag = "DriveMotorDropdown",
     Callback = function(option)
-        _G.AutoDriveMotor = option
+        _G.AutoDriveMotor = option[1]
+    end
+})
+
+AutofarmTab:CreateButton({
+    Name = "Refresh Motor Inventory",
+    Callback = function()
+        local updatedList = getInventoryMotorcycles()
+        DragMotorDropdown:Refresh(updatedList, true)
+        DriveMotorDropdown:Refresh(updatedList, true)
     end
 })
 
