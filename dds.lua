@@ -61,6 +61,14 @@ _G.AutoFarmOffice = false
 _G.AutoPoliceEnabled = false
 _G.blackscreen = false 
 
+_G.AutoDragQuest = false
+_G.DragQuestTimer = 10
+_G.DragQuestMotor = ""
+_G.AutoDrive = false
+_G.AutoDriveSpeed = 100
+_G.TargetEarned = 50000
+_G.AutoDriveMotor = ""
+
 _G.AutoWebhook = false
 _G.WebhookURL = ""
 _G.TotalEarning = 0
@@ -110,6 +118,8 @@ local function RejoinServer()
     _G.AutoFarmBarista = false
     _G.AutoFarmOffice = false
     _G.AutoPoliceEnabled = false
+    _G.AutoDragQuest = false
+    _G.AutoDrive = false
     
     Rayfield:Notify({
         Title = "Projectsion",
@@ -152,7 +162,7 @@ task.spawn(function()
         if _G.TotalEarning >= 80000000 then
             Rayfield:Notify({
                 Title = "Target Reached",
-                Content = "Total earned mencakup batas. Memulai Rejoin...",
+                Content = "Total earnings reached the target limit. Rejoining...",
                 Duration = 5,
                 Image = 4483362458,
             })
@@ -204,7 +214,7 @@ end)
 
 local function updateBlackScreen()
     verifyFunction(updateBlackScreen)
-    _G.blackscreen = (_G.AutofarmCourier or _G.AutoFarmBarista or _G.AutoFarmOffice or _G.AutoPoliceEnabled)
+    _G.blackscreen = (_G.AutofarmCourier or _G.AutoFarmBarista or _G.AutoFarmOffice or _G.AutoPoliceEnabled or _G.AutoDragQuest or _G.AutoDrive)
     BlackScreen.Enabled = _G.blackscreen
 end
 
@@ -1804,7 +1814,7 @@ HomeTab:CreateButton({
     Callback = function()
         Rayfield:Notify({
             Title = "Projectsion",
-            Content = "+ office autofarm yes yes",
+            Content = "Office autofarm system loaded.",
             Duration = 5
         })
     end
@@ -1997,6 +2007,102 @@ AutofarmTab:CreateSlider({
     end
 })
 
+AutofarmTab:CreateSection("Auto Drag Quest")
+
+AutofarmTab:CreateToggle({
+    Name = "Auto Drag Quest",
+    CurrentValue = false,
+    Flag = "AutoDragQuestToggle",
+    Callback = function(state)
+        _G.AutoDragQuest = state
+        updateBlackScreen()
+        if state then
+            Rayfield:Notify({
+                Title = "Projectsion",
+                Content = "Auto Drag Quest Enabled!",
+                Duration = 3
+            })
+        end
+    end
+})
+
+AutofarmTab:CreateSlider({
+    Name = "Drag Timer (Seconds)",
+    Range = {1, 30},
+    Increment = 1,
+    Suffix = "s",
+    CurrentValue = 10,
+    Flag = "DragQuestTimerFlag",
+    Callback = function(value)
+        _G.DragQuestTimer = value
+    end
+})
+
+AutofarmTab:CreateDropdown({
+    Name = "Select Motorcycle (Drag)",
+    Options = {"Motor A", "Motor B", "Motor C"},
+    CurrentOption = "",
+    MultipleOptions = false,
+    Flag = "DragMotorDropdown",
+    Callback = function(option)
+        _G.DragQuestMotor = option
+    end
+})
+
+AutofarmTab:CreateSection("Auto Drive")
+
+AutofarmTab:CreateToggle({
+    Name = "Auto Drive",
+    CurrentValue = false,
+    Flag = "AutoDriveToggle",
+    Callback = function(state)
+        _G.AutoDrive = state
+        updateBlackScreen()
+        if state then
+            Rayfield:Notify({
+                Title = "Projectsion",
+                Content = "Auto Drive Enabled!",
+                Duration = 3
+            })
+        end
+    end
+})
+
+AutofarmTab:CreateSlider({
+    Name = "Auto Drive Speed",
+    Range = {10, 500},
+    Increment = 5,
+    Suffix = " km/h",
+    CurrentValue = 100,
+    Flag = "AutoDriveSpeedFlag",
+    Callback = function(value)
+        _G.AutoDriveSpeed = value
+    end
+})
+
+AutofarmTab:CreateSlider({
+    Name = "Target Earned",
+    Range = {1000, 1000000},
+    Increment = 1000,
+    Suffix = " RP",
+    CurrentValue = 50000,
+    Flag = "TargetEarnedFlag",
+    Callback = function(value)
+        _G.TargetEarned = value
+    end
+})
+
+AutofarmTab:CreateDropdown({
+    Name = "Select Motorcycle (Drive)",
+    Options = {"Motor A", "Motor B", "Motor C"},
+    CurrentOption = "",
+    MultipleOptions = false,
+    Flag = "DriveMotorDropdown",
+    Callback = function(option)
+        _G.AutoDriveMotor = option
+    end
+})
+
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 
 StatsTab:CreateSection("Session Stats")
@@ -2047,7 +2153,5 @@ Rayfield:Notify({
     Content = "Loaded Successfully",
     Duration = 5
 })
-
-warn("[PROJECTSION] Engine Loaded & Waiting for Toggle...")
 
 Rayfield:LoadConfiguration()
