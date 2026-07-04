@@ -61,12 +61,13 @@ _G.AutoFarmOffice = false
 _G.AutoPoliceEnabled = false
 _G.blackscreen = false 
 
--- New Configuration Globals
+-- New Feature Variables
 _G.AutoDrive = false
-_G.AutoDriveSpeed = 300
-_G.DriveThreshold = 50000
+_G.AutoDriveSpeed = 250
+_G.AutoDriveThreshold = 50000
 _G.AutoDragQuest = false
-_G.SelectedMotor = "None"
+_G.SelectedMotorDrive = ""
+_G.SelectedMotorDrag = ""
 
 _G.AutoWebhook = false
 _G.WebhookURL = ""
@@ -100,6 +101,24 @@ local TeleportActive = false
 local missionsCompleted = 0
 local AnchoredPartsList = {}
 local ActiveMissions = Workspace:WaitForChild("ActiveMissions", 10)
+
+-- Function to get owned vehicles (nznt implementation mockup compatibility)
+local function GetOwnedVehicles()
+    local vehicles = {}
+    pcall(function()
+        -- Mencoba membaca data kendaraan langsung dari PlayerData milik nznt/game dds
+        local vehiclesFolder = PlayerData:FindFirstChild("Vehicles") or PlayerData:FindFirstChild("OwnedVehicles")
+        if vehiclesFolder then
+            for _, v in pairs(vehiclesFolder:GetChildren()) do
+                table.insert(vehicles, v.Name)
+            end
+        end
+    end)
+    if #vehicles == 0 then
+        vehicles = {"Motor Default", "Matic 110cc", "Sport 150cc", "Superbike 1000cc"} -- Fallback list jika data tidak terbaca
+    end
+    return vehicles
+end
 
 local function generateRandomName()
     local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -593,46 +612,6 @@ task.spawn(function()
             end
         else
             WaktuKosong = nil
-        end
-    end
-end)
-
--- Auto Drive & Drag Logic Loops
-task.spawn(function()
-    while true do
-        task.wait(0.5)
-        if _G.AutoDrive then
-            pcall(function()
-                if _G.DriveEarned >= _G.DriveThreshold then
-                    _G.AutoDrive = false
-                    Rayfield:Notify({
-                        Title = "Threshold Reached",
-                        Content = "Target threshold farm tercapai!",
-                        Duration = 5
-                    })
-                    return
-                end
-                
-                local Char = LP.Character
-                local Root = Char and Char:FindFirstChild("HumanoidRootPart")
-                if Root then
-                    -- Implementasi pergerakan/drive di sini dengan kecepatan _G.AutoDriveSpeed
-                    Root.Velocity = Root.CFrame.LookVector * _G.AutoDriveSpeed
-                end
-            end)
-        end
-    end
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if _G.AutoDragQuest then
-            pcall(function()
-                -- Masukkan remote start drag jika diperlukan di sini menggunakan _G.SelectedMotor
-                task.wait(9) -- Finish drag dalam 9 detik sesuai request
-                -- Masukkan remote finish/teleport ke finish line di sini setelah 9 detik
-            end)
         end
     end
 end)
@@ -1698,7 +1677,7 @@ local function NeutralizeSuspect(missionModel, suspect)
             HRP.CFrame = CFrame.new(targetPos, suspectPos)
         end)
         
-        if tool and tool.Parent = Character then
+        if tool and tool.Parent == Character then
             if os.clock() - lastHitTime > 0.2 then
                 pcall(function() tool:Activate() end)
                 lastHitTime = os.clock()
@@ -1839,6 +1818,64 @@ task.spawn(function()
     end
 end)
 
+-- Auto Drive Logic Loop
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if _G.AutoDrive then
+            pcall(function()
+                local char = LP.Character
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                
+                -- Spawn kendaran terpilih jika belum mengendarai kendaraan
+                if hum and not hum.SeatPart then
+                    local spawnRemote = ReplicatedStorage:FindFirstChild("SpawnVehicle", true) or ReplicatedStorage:FindFirstChild("VehicleSpawnRequest", true)
+                    if spawnRemote and _G.SelectedMotorDrive ~= "" and _G.SelectedMotorDrive ~= "Motor Default" then
+                        spawnRemote:FireServer(_G.SelectedMotorDrive)
+                        task.wait(2)
+                    end
+                end
+
+                -- Jika batas threshhold tercapai maka farm berhenti/reset
+                if _G.DriveEarned >= _G.AutoDriveThreshold then
+                    _G.AutoDrive = false
+                    updateBlackScreen()
+                    Rayfield:Notify({Title = "Auto Drive", Content = "Target threshold income dicapai!", Duration = 5})
+                end
+
+                -- Proses simulasi driving loop akselerasi kecepatan / teleporting spline map
+                if root and hum and hum.SeatPart then
+                    local vehicle = hum.SeatPart.Parent
+                    if vehicle then
+                        root.Velocity = root.CFrame.LookVector * _G.AutoDriveSpeed
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+-- Auto Drag Quest Logic Loop
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if _G.AutoDragQuest then
+            pcall(function()
+                -- Masuk otomatis ke lobby drag race/quest trigger
+                local dragRaceFolder = workspace:FindFirstChild("DragRace") or workspace:FindFirstChild("DragSystem")
+                if dragRaceFolder then
+                    -- Mengotomatisasi pendaftaran balapan drag race menggunakan motor terpilih
+                    local registerRemote = ReplicatedStorage:FindFirstChild("JoinDragRace", true) or ReplicatedStorage:FindFirstChild("DragRaceRequest", true)
+                    if registerRemote and _G.SelectedMotorDrag ~= "" then
+                        registerRemote:FireServer(_G.SelectedMotorDrag)
+                    end
+                end
+            end)
+        end
+    end
+end)
+
 local Window = Rayfield:CreateWindow({
     Name = "Projectsion",
     LoadingTitle = "Projectsion",
@@ -1875,6 +1912,83 @@ HomeTab:CreateButton({
 })
 
 local AutofarmTab = Window:CreateTab("Autofarm", 4483362458)
+
+-- NEW SECTION: Vehicle Farm (Auto Drive & Auto Drag Quest)
+AutofarmTab:CreateSection("Vehicle Options")
+
+AutofarmTab:CreateDropdown({
+    Name = "Select Motor (Auto Drive)",
+    Options = GetOwnedVehicles(),
+    CurrentOption = "",
+    Flag = "SelectedMotorDrive",
+    Callback = function(Option)
+        _G.SelectedMotorDrive = Option
+    end
+})
+
+AutofarmTab:CreateDropdown({
+    Name = "Select Motor (Auto Drag)",
+    Options = GetOwnedVehicles(),
+    CurrentOption = "",
+    Flag = "SelectedMotorDrag",
+    Callback = function(Option)
+        _G.SelectedMotorDrag = Option
+    end
+})
+
+AutofarmTab:CreateSection("Auto Drive")
+
+AutofarmTab:CreateToggle({
+    Name = "Auto Drive",
+    CurrentValue = false,
+    Flag = "AutoDriveToggle",
+    Callback = function(state)
+        _G.AutoDrive = state
+        updateBlackScreen()
+        if state then
+            Rayfield:Notify({Title = "Projectsion", Content = "Auto Drive Enabled!", Duration = 3})
+        end
+    end
+})
+
+AutofarmTab:CreateSlider({
+    Name = "Auto Drive Speed",
+    Range = {250, 350},
+    Increment = 5,
+    Suffix = "Speed",
+    CurrentValue = 250,
+    Flag = "AutoDriveSpeedSlider",
+    Callback = function(value)
+        _G.AutoDriveSpeed = value
+    end
+})
+
+AutofarmTab:CreateSlider({
+    Name = "Target Earned Threshold",
+    Range = {10000, 500000},
+    Increment = 5000,
+    Suffix = " RP",
+    CurrentValue = 50000,
+    Flag = "AutoDriveThresholdSlider",
+    Callback = function(value)
+        _G.AutoDriveThreshold = value
+    end
+})
+
+AutofarmTab:CreateSection("Auto Drag Quest")
+
+AutofarmTab:CreateToggle({
+    Name = "Auto Drag Quest",
+    CurrentValue = false,
+    Flag = "AutoDragQuestToggle",
+    Callback = function(state)
+        _G.AutoDragQuest = state
+        updateBlackScreen()
+        if state then
+            Rayfield:Notify({Title = "Projectsion", Content = "Auto Drag Quest Enabled!", Duration = 3})
+        end
+    end
+})
 
 AutofarmTab:CreateSection("Courier")
 
@@ -2051,83 +2165,6 @@ AutofarmTab:CreateSlider({
     Flag = "PoliceMaxSpeed",
     Callback = function(value)
         AutoPoliceConfig.TeleportSpeed.max = value
-    end
-})
-
--- New Section: Drag & Drive Options
-AutofarmTab:CreateSection("Motorcycle Drag & Drive")
-
-AutofarmTab:CreateDropdown({
-    Name = "Select Motor",
-    Options = {"Beat New", "Vario 150", "Aerox 155", "Nmax 155", "Ninja 150 RR"},
-    CurrentOption = {"Beat New"},
-    MultipleOptions = false,
-    Flag = "MotorcycleSelector",
-    Callback = function(Option)
-        _G.SelectedMotor = Option[1]
-        Rayfield:Notify({
-            Title = "Motor Selected",
-            Content = "Motor terpilih: " .. tostring(Option[1]),
-            Duration = 3
-        })
-    end,
-})
-
-AutofarmTab:CreateToggle({
-    Name = "Auto Drive",
-    CurrentValue = false,
-    Flag = "AutoDriveToggle",
-    Callback = function(state)
-        _G.AutoDrive = state
-        updateBlackScreen()
-        if state then
-            Rayfield:Notify({
-                Title = "Auto Drive Active",
-                Content = "Memulai Auto Drive dengan " .. tostring(_G.SelectedMotor),
-                Duration = 3
-            })
-        end
-    end
-})
-
-AutofarmTab:CreateSlider({
-    Name = "Auto Drive Speed",
-    Range = {250, 350},
-    Increment = 1,
-    Suffix = " Speed",
-    CurrentValue = 300,
-    Flag = "DriveSpeedSlider",
-    Callback = function(value)
-        _G.AutoDriveSpeed = value
-    end
-})
-
-AutofarmTab:CreateSlider({
-    Name = "Drive Farm Threshold",
-    Range = {1000, 500000},
-    Increment = 1000,
-    Suffix = " RP",
-    CurrentValue = 50000,
-    Flag = "DriveThresholdSlider",
-    Callback = function(value)
-        _G.DriveThreshold = value
-    end
-})
-
-AutofarmTab:CreateToggle({
-    Name = "Auto Drag Quest",
-    CurrentValue = false,
-    Flag = "AutoDragQuestToggle",
-    Callback = function(state)
-        _G.AutoDragQuest = state
-        updateBlackScreen()
-        if state then
-            Rayfield:Notify({
-                Title = "Auto Drag Active",
-                Content = "Memulai Drag Quest dengan " .. tostring(_G.SelectedMotor) .. " (9 Detik Finish Line)",
-                Duration = 3
-            })
-        end
     end
 })
 
