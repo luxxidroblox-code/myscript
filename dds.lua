@@ -2026,6 +2026,8 @@ local NZNT_Autodrive = {
     isRespawning = false,
     unseatedSince = nil,
     farmingActive = false,
+    HUGE_PLATFORM_SIZE = 2000,
+    savedFloor = nil,
 }
 
 local function GetNZNTVehicles()
@@ -2141,6 +2143,7 @@ local function NZNT_GroundRaycast(origin, distance)
     local filter = {}
     local player = game:GetService("Players").LocalPlayer
     if player.Character then table.insert(filter, player.Character) end
+    if NZNT_Autodrive.currentVehicle then table.insert(filter, NZNT_Autodrive.currentVehicle) end
     params.FilterDescendantsInstances = filter
     return workspace:Raycast(origin, Vector3.new(0, -distance, 0), params)
 end
@@ -2208,6 +2211,44 @@ local function NZNT_ZeroVehicleVelocity()
     end
 end
 
+local function NZNT_CreateHugePlatform()
+    if NZNT_Autodrive.savedFloor and NZNT_Autodrive.savedFloor.Parent then return end
+    
+    local char = game:GetService("Players").LocalPlayer.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    
+    -- Cari platform existing
+    local platform = workspace:FindFirstChild("THE_SACRED_FLOOR")
+    if platform then
+        NZNT_Autodrive.savedFloor = platform
+        return
+    end
+    
+    -- Buat platform baru
+    local size = NZNT_Autodrive.HUGE_PLATFORM_SIZE
+    local floor = Instance.new("Part")
+    floor.Name = "THE_SACRED_FLOOR"
+    floor.Size = Vector3.new(size, 5, size)
+    floor.Position = Vector3.new(0, -2.5, 0)
+    floor.Anchored = true
+    floor.CanCollide = true
+    floor.Transparency = 0.5
+    floor.Material = Enum.Material.SmoothPlastic
+    floor.BrickColor = BrickColor.new("Bright blue")
+    floor.Parent = workspace
+    
+    -- Hapus semua objek lain di workspace kecuali platform dan player
+    for _, obj in pairs(workspace:GetChildren()) do
+        if obj ~= floor and obj ~= workspace.CurrentCamera and obj ~= char and not obj:IsA("Terrain") then
+            pcall(function() obj:Destroy() end)
+        end
+    end
+    
+    NZNT_Autodrive.savedFloor = floor
+end
+
 local function NZNT_RunDragBridgePass()
     if NZNT_Autodrive.dragBridgeRunning or not NZNT_Autodrive.DragEnabled or not NZNT_Autodrive.farmingActive or NZNT_Autodrive.isRespawning then return end
     
@@ -2254,6 +2295,9 @@ local function NZNT_StartAutoDrive()
     local char = player.Character or player.CharacterAdded:Wait()
     local hum = char:WaitForChild("Humanoid")
     local root = char:WaitForChild("HumanoidRootPart")
+    
+    -- Buat platform raksasa
+    NZNT_CreateHugePlatform()
     
     NZNT_Autodrive.isRunning = true
     NZNT_Autodrive.farmingActive = true
@@ -2348,8 +2392,26 @@ local function NZNT_StartAutoDrive()
             
             if NZNT_Autodrive.farmingActive and NZNT_Autodrive.force and NZNT_Autodrive.currentSeat then
                 local seatPos = NZNT_Autodrive.currentSeat.Position
+                
+                -- Clamp position ke platform
+                if NZNT_Autodrive.savedFloor and NZNT_Autodrive.savedFloor.Parent then
+                    local localPos = NZNT_Autodrive.savedFloor.CFrame:PointToObjectSpace(seatPos)
+                    local limit = NZNT_Autodrive.HUGE_PLATFORM_SIZE / 2 - 80
+                    local clampedX = math.clamp(localPos.X, -limit, limit)
+                    local clampedZ = math.clamp(localPos.Z, -limit, limit)
+                    if math.abs(clampedX - localPos.X) > 0.1 or math.abs(clampedZ - localPos.Z) > 0.1 then
+                        NZNT_Autodrive.direction = NZNT_Autodrive.direction * -1
+                        NZNT_Autodrive.lastDirChange = tick()
+                        local clampedWorld = NZNT_Autodrive.savedFloor.CFrame:PointToWorldSpace(Vector3.new(clampedX, localPos.Y, clampedZ))
+                        local _, clampYaw = NZNT_Autodrive.currentSeat.CFrame:ToEulerAnglesYXZ()
+                        NZNT_Autodrive.currentSeat.CFrame = CFrame.new(clampedWorld.X, seatPos.Y, clampedWorld.Z) * CFrame.Angles(0, clampYaw, 0)
+                        NZNT_ZeroVehicleVelocity()
+                    end
+                end
+                
                 local groundRay = NZNT_GroundRaycast(seatPos, math.max(25, NZNT_Autodrive.seatOffset + 8))
                 if not groundRay then
+                    -- In air, skip
                 else
                     local speed = NZNT_Autodrive.Speed
                     if NZNT_Autodrive.DragEnabled then
@@ -2386,7 +2448,9 @@ local driveVehicleDropdown = AutofarmTab:CreateDropdown({
     Flag = "DriveVehicleSelect",
     Callback = function(option)
         local id = vehicleIdsByName[option]
-        if id then NZNT_Autodrive.Vehicle = id end
+        if id then 
+            NZNT_Autodrive.Vehicle = id
+        end
     end
 })
 
@@ -2446,7 +2510,9 @@ local dragVehicleDropdown = AutofarmTab:CreateDropdown({
     Flag = "DragVehicleSelect",
     Callback = function(option)
         local id = vehicleIdsByName[option]
-        if id then NZNT_Autodrive.DragVehicle = id end
+        if id then 
+            NZNT_Autodrive.DragVehicle = id
+        end
     end
 })
 
