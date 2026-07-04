@@ -61,14 +61,6 @@ _G.AutoFarmOffice = false
 _G.AutoPoliceEnabled = false
 _G.blackscreen = false 
 
--- New Feature Variables
-_G.AutoDrive = false
-_G.AutoDriveSpeed = 250
-_G.AutoDriveThreshold = 50000
-_G.AutoDragQuest = false
-_G.SelectedMotorDrive = ""
-_G.SelectedMotorDrag = ""
-
 _G.AutoWebhook = false
 _G.WebhookURL = ""
 _G.TotalEarning = 0
@@ -85,8 +77,6 @@ _G.CourierEarned = 0
 _G.BaristaEarned = 0
 _G.OfficeEarned = 0
 _G.PoliceEarned = 0
-_G.DriveEarned = 0
-_G.DragEarned = 0
 
 local AutoPoliceConfig = {
     TeleportSpeed = {min = 200, max = 300},
@@ -101,24 +91,6 @@ local TeleportActive = false
 local missionsCompleted = 0
 local AnchoredPartsList = {}
 local ActiveMissions = Workspace:WaitForChild("ActiveMissions", 10)
-
--- Function to get owned vehicles (nznt implementation mockup compatibility)
-local function GetOwnedVehicles()
-    local vehicles = {}
-    pcall(function()
-        -- Mencoba membaca data kendaraan langsung dari PlayerData milik nznt/game dds
-        local vehiclesFolder = PlayerData:FindFirstChild("Vehicles") or PlayerData:FindFirstChild("OwnedVehicles")
-        if vehiclesFolder then
-            for _, v in pairs(vehiclesFolder:GetChildren()) do
-                table.insert(vehicles, v.Name)
-            end
-        end
-    end)
-    if #vehicles == 0 then
-        vehicles = {"Motor Default", "Matic 110cc", "Sport 150cc", "Superbike 1000cc"} -- Fallback list jika data tidak terbaca
-    end
-    return vehicles
-end
 
 local function generateRandomName()
     local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -138,8 +110,6 @@ local function RejoinServer()
     _G.AutoFarmBarista = false
     _G.AutoFarmOffice = false
     _G.AutoPoliceEnabled = false
-    _G.AutoDrive = false
-    _G.AutoDragQuest = false
     
     Rayfield:Notify({
         Title = "Projectsion",
@@ -234,7 +204,7 @@ end)
 
 local function updateBlackScreen()
     verifyFunction(updateBlackScreen)
-    _G.blackscreen = (_G.AutofarmCourier or _G.AutoFarmBarista or _G.AutoFarmOffice or _G.AutoPoliceEnabled or _G.AutoDrive or _G.AutoDragQuest)
+    _G.blackscreen = (_G.AutofarmCourier or _G.AutoFarmBarista or _G.AutoFarmOffice or _G.AutoPoliceEnabled)
     BlackScreen.Enabled = _G.blackscreen
 end
 
@@ -378,7 +348,7 @@ local function sendWebhook(income, target)
 end
 
 local lblTotalEarned, lblCurrentMoney, lblSessionTime
-local lblCourierEarned, lblBaristaEarned, lblOfficeEarned, lblPoliceEarned, lblDriveEarned, lblDragEarned
+local lblCourierEarned, lblBaristaEarned, lblOfficeEarned, lblPoliceEarned
 
 PlayerData.RPValue.Changed:Connect(function(newMoney)
     if newMoney > lastMoney then
@@ -394,10 +364,6 @@ PlayerData.RPValue.Changed:Connect(function(newMoney)
             _G.OfficeEarned = _G.OfficeEarned + gained
         elseif _G.AutoPoliceEnabled then
             _G.PoliceEarned = _G.PoliceEarned + gained
-        elseif _G.AutoDrive then
-            _G.DriveEarned = _G.DriveEarned + gained
-        elseif _G.AutoDragQuest then
-            _G.DragEarned = _G.DragEarned + gained
         end
 
         if lblTotalEarned then lblTotalEarned:Set("Total Earned: " .. formatRP(_G.TotalEarning)) end
@@ -406,8 +372,6 @@ PlayerData.RPValue.Changed:Connect(function(newMoney)
         if lblBaristaEarned then lblBaristaEarned:Set("Barista: " .. formatRP(_G.BaristaEarned)) end
         if lblOfficeEarned then lblOfficeEarned:Set("Office Worker: " .. formatRP(_G.OfficeEarned)) end
         if lblPoliceEarned then lblPoliceEarned:Set("Police Department: " .. formatRP(_G.PoliceEarned)) end
-        if lblDriveEarned then lblDriveEarned:Set("Auto Drive: " .. formatRP(_G.DriveEarned)) end
-        if lblDragEarned then lblDragEarned:Set("Auto Drag Quest: " .. formatRP(_G.DragEarned)) end
 
         if not isRunning then
             isRunning = true
@@ -418,7 +382,7 @@ PlayerData.RPValue.Changed:Connect(function(newMoney)
                         sendWebhook(pendingIncome, 0)
                         pendingIncome = 0
                     end
-                    if not _G.AutofarmCourier and not _G.AutoFarmBarista and not _G.AutoFarmOffice and not _G.AutoPoliceEnabled and not _G.AutoDrive and not _G.AutoDragQuest then
+                    if not _G.AutofarmCourier and not _G.AutoFarmBarista and not _G.AutoFarmOffice and not _G.AutoPoliceEnabled then
                         isRunning = false
                     end
                 end
@@ -1818,64 +1782,6 @@ task.spawn(function()
     end
 end)
 
--- Auto Drive Logic Loop
-task.spawn(function()
-    while true do
-        task.wait(0.1)
-        if _G.AutoDrive then
-            pcall(function()
-                local char = LP.Character
-                local root = char and char:FindFirstChild("HumanoidRootPart")
-                local hum = char and char:FindFirstChildOfClass("Humanoid")
-                
-                -- Spawn kendaran terpilih jika belum mengendarai kendaraan
-                if hum and not hum.SeatPart then
-                    local spawnRemote = ReplicatedStorage:FindFirstChild("SpawnVehicle", true) or ReplicatedStorage:FindFirstChild("VehicleSpawnRequest", true)
-                    if spawnRemote and _G.SelectedMotorDrive ~= "" and _G.SelectedMotorDrive ~= "Motor Default" then
-                        spawnRemote:FireServer(_G.SelectedMotorDrive)
-                        task.wait(2)
-                    end
-                end
-
-                -- Jika batas threshhold tercapai maka farm berhenti/reset
-                if _G.DriveEarned >= _G.AutoDriveThreshold then
-                    _G.AutoDrive = false
-                    updateBlackScreen()
-                    Rayfield:Notify({Title = "Auto Drive", Content = "Target threshold income dicapai!", Duration = 5})
-                end
-
-                -- Proses simulasi driving loop akselerasi kecepatan / teleporting spline map
-                if root and hum and hum.SeatPart then
-                    local vehicle = hum.SeatPart.Parent
-                    if vehicle then
-                        root.Velocity = root.CFrame.LookVector * _G.AutoDriveSpeed
-                    end
-                end
-            end)
-        end
-    end
-end)
-
--- Auto Drag Quest Logic Loop
-task.spawn(function()
-    while true do
-        task.wait(0.5)
-        if _G.AutoDragQuest then
-            pcall(function()
-                -- Masuk otomatis ke lobby drag race/quest trigger
-                local dragRaceFolder = workspace:FindFirstChild("DragRace") or workspace:FindFirstChild("DragSystem")
-                if dragRaceFolder then
-                    -- Mengotomatisasi pendaftaran balapan drag race menggunakan motor terpilih
-                    local registerRemote = ReplicatedStorage:FindFirstChild("JoinDragRace", true) or ReplicatedStorage:FindFirstChild("DragRaceRequest", true)
-                    if registerRemote and _G.SelectedMotorDrag ~= "" then
-                        registerRemote:FireServer(_G.SelectedMotorDrag)
-                    end
-                end
-            end)
-        end
-    end
-end)
-
 local Window = Rayfield:CreateWindow({
     Name = "Projectsion",
     LoadingTitle = "Projectsion",
@@ -1912,83 +1818,6 @@ HomeTab:CreateButton({
 })
 
 local AutofarmTab = Window:CreateTab("Autofarm", 4483362458)
-
--- NEW SECTION: Vehicle Farm (Auto Drive & Auto Drag Quest)
-AutofarmTab:CreateSection("Vehicle Options")
-
-AutofarmTab:CreateDropdown({
-    Name = "Select Motor (Auto Drive)",
-    Options = GetOwnedVehicles(),
-    CurrentOption = "",
-    Flag = "SelectedMotorDrive",
-    Callback = function(Option)
-        _G.SelectedMotorDrive = Option
-    end
-})
-
-AutofarmTab:CreateDropdown({
-    Name = "Select Motor (Auto Drag)",
-    Options = GetOwnedVehicles(),
-    CurrentOption = "",
-    Flag = "SelectedMotorDrag",
-    Callback = function(Option)
-        _G.SelectedMotorDrag = Option
-    end
-})
-
-AutofarmTab:CreateSection("Auto Drive")
-
-AutofarmTab:CreateToggle({
-    Name = "Auto Drive",
-    CurrentValue = false,
-    Flag = "AutoDriveToggle",
-    Callback = function(state)
-        _G.AutoDrive = state
-        updateBlackScreen()
-        if state then
-            Rayfield:Notify({Title = "Projectsion", Content = "Auto Drive Enabled!", Duration = 3})
-        end
-    end
-})
-
-AutofarmTab:CreateSlider({
-    Name = "Auto Drive Speed",
-    Range = {250, 350},
-    Increment = 5,
-    Suffix = "Speed",
-    CurrentValue = 250,
-    Flag = "AutoDriveSpeedSlider",
-    Callback = function(value)
-        _G.AutoDriveSpeed = value
-    end
-})
-
-AutofarmTab:CreateSlider({
-    Name = "Target Earned Threshold",
-    Range = {10000, 500000},
-    Increment = 5000,
-    Suffix = " RP",
-    CurrentValue = 50000,
-    Flag = "AutoDriveThresholdSlider",
-    Callback = function(value)
-        _G.AutoDriveThreshold = value
-    end
-})
-
-AutofarmTab:CreateSection("Auto Drag Quest")
-
-AutofarmTab:CreateToggle({
-    Name = "Auto Drag Quest",
-    CurrentValue = false,
-    Flag = "AutoDragQuestToggle",
-    Callback = function(state)
-        _G.AutoDragQuest = state
-        updateBlackScreen()
-        if state then
-            Rayfield:Notify({Title = "Projectsion", Content = "Auto Drag Quest Enabled!", Duration = 3})
-        end
-    end
-})
 
 AutofarmTab:CreateSection("Courier")
 
@@ -2168,6 +1997,510 @@ AutofarmTab:CreateSlider({
     end
 })
 
+-- =============================================
+-- [ AUTO DRIVE & AUTO DRAG QUEST - TAMBAHAN ]
+-- =============================================
+
+local NZNT_Autodrive = {
+    Enabled = false,
+    Speed = 250,
+    TargetEarned = 500000,
+    Vehicle = "Yamahax-MioSporty",
+    DragEnabled = false,
+    DragSpeed = 250,
+    DragTargetEarned = 500000,
+    DragVehicle = "Yamahax-MioSporty",
+    TotalEarned = 0,
+    StartMoney = 0,
+    isRunning = false,
+    currentSeat = nil,
+    force = nil,
+    gyro = nil,
+    attachment = nil,
+    direction = 1,
+    lastDirChange = 0,
+    DIR_COOLDOWN = 0.3,
+    seatOffset = 1.5,
+    dragRaceCount = 0,
+    dragBridgeRunning = false,
+    isRespawning = false,
+    unseatedSince = nil,
+    farmingActive = false,
+}
+
+local function GetNZNTVehicles()
+    local vehicles = {}
+    pcall(function()
+        local RS = game:GetService("ReplicatedStorage")
+        local d = RS:FindFirstChild("DealershipEvents")
+        local init = d and d:FindFirstChild("InitializeCarData")
+        if init and init:IsA("RemoteFunction") then
+            local ok, cfg = pcall(function() return init:InvokeServer() end)
+            if ok and type(cfg) == "table" then
+                for _, v in pairs(cfg) do
+                    if type(v) == "table" and v.Name then
+                        table.insert(vehicles, {id = v.Name, name = v.DisplayName or v.Name})
+                    end
+                end
+            end
+        end
+    end)
+    if #vehicles == 0 then
+        vehicles = {
+            {id = "Yamahax-MioSporty", name = "Yamahax - Mio Sporty (2006)"},
+            {id = "Yamahax-NMAX", name = "Yamahax - NMAX"},
+            {id = "Yamahax-XMAX", name = "Yamahax - XMAX"},
+            {id = "Yamahax-R15", name = "Yamahax - R15"},
+            {id = "Yamahax-MT25", name = "Yamahax - MT25"},
+        }
+    end
+    table.sort(vehicles, function(a, b) return a.name < b.name end)
+    return vehicles
+end
+
+local vehicleList = GetNZNTVehicles()
+local vehicleNames = {}
+local vehicleIdsByName = {}
+for _, v in ipairs(vehicleList) do
+    table.insert(vehicleNames, v.name)
+    vehicleIdsByName[v.name] = v.id
+end
+
+local function NZNT_SpawnVehicle(id)
+    local RS = game:GetService("ReplicatedStorage")
+    local sf = RS:FindFirstChild("SpawnCarEvents")
+    if sf then
+        local r = sf:FindFirstChild("SpawnCar")
+        if r then r:FireServer(id or NZNT_Autodrive.Vehicle) return true end
+    end
+    return false
+end
+
+local function NZNT_DespawnVehicle()
+    local RS = game:GetService("ReplicatedStorage")
+    local sf = RS:FindFirstChild("SpawnCarEvents")
+    if sf then
+        local r = sf:FindFirstChild("DespawnCar")
+        if r then r:FireServer() return true end
+    end
+    return false
+end
+
+local function NZNT_FindClosestSeat()
+    local char = game:GetService("Players").LocalPlayer.Character
+    if not char then return nil end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+    local best, bestDist = nil, math.huge
+    for _, obj in ipairs(workspace:GetChildren()) do
+        local seat = obj:FindFirstChildWhichIsA("VehicleSeat", true)
+        if seat then
+            local dist = (seat.Position - root.Position).Magnitude
+            if dist < bestDist then best, bestDist = seat, dist end
+        end
+    end
+    return best
+end
+
+local function NZNT_GetVehicleRootFromSeat(seat)
+    local node = seat
+    while node and node.Parent and node.Parent ~= workspace do
+        node = node.Parent
+    end
+    return node or seat
+end
+
+local function NZNT_SetupPhysics(seat)
+    if NZNT_Autodrive.attachment then NZNT_Autodrive.attachment:Destroy() end
+    if NZNT_Autodrive.force then NZNT_Autodrive.force:Destroy() end
+    if NZNT_Autodrive.gyro then NZNT_Autodrive.gyro:Destroy() end
+    
+    NZNT_Autodrive.attachment = Instance.new("Attachment", seat)
+    NZNT_Autodrive.force = Instance.new("LinearVelocity", seat)
+    NZNT_Autodrive.force.MaxForce = 99999999
+    NZNT_Autodrive.force.Attachment0 = NZNT_Autodrive.attachment
+    NZNT_Autodrive.force.RelativeTo = Enum.ActuatorRelativeTo.Attachment0
+    
+    NZNT_Autodrive.gyro = Instance.new("BodyGyro", seat)
+    NZNT_Autodrive.gyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+    NZNT_Autodrive.gyro.P = 100000
+    NZNT_Autodrive.gyro.D = 1000
+    NZNT_Autodrive.gyro.CFrame = seat.CFrame
+end
+
+local function NZNT_CleanupPhysics()
+    if NZNT_Autodrive.force then NZNT_Autodrive.force:Destroy(); NZNT_Autodrive.force = nil end
+    if NZNT_Autodrive.gyro then NZNT_Autodrive.gyro:Destroy(); NZNT_Autodrive.gyro = nil end
+    if NZNT_Autodrive.attachment then NZNT_Autodrive.attachment:Destroy(); NZNT_Autodrive.attachment = nil end
+end
+
+local function NZNT_GroundRaycast(origin, distance)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    params.IgnoreWater = true
+    local filter = {}
+    local player = game:GetService("Players").LocalPlayer
+    if player.Character then table.insert(filter, player.Character) end
+    params.FilterDescendantsInstances = filter
+    return workspace:Raycast(origin, Vector3.new(0, -distance, 0), params)
+end
+
+local function NZNT_CalculateSeatOffset(vehicle, seat)
+    local lowestY = math.huge
+    for _, part in ipairs(vehicle:GetDescendants()) do
+        if part:IsA("BasePart") and part ~= seat then
+            local half = part.Size * 0.5
+            local p = part.CFrame * Vector3.new(0, -half.Y, 0)
+            if p.Y < lowestY then lowestY = p.Y end
+        end
+    end
+    if lowestY ~= math.huge then
+        return math.clamp(seat.Position.Y - lowestY, 1, 12)
+    end
+    return 1.5
+end
+
+local function NZNT_FindDragRace()
+    local dragRace = workspace:FindFirstChild("DragRace")
+    if dragRace then return dragRace end
+    for _, obj in pairs(workspace:GetChildren()) do
+        if obj:IsA("Folder") or obj:IsA("Model") then
+            dragRace = obj:FindFirstChild("DragRace") or obj:FindFirstChild("DragRace", true)
+            if dragRace then return dragRace end
+        end
+    end
+    return nil
+end
+
+local function NZNT_FindDragDetectors(dragRace)
+    if not dragRace then return nil, nil, nil, nil, nil end
+    local detectorRoot = dragRace:FindFirstChild("Detector") or dragRace:FindFirstChild("Detectors") or dragRace
+    local startDet = detectorRoot:FindFirstChild("DetectorStart") or detectorRoot:FindFirstChild("Start") or dragRace:FindFirstChild("DetectorStart") or dragRace:FindFirstChild("Start")
+    local c1 = detectorRoot:FindFirstChild("DetectorC1") or detectorRoot:FindFirstChild("C1") or dragRace:FindFirstChild("DetectorC1") or dragRace:FindFirstChild("C1")
+    local c2 = detectorRoot:FindFirstChild("DetectorC2") or detectorRoot:FindFirstChild("C2") or dragRace:FindFirstChild("DetectorC2") or dragRace:FindFirstChild("C2")
+    local c3 = detectorRoot:FindFirstChild("DetectorC3") or detectorRoot:FindFirstChild("C3") or dragRace:FindFirstChild("DetectorC3") or dragRace:FindFirstChild("C3")
+    local finishDet = detectorRoot:FindFirstChild("DetectorFinish") or detectorRoot:FindFirstChild("Finish") or dragRace:FindFirstChild("DetectorFinish") or dragRace:FindFirstChild("Finish")
+    return startDet, c1, c2, c3, finishDet
+end
+
+local function NZNT_TouchDragDetector(detector, seatCFrame)
+    if not detector or not seatCFrame then return false end
+    pcall(function() detector.CFrame = seatCFrame end)
+    task.wait(0.1)
+    pcall(function() detector.CFrame = seatCFrame * CFrame.new(0, -100, 0) end)
+    return true
+end
+
+local function NZNT_ZeroVehicleVelocity()
+    if NZNT_Autodrive.force then NZNT_Autodrive.force.VectorVelocity = Vector3.zero end
+    local vehicle = NZNT_Autodrive.currentVehicle
+    if vehicle and vehicle.Parent then
+        for _, part in ipairs(vehicle:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.AssemblyLinearVelocity = Vector3.zero
+                part.AssemblyAngularVelocity = Vector3.zero
+            end
+        end
+        if vehicle:IsA("BasePart") then
+            vehicle.AssemblyLinearVelocity = Vector3.zero
+            vehicle.AssemblyAngularVelocity = Vector3.zero
+        end
+    end
+end
+
+local function NZNT_RunDragBridgePass()
+    if NZNT_Autodrive.dragBridgeRunning or not NZNT_Autodrive.DragEnabled or not NZNT_Autodrive.farmingActive or NZNT_Autodrive.isRespawning then return end
+    
+    local seat = NZNT_Autodrive.currentSeat
+    if not seat then return end
+    
+    local dragRace = NZNT_FindDragRace()
+    if not dragRace then return end
+    
+    local startDet, c1, c2, c3, finishDet = NZNT_FindDragDetectors(dragRace)
+    if not startDet or not finishDet then return end
+    
+    NZNT_Autodrive.dragBridgeRunning = true
+    local seatCFrame = seat.CFrame
+    
+    NZNT_ZeroVehicleVelocity()
+    task.wait(0.5)
+    seatCFrame = seat.CFrame
+    
+    NZNT_TouchDragDetector(startDet, seatCFrame)
+    task.wait(3)
+    
+    for _, checkpoint in ipairs({c1, c2, c3}) do
+        if checkpoint and NZNT_Autodrive.DragEnabled and NZNT_Autodrive.farmingActive and not NZNT_Autodrive.isRespawning then
+            seatCFrame = seat.CFrame
+            NZNT_TouchDragDetector(checkpoint, seatCFrame)
+            task.wait(2)
+        end
+    end
+    
+    if NZNT_Autodrive.DragEnabled and NZNT_Autodrive.farmingActive and not NZNT_Autodrive.isRespawning then
+        seatCFrame = seat.CFrame
+        NZNT_TouchDragDetector(finishDet, seatCFrame)
+        NZNT_Autodrive.dragRaceCount = NZNT_Autodrive.dragRaceCount + 1
+    end
+    
+    NZNT_Autodrive.dragBridgeRunning = false
+end
+
+local function NZNT_StartAutoDrive()
+    if NZNT_Autodrive.isRunning then return end
+    
+    local player = game:GetService("Players").LocalPlayer
+    local char = player.Character or player.CharacterAdded:Wait()
+    local hum = char:WaitForChild("Humanoid")
+    local root = char:WaitForChild("HumanoidRootPart")
+    
+    NZNT_Autodrive.isRunning = true
+    NZNT_Autodrive.farmingActive = true
+    NZNT_Autodrive.StartMoney = player.PlayerData.RPValue.Value
+    NZNT_Autodrive.TotalEarned = 0
+    
+    NZNT_SpawnVehicle(NZNT_Autodrive.Vehicle)
+    task.wait(3)
+    
+    local seat = NZNT_FindClosestSeat()
+    if not seat then 
+        NZNT_Autodrive.isRunning = false
+        NZNT_Autodrive.farmingActive = false
+        return 
+    end
+    
+    root.CFrame = seat.CFrame * CFrame.new(0, 2, 0)
+    task.wait(0.5)
+    seat:Sit(hum)
+    task.wait(1)
+    
+    NZNT_Autodrive.currentVehicle = NZNT_GetVehicleRootFromSeat(seat)
+    NZNT_Autodrive.currentSeat = seat
+    NZNT_Autodrive.seatOffset = NZNT_CalculateSeatOffset(NZNT_Autodrive.currentVehicle, seat)
+    NZNT_SetupPhysics(seat)
+    NZNT_Autodrive.unseatedSince = nil
+    
+    task.spawn(function()
+        while NZNT_Autodrive.isRunning and NZNT_Autodrive.farmingActive do
+            task.wait()
+            
+            local currentMoney = player.PlayerData.RPValue.Value
+            if NZNT_Autodrive.StartMoney and currentMoney - NZNT_Autodrive.StartMoney >= NZNT_Autodrive.TargetEarned then
+                if hum then
+                    NZNT_Autodrive.isRespawning = true
+                    NZNT_Autodrive.farmingActive = false
+                    NZNT_ZeroVehicleVelocity()
+                    NZNT_CleanupPhysics()
+                    NZNT_DespawnVehicle()
+                    task.wait(2)
+                    NZNT_SpawnVehicle(NZNT_Autodrive.Vehicle)
+                    task.wait(3)
+                    local newSeat = NZNT_FindClosestSeat()
+                    if newSeat then
+                        root.CFrame = newSeat.CFrame * CFrame.new(0, 2, 0)
+                        task.wait(0.5)
+                        newSeat:Sit(hum)
+                        task.wait(1)
+                        NZNT_Autodrive.currentVehicle = NZNT_GetVehicleRootFromSeat(newSeat)
+                        NZNT_Autodrive.currentSeat = newSeat
+                        NZNT_Autodrive.seatOffset = NZNT_CalculateSeatOffset(NZNT_Autodrive.currentVehicle, newSeat)
+                        NZNT_Autodrive.StartMoney = player.PlayerData.RPValue.Value
+                        NZNT_SetupPhysics(newSeat)
+                        NZNT_Autodrive.farmingActive = true
+                        NZNT_Autodrive.isRespawning = false
+                    end
+                end
+            end
+            
+            if hum and hum.SeatPart ~= NZNT_Autodrive.currentSeat then
+                NZNT_Autodrive.unseatedSince = NZNT_Autodrive.unseatedSince or os.clock()
+                if os.clock() - NZNT_Autodrive.unseatedSince >= 10 then
+                    NZNT_Autodrive.unseatedSince = nil
+                    if hum then
+                        NZNT_Autodrive.isRespawning = true
+                        NZNT_Autodrive.farmingActive = false
+                        NZNT_ZeroVehicleVelocity()
+                        NZNT_CleanupPhysics()
+                        NZNT_DespawnVehicle()
+                        task.wait(2)
+                        NZNT_SpawnVehicle(NZNT_Autodrive.Vehicle)
+                        task.wait(3)
+                        local newSeat = NZNT_FindClosestSeat()
+                        if newSeat then
+                            root.CFrame = newSeat.CFrame * CFrame.new(0, 2, 0)
+                            task.wait(0.5)
+                            newSeat:Sit(hum)
+                            task.wait(1)
+                            NZNT_Autodrive.currentVehicle = NZNT_GetVehicleRootFromSeat(newSeat)
+                            NZNT_Autodrive.currentSeat = newSeat
+                            NZNT_Autodrive.seatOffset = NZNT_CalculateSeatOffset(NZNT_Autodrive.currentVehicle, newSeat)
+                            NZNT_Autodrive.StartMoney = player.PlayerData.RPValue.Value
+                            NZNT_SetupPhysics(newSeat)
+                            NZNT_Autodrive.farmingActive = true
+                            NZNT_Autodrive.isRespawning = false
+                        end
+                    end
+                end
+            else
+                NZNT_Autodrive.unseatedSince = nil
+            end
+            
+            if NZNT_Autodrive.farmingActive and NZNT_Autodrive.force and NZNT_Autodrive.currentSeat then
+                local seatPos = NZNT_Autodrive.currentSeat.Position
+                local groundRay = NZNT_GroundRaycast(seatPos, math.max(25, NZNT_Autodrive.seatOffset + 8))
+                if not groundRay then
+                else
+                    local speed = NZNT_Autodrive.Speed
+                    if NZNT_Autodrive.DragEnabled then
+                        speed = NZNT_Autodrive.DragSpeed
+                    end
+                    NZNT_Autodrive.force.VectorVelocity = Vector3.new(0, 0, -speed * NZNT_Autodrive.direction)
+                end
+            end
+        end
+    end)
+    
+    task.spawn(function()
+        while NZNT_Autodrive.isRunning and NZNT_Autodrive.DragEnabled do
+            task.wait(5)
+            NZNT_RunDragBridgePass()
+        end
+    end)
+end
+
+local function NZNT_StopAutoDrive()
+    NZNT_Autodrive.isRunning = false
+    NZNT_Autodrive.farmingActive = false
+    NZNT_Autodrive.dragBridgeRunning = false
+    NZNT_CleanupPhysics()
+    NZNT_DespawnVehicle()
+end
+
+AutofarmTab:CreateSection("Auto Drive")
+
+local driveVehicleDropdown = AutofarmTab:CreateDropdown({
+    Name = "Select Motor (Drive)",
+    Options = vehicleNames,
+    CurrentOption = vehicleNames[1] or "Yamahax - Mio Sporty (2006)",
+    Flag = "DriveVehicleSelect",
+    Callback = function(option)
+        local id = vehicleIdsByName[option]
+        if id then NZNT_Autodrive.Vehicle = id end
+    end
+})
+
+AutofarmTab:CreateSlider({
+    Name = "Drive Speed",
+    Range = {250, 350},
+    Increment = 1,
+    Suffix = "Speed",
+    CurrentValue = 250,
+    Flag = "DriveSpeed",
+    Callback = function(value)
+        NZNT_Autodrive.Speed = value
+    end
+})
+
+AutofarmTab:CreateSlider({
+    Name = "Drive Target Earned",
+    Range = {100000, 2000000},
+    Increment = 10000,
+    Suffix = "RP",
+    CurrentValue = 500000,
+    Flag = "DriveTargetEarned",
+    Callback = function(value)
+        NZNT_Autodrive.TargetEarned = value
+    end
+})
+
+AutofarmTab:CreateToggle({
+    Name = "Auto Drive",
+    CurrentValue = false,
+    Flag = "AutoDriveToggle",
+    Callback = function(state)
+        if state then
+            task.spawn(NZNT_StartAutoDrive)
+            Rayfield:Notify({
+                Title = "Projectsion",
+                Content = "Auto Drive Enabled!",
+                Duration = 3
+            })
+        else
+            NZNT_StopAutoDrive()
+            Rayfield:Notify({
+                Title = "Projectsion",
+                Content = "Auto Drive Disabled.",
+                Duration = 3
+            })
+        end
+    end
+})
+
+AutofarmTab:CreateSection("Auto Drag Quest")
+
+local dragVehicleDropdown = AutofarmTab:CreateDropdown({
+    Name = "Select Motor (Drag)",
+    Options = vehicleNames,
+    CurrentOption = vehicleNames[1] or "Yamahax - Mio Sporty (2006)",
+    Flag = "DragVehicleSelect",
+    Callback = function(option)
+        local id = vehicleIdsByName[option]
+        if id then NZNT_Autodrive.DragVehicle = id end
+    end
+})
+
+AutofarmTab:CreateSlider({
+    Name = "Drag Speed",
+    Range = {250, 350},
+    Increment = 1,
+    Suffix = "Speed",
+    CurrentValue = 250,
+    Flag = "DragSpeed",
+    Callback = function(value)
+        NZNT_Autodrive.DragSpeed = value
+    end
+})
+
+AutofarmTab:CreateSlider({
+    Name = "Drag Target Earned",
+    Range = {100000, 2000000},
+    Increment = 10000,
+    Suffix = "RP",
+    CurrentValue = 500000,
+    Flag = "DragTargetEarned",
+    Callback = function(value)
+        NZNT_Autodrive.DragTargetEarned = value
+    end
+})
+
+AutofarmTab:CreateToggle({
+    Name = "Auto Drag Quest",
+    CurrentValue = false,
+    Flag = "AutoDragToggle",
+    Callback = function(state)
+        NZNT_Autodrive.DragEnabled = state
+        if state then
+            if not NZNT_Autodrive.isRunning then
+                task.spawn(NZNT_StartAutoDrive)
+            end
+            Rayfield:Notify({
+                Title = "Projectsion",
+                Content = "Auto Drag Quest Enabled!",
+                Duration = 3
+            })
+        else
+            Rayfield:Notify({
+                Title = "Projectsion",
+                Content = "Auto Drag Quest Disabled.",
+                Duration = 3
+            })
+        end
+    end
+})
+
+-- =============================================
+
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 
 StatsTab:CreateSection("Session Stats")
@@ -2180,13 +2513,22 @@ lblCourierEarned = StatsTab:CreateLabel("Courier: RP. 0")
 lblBaristaEarned = StatsTab:CreateLabel("Barista: RP. 0")
 lblOfficeEarned = StatsTab:CreateLabel("Office Worker: RP. 0")
 lblPoliceEarned = StatsTab:CreateLabel("Police Department: RP. 0")
-lblDriveEarned = StatsTab:CreateLabel("Auto Drive: RP. 0")
-lblDragEarned = StatsTab:CreateLabel("Auto Drag Quest: RP. 0")
+
+StatsTab:CreateSection("Auto Drive Stats")
+local lblDriveEarned = StatsTab:CreateLabel("Drive Earned: RP. 0")
+local lblDragRaces = StatsTab:CreateLabel("Drag Races: 0")
 
 task.spawn(function()
     while true do
         if lblSessionTime then
             lblSessionTime:Set("Session Time: " .. getRunningTime())
+        end
+        if lblDriveEarned then
+            local earned = NZNT_Autodrive.TotalEarned or 0
+            lblDriveEarned:Set("Drive Earned: RP. " .. formatRP(earned))
+        end
+        if lblDragRaces then
+            lblDragRaces:Set("Drag Races: " .. tostring(NZNT_Autodrive.dragRaceCount or 0))
         end
         task.wait(1)
     end
