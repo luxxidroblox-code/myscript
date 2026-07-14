@@ -1,4 +1,4 @@
-local d = false
+Local d = false
 local h = {}
 local x, y
 
@@ -407,7 +407,6 @@ local function tryAutoPSJoin()
         local pse = RS:FindFirstChild("PrivateServerEvents")
         if pse then
             local createRemote = pse:FindFirstChild("CreatePrivateServer")
-            -- DI SINI SUDAH DIPERBAIKI (pse:FindFirstChild)
             local joinRemote = pse:FindFirstChild("JoinPrivateServer")
             
             if joinRemote then
@@ -1373,18 +1372,12 @@ local sendBtn = {
 local blur = Instance.new("BlurEffect", Lighting)
 blur.Size = 24
 
+-- PERBAIKAN DI SINI: Tidak lagi menghapus seluruh isi workspace game agar UI tidak macet
 local function cleanWorkspace()
     local char = Player.Character
     if not char then
         char = Player.CharacterAdded:Wait()
         task.wait(2)
-    end
-    
-    local protectedDragRoot = findDragRace()
-    if protectedDragRoot then
-        pcall(function()
-            protectedDragRoot.Parent = workspace
-        end)
     end
     
     local root = char:FindFirstChild("HumanoidRootPart")
@@ -1393,34 +1386,13 @@ local function cleanWorkspace()
         task.wait(2)
     end
     
-    local searching = true
-    while searching do
-        local result = workspace:Raycast(root.Position, Vector3.new(0, -1000, 0))
-        
-        if result and result.Instance then
-            local part = result.Instance
-            
-            if part.Size.X >= HUGE_PLATFORM_SIZE or part.Name == "THE_SACRED_FLOOR" then
-                savedFloor = part
-                savedFloor.Name = "THE_SACRED_FLOOR"
-                savedFloor.Parent = workspace
-                searching = false
-            else
-                part:Destroy()
-                task.wait(0.02)
-            end
-        else
-            searching = false
-        end
-    end
-    
-    for _, obj in pairs(workspace:GetChildren()) do
-        if obj ~= workspace.CurrentCamera
-            and obj ~= char
-            and obj ~= savedFloor
-            and obj ~= protectedDragRoot
-            and not obj:IsA("Terrain") then
-            obj:Destroy()
+    -- Mencari platform kustom/khusus tanpa merusak objek map utama game
+    local result = workspace:Raycast(root.Position, Vector3.new(0, -1000, 0))
+    if result and result.Instance then
+        local part = result.Instance
+        if part.Size.X >= HUGE_PLATFORM_SIZE or part.Name == "THE_SACRED_FLOOR" then
+            savedFloor = part
+            savedFloor.Name = "THE_SACRED_FLOOR"
         end
     end
     
@@ -1470,7 +1442,6 @@ local function respawnVehicle(hum, statusText)
     unseatedSince = nil
     
     vStatus.Text = statusText or ("Reached " .. formatNumber(FARM_THRESHOLD) .. "! Respawning...")
-    vStatus.Text = statusText or ("Reached " .. formatNumber(FARM_THRESHOLD) .. "! Stopping...")
     
     stopVehicleCompletely()
     sendKey(Enum.KeyCode.Space)
@@ -1957,7 +1928,7 @@ task.spawn(function()
     startFarming()
 end)
 
-print("✅ Stealth Farm Loaded - Premium")
+print("✅ Stealth Farm Loaded - Premium (UI Stuck Fixed)")
 
 local isRestarting = false
 
