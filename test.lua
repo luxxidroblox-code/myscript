@@ -407,7 +407,8 @@ local function tryAutoPSJoin()
         local pse = RS:FindFirstChild("PrivateServerEvents")
         if pse then
             local createRemote = pse:FindFirstChild("CreatePrivateServer")
-            local joinRemote = pse:pse:FindFirstChild("JoinPrivateServer")
+            -- DI SINI SUDAH DIPERBAIKI (pse:FindFirstChild)
+            local joinRemote = pse:FindFirstChild("JoinPrivateServer")
             
             if joinRemote then
                 local existingCode = grabServerCode()
@@ -976,7 +977,7 @@ local thresholdSlider
 local rejoinSlider
 
 local function warnConfig()
-    ArcaneUI:Notify("Warning! If you change the normal config, any form of kicks/ban are not my responsibility, use caotiously!", 7, "75353810328300")
+    ArcaneUI:Notify("Warning! If you change the normal config, any form of kicks/ban are not my responsibility, use cautiously!", 7, "75353810328300")
 end
 
 local function restoreStableConfig()
