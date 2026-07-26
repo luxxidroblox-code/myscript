@@ -67,6 +67,10 @@ _G.TotalEarning = 0
 _G.CycleCount = 0
 _G.StartTime = os.time()
 LastActivity = tick()
+
+-- Wait untill player data is properly loaded to prevent initial fake gain spike
+repeat task.wait(0.5) until PlayerData:FindFirstChild("RPValue") and PlayerData.RPValue.Value > 0
+
 local lastMoney = PlayerData.RPValue.Value
 local pendingIncome = 0
 local isRunning = false
@@ -102,7 +106,11 @@ local function generateRandomName()
     return randomString
 end
 
+local isRejoining = false
 local function RejoinServer()
+    if isRejoining then return end
+    isRejoining = true
+
     local queue_teleport = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
 
     _G.AutofarmCourier = false
@@ -119,7 +127,7 @@ local function RejoinServer()
     if queue_teleport then
         queue_teleport([[
             repeat task.wait() until game:IsLoaded()
-            task.wait(3)
+            task.wait(4)
             
             pcall(function() 
                 loadstring(game:HttpGet("https://raw.githubusercontent.com/LynX99-9/komtolmmek2/refs/heads/main/Adonis"))() 
@@ -149,7 +157,7 @@ end
 
 task.spawn(function()
     while task.wait(2) do
-        if _G.TotalEarning >= 79000000 then
+        if _G.TotalEarning >= 79000000 and not isRejoining then
             Rayfield:Notify({
                 Title = "Target Reached",
                 Content = "Total earned mencakup batas. Memulai Rejoin...",
@@ -366,22 +374,26 @@ local lblCourierEarned, lblBaristaEarned, lblPoliceEarned
 PlayerData.RPValue.Changed:Connect(function(newMoney)
     if newMoney > lastMoney then
         local gained = newMoney - lastMoney
-        pendingIncome = pendingIncome + gained
-        _G.TotalEarning = _G.TotalEarning + gained
 
-        if _G.AutofarmCourier then
-            _G.CourierEarned = _G.CourierEarned + gained
-        elseif _G.AutoFarmBarista then
-            _G.BaristaEarned = _G.BaristaEarned + gained
-        elseif _G.AutoPoliceEnabled then
-            _G.PoliceEarned = _G.PoliceEarned + gained
+        -- Filter lonjakan data awal yang tidak valid
+        if gained < 50000000 then
+            pendingIncome = pendingIncome + gained
+            _G.TotalEarning = _G.TotalEarning + gained
+
+            if _G.AutofarmCourier then
+                _G.CourierEarned = _G.CourierEarned + gained
+            elseif _G.AutoFarmBarista then
+                _G.BaristaEarned = _G.BaristaEarned + gained
+            elseif _G.AutoPoliceEnabled then
+                _G.PoliceEarned = _G.PoliceEarned + gained
+            end
+
+            if lblTotalEarned then lblTotalEarned:Set("Total Earned: " .. formatRP(_G.TotalEarning)) end
+            if lblCurrentMoney then lblCurrentMoney:Set("Current Money: " .. formatRP(newMoney)) end
+            if lblCourierEarned then lblCourierEarned:Set("Courier: " .. formatRP(_G.CourierEarned)) end
+            if lblBaristaEarned then lblBaristaEarned:Set("Barista: " .. formatRP(_G.BaristaEarned)) end
+            if lblPoliceEarned then lblPoliceEarned:Set("Police Department: " .. formatRP(_G.PoliceEarned)) end
         end
-
-        if lblTotalEarned then lblTotalEarned:Set("Total Earned: " .. formatRP(_G.TotalEarning)) end
-        if lblCurrentMoney then lblCurrentMoney:Set("Current Money: " .. formatRP(newMoney)) end
-        if lblCourierEarned then lblCourierEarned:Set("Courier: " .. formatRP(_G.CourierEarned)) end
-        if lblBaristaEarned then lblBaristaEarned:Set("Barista: " .. formatRP(_G.BaristaEarned)) end
-        if lblPoliceEarned then lblPoliceEarned:Set("Police Department: " .. formatRP(_G.PoliceEarned)) end
 
         if not isRunning then
             isRunning = true
