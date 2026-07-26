@@ -59,7 +59,7 @@ _G.AutoFarmBarista = false
 _G.BaristaSpeed = 300 
 _G.AutoPoliceEnabled = false
 _G.blackscreen = false 
-_G.PermanentBlackscreen = false -- Variabel pengunci blackscreen permanen
+_G.PermanentBlackscreen = false
 
 _G.AutoWebhook = false
 _G.WebhookURL = ""
@@ -104,38 +104,40 @@ end
 
 local function RejoinServer()
     local queue_teleport = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
-    
+
     _G.AutofarmCourier = false
     _G.AutoFarmBarista = false
     _G.AutoPoliceEnabled = false
-    
+
     Rayfield:Notify({
         Title = "Projectsion",
         Content = "Rejoining server safely...",
         Duration = 3
     })
-    task.wait(5)
-    
+    task.wait(2)
+
     if queue_teleport then
         queue_teleport([[
-            if not game:IsLoaded() then
-                game.Loaded:Wait()
-            end
-            task.wait(5)
+            repeat task.wait() until game:IsLoaded()
+            task.wait(3)
+            
             pcall(function() 
                 loadstring(game:HttpGet("https://raw.githubusercontent.com/LynX99-9/komtolmmek2/refs/heads/main/Adonis"))() 
             end)
-            task.wait(2)
+            
+            task.wait(1)
+            
             pcall(function() 
                 loadstring(game:HttpGet("https://raw.githubusercontent.com/luxxidroblox-code/myscript.lua/refs/heads/main/tetetetet.lua"))()
             end)
+            
             task.spawn(function()
                 local m = game:GetService("ReplicatedStorage"):WaitForChild("menuToggleRequest", 20)
                 if m then m:FireServer(false) end
             end)
         ]])
     end
-    
+
     pcall(function()
         if #Players:GetPlayers() <= 1 then
             TeleportService:Teleport(game.PlaceId, LP)
@@ -194,7 +196,6 @@ Frame:GetPropertyChangedSignal("BackgroundTransparency"):Connect(function()
     end
 end)
 
--- Pengaman agar Frame tidak bisa di-hide jika PermanentBlackscreen aktif
 Frame:GetPropertyChangedSignal("Visible"):Connect(function()
     if Frame.Visible == false and _G.PermanentBlackscreen then
         Frame.Visible = true
@@ -203,21 +204,20 @@ end)
 
 local function updateBlackScreen()
     verifyFunction(updateBlackScreen)
-    
+
     local isAnyFarmActive = (_G.AutofarmCourier or _G.AutoFarmBarista or _G.AutoPoliceEnabled)
-    
+
     if isAnyFarmActive then
         _G.blackscreen = true
         _G.PermanentBlackscreen = true
     else
-        -- Autofarm mati, script/loop berhenti, tapi BlackScreen dipaksa TETAP NYALA permanen
         _G.blackscreen = false
         if _G.PermanentBlackscreen then
             BlackScreen.Enabled = true
         end
         return
     end
-    
+
     BlackScreen.Enabled = _G.blackscreen
 end
 
@@ -315,7 +315,7 @@ local function sendWebhook(income, target)
     if _G.WebhookURL == "" or not _G.WebhookURL:find("discord.com") then return end
 
     _G.CycleCount = _G.CycleCount + 1
-    
+
     local currentMoney = PlayerData.RPValue.Value
     local http_request = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
 
@@ -368,7 +368,7 @@ PlayerData.RPValue.Changed:Connect(function(newMoney)
         local gained = newMoney - lastMoney
         pendingIncome = pendingIncome + gained
         _G.TotalEarning = _G.TotalEarning + gained
-        
+
         if _G.AutofarmCourier then
             _G.CourierEarned = _G.CourierEarned + gained
         elseif _G.AutoFarmBarista then
@@ -523,7 +523,7 @@ task.spawn(function()
             if Hum and Root and Hum.Health > 0 then
                 local BoxTempatAmbil = workspace:FindFirstChild("Livrason") and workspace.Livrason:FindFirstChild("Take1")
                 local TargetBlock, TargetPrompt = GetActivePoint()
-                
+
                 if not BoxTempatAmbil or (AutoEquipBox() and not TargetBlock) then
                     task.wait(2)
                     continue
@@ -755,13 +755,13 @@ local function SafePoliceTeleport(targetCFrame, bypassChecks, preventUnsit, skip
                 end
             end
         end
-        
+
         if Character then
             for _, part in ipairs(Character:GetDescendants()) do
                 if part:IsA("BasePart") then pcall(function() part.Anchored = false end) end
             end
         end
-        
+
         local currentPos = mainPart.Position
         local targetPos = destCFrame.Position
         local distance = (targetPos - currentPos).Magnitude
@@ -1092,28 +1092,28 @@ local function NeutralizeSuspect(missionModel, suspect)
     EquipToolByName("Baton")
     local lastHitTime = 0
     local lastEquipTime = 0
-    
+
     while _G.AutoPoliceEnabled and missionModel.Parent and suspect.Parent do
         local curHP, maxHP = GetSuspectHP()
         Character = LP.Character
         HRP = Character and Character:FindFirstChild("HumanoidRootPart")
         if not HRP then task.wait(0.5) continue end
-        
+
         local tool = Character:FindFirstChild("Baton")
         if not tool then
             if os.clock() - lastEquipTime > 2 then EquipToolByName("Baton") lastEquipTime = os.clock() end
             tool = Character:FindFirstChild("Baton") or LP.Backpack:FindFirstChild("Baton")
         end
-        
+
         local suspectPos = suspectHRP.Position
         local suspectLook = suspectHRP.CFrame.LookVector
         local targetPos = suspectPos + suspectLook * 2.5
-        
+
         pcall(function()
             HRP.Velocity = Vector3.new(0, 0, 0)
             HRP.CFrame = CFrame.new(targetPos, suspectPos)
         end)
-        
+
         if tool and tool.Parent == Character then
             if os.clock() - lastHitTime > 0.2 then
                 pcall(function() tool:Activate() end)
@@ -1240,7 +1240,7 @@ task.spawn(function()
                                 if Humanoid then Humanoid:UnequipTools() end
                             end)
                         end
-                        
+
                         local suspect = missionModel:FindFirstChild("Penjahat") or missionModel:WaitForChild("Penjahat", 2)
                         if suspect and _G.AutoPoliceEnabled then NeutralizeSuspect(missionModel, suspect) end
                         task.wait(math.random(3.5, 6))
@@ -1472,8 +1472,7 @@ Rayfield:Notify({
 
 warn("[PROJECTSION] Engine Loaded & Waiting for Toggle...")
 
-task.defer(function()
-    task.wait(1)
+task.delay(2, function()
     pcall(function()
         Rayfield:LoadConfiguration()
     end)
