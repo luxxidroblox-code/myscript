@@ -135,7 +135,7 @@ local function RejoinServer()
             task.wait(1)
             
             pcall(function() 
-                loadstring(game:HttpGet("https://raw.githubusercontent.com/luxxidroblox-code/myscript.lua/refs/heads/main/test.lua"))()
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/luxxidroblox-code/myscript.lua/refs/heads/main/tetetetet.lua"))()
             end)
             
             task.spawn(function()
@@ -212,31 +212,43 @@ end)
 
 local function updateBlackScreen()
     verifyFunction(updateBlackScreen)
-    local isAnyFarmActive = (_G.AutofarmCourier or _G.AutoFarmBarista or _G.AutoPoliceEnabled)
-    if isAnyFarmActive then
-        _G.blackscreen = true
-        _G.PermanentBlackscreen = true
-    else
-        _G.blackscreen = false
-        if _G.PermanentBlackscreen then
-            BlackScreen.Enabled = true
-        end
-        return
-    end
-    BlackScreen.Enabled = _G.blackscreen
+    _G.blackscreen = false
+    _G.PermanentBlackscreen = false
+    BlackScreen.Enabled = false
 end
 
 local function SwitchToCourier()
-    local TeamRemote = ReplicatedStorage:FindFirstChild("TeamChangeRequest", true)
-    if TeamRemote then
-        if not LP.Team or LP.Team.Name ~= "Courier" then
-            TeamRemote:FireServer("Courier", 11378976, 0, 0, "Detector")
-            task.wait(1.5)
-        end
+    local Event = ReplicatedStorage:WaitForChild("JobEvents"):WaitForChild("TeamChangeRequest")
+
+    if not LP.Team or LP.Team.Name ~= "Courier" then
+        Event:FireServer(
+            "Courier",
+            11378976,
+            1,
+            0,
+            "MainMenu"
+        )
+
+        task.wait(2)
     end
 end
 
--- FIXED: Anchor HRP during tween so server doesn't rubber-band the position back
+local function SwitchToPolice()
+    local Event = ReplicatedStorage:WaitForChild("JobEvents"):WaitForChild("TeamChangeRequest")
+
+    if not LP.Team or LP.Team.Name ~= "Police" then
+        Event:FireServer(
+            "Police",
+            0,
+            0,
+            1428858969,
+            "MainMenu"
+        )
+
+        task.wait(2)
+    end
+end
+
 local function Tween(targetCFrame)
     local Char = LP.Character
     local Root = Char and Char:FindFirstChild("HumanoidRootPart")
@@ -421,14 +433,12 @@ local function GetRemote(name)
     return nil
 end
 
--- FIXED: BypassTP — anchor HRP instead of Sit, release seat weld first
 local function BypassTP(targetCF)
     local Char = LP.Character or LP.CharacterAdded:Wait()
     local Hum = Char:WaitForChild("Humanoid")
     local Root = Char:WaitForChild("HumanoidRootPart")
     if not Hum or not Root then return end
 
-    -- Release any seat before moving
     if Hum.SeatPart then
         local weld = Hum.SeatPart:FindFirstChild("SeatWeld")
         if weld then weld:Destroy() end
@@ -519,7 +529,6 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- FIXED: Courier loop — sit attempt has a counter guard, won't deadlock
 task.spawn(function()
     while true do
         task.wait(1)
@@ -546,7 +555,7 @@ task.spawn(function()
                     end
 
                     if (os.clock() - WaktuKosong) >= 240 then
-                        local args = {"Civilian", 0, 0, 0, "Detector"}
+                        local args = {"Civilian", 0, 0, 0, "MainMenu"}
                         game:GetService("ReplicatedStorage"):WaitForChild("JobEvents"):WaitForChild("TeamChangeRequest"):FireServer(unpack(args))
 
                         WaktuKosong = nil
@@ -562,7 +571,6 @@ task.spawn(function()
                     WaktuKosong = nil
                 end
 
-                -- FIXED: attempt-capped sit with continue on server rejection
                 if not Hum.Sit then
                     local sitAttempts = 0
                     while not Hum.Sit and sitAttempts < 5 and _G.AutofarmCourier do
@@ -739,7 +747,6 @@ local function UnanchorAll()
     end
 end
 
--- FIXED: SafePoliceTeleport — TweenService + anchor replaces manual Heartbeat lerp
 local function LerpTeleport(HRP, destCFrame, duration)
     HRP.Anchored = true
     HRP.Velocity = Vector3.new(0, 0, 0)
@@ -831,7 +838,6 @@ local function SafePoliceTeleport(targetCFrame, bypassChecks, preventUnsit, skip
                 tween.Completed:Wait()
                 if connection then connection:Disconnect() end
             else
-                -- FIXED: anchored TweenService replaces rubber-banding Heartbeat lerp
                 LerpTeleport(HRP, destCFrame, duration)
             end
             mainPart.Velocity = Vector3.new(0,0,0)
@@ -957,12 +963,8 @@ local function RequestPoliceJob()
     if container and container.Visible then return end
     RequestingJob = true
     pcall(function()
-        local isAlreadyPolice = (LP.Team and LP.Team.Name == "Police")
-        if not isAlreadyPolice then
-            local JobEvents = ReplicatedStorage:WaitForChild("JobEvents", 10)
-            local Event = JobEvents and JobEvents:WaitForChild("TeamChangeRequest", 10)
-            if Event then Event:FireServer("Police", 0, 0, 1428858969, "Detector") task.wait(2) end
-        end
+        SwitchToPolice()
+
         local Character = LP.Character
         while not Character or not Character.Parent or not Character:FindFirstChildOfClass("Humanoid") or Character:FindFirstChildOfClass("Humanoid").Health <= 0 do
             if not _G.AutoPoliceEnabled then break end
@@ -1184,6 +1186,8 @@ end))
 task.spawn(function()
     while true do
         if _G.AutoPoliceEnabled then
+            SwitchToPolice()
+
             if RequestingJob or NeedJobRefresh then
                 task.wait(0.5)
                 continue
