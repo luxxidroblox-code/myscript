@@ -1,10 +1,9 @@
--- Auto Taxi — Spawn Loop Fixed, Farm Working
+-- Auto Taxi — Spawn Lock Broken, Direct Seat Force
 -- Fixes:
--- 1. No recursive spawn — spawn once, track vehicle by reference
--- 2. Stable vehicle variable persists across loop cycles
--- 3. forceSeat doesn't destroy vehicle on failure — just retries
--- 4. Farm loop actually processes orders continuously
--- 5. Added order completion detection to reset state
+-- 1. No proximity prompt — direct CFrame + Sit override
+-- 2. Vehicle anchored during seat attempt
+-- 3. Spawn detection waits for vehicle to fully materialize
+-- 4. Single spawn, no recursion, no loop
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -44,7 +43,7 @@ local currentToken = nil
 local isOnline = false
 local tripActive = false
 local tweenDuration = 20
-local currentVehicle = nil  -- Persistent reference
+local currentVehicle = nil
 local spawnAttempted = false
 
 -- ============ VEHICLE LIST ============
@@ -80,41 +79,67 @@ local function getHRP()
     return char:WaitForChild("HumanoidRootPart"), char
 end
 
--- ============ FORCE SEAT ============
-local function forceSeat(vehicle, maxRetries)
-    maxRetries = maxRetries or 10
-    local retries = 0
+-- ============ DIRECT SEAT (NO PROMPT) ============
+local function forceSeatDirect(vehicle)
+    if not vehicle then return false end
 
-    while retries < maxRetries do
-        local hrp, char = getHRP()
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-
-        if hum and hum.Sit then
-            return true
+    -- Anchor vehicle so it doesn't move during seat
+    local anchorParts = {}
+    for _, part in ipairs(vehicle:GetDescendants()) do
+        if part:IsA("BasePart") then
+            anchorParts[part] = part.Anchored
+            part.Anchored = true
         end
-
-        local driveSeat = vehicle and vehicle:FindFirstChild("DriveSeat")
-        if driveSeat then
-            hrp.CFrame = driveSeat.CFrame * CFrame.new(0, 3, 0)
-            task.wait(0.2)
-
-            local prompt = driveSeat:FindFirstChild("ProximityPrompt")
-            if prompt then
-                fireproximityprompt(prompt)
-            end
-
-            task.wait(0.3)
-            hum = char and char:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Sit then
-                return true
-            end
-        end
-
-        retries += 1
-        task.wait(0.5)
     end
 
-    return false
+    local hrp, char = getHRP()
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return false end
+
+    local driveSeat = vehicle:FindFirstChild("DriveSeat")
+    if not driveSeat then
+        -- Try any seat
+        for _, child in ipairs(vehicle:GetDescendants()) do
+            if child:IsA("VehicleSeat") or child.Name:lower():match("seat") then
+                driveSeat = child
+                break
+            end
+        end
+    end
+
+    if not driveSeat then
+        return false
+    end
+
+    -- Force HRP to seat position
+    hrp.CFrame = driveSeat.CFrame * CFrame.new(0, 2, 0)
+    task.wait(0.1)
+
+    -- Force sit
+    hum.Sit = true
+    task.wait(0.2)
+
+    -- Verify
+    if hum.Sit then
+        -- Unanchor vehicle after seating
+        for part, wasAnchored in pairs(anchorParts) do
+            pcall(function() part.Anchored = wasAnchored end)
+        end
+        return true
+    end
+
+    -- Retry once with more force
+    hrp.CFrame = driveSeat.CFrame * CFrame.new(0, 1.5, 0)
+    task.wait(0.1)
+    hum.Sit = true
+    task.wait(0.2)
+
+    -- Unanchor regardless
+    for part, wasAnchored in pairs(anchorParts) do
+        pcall(function() part.Anchored = wasAnchored end)
+    end
+
+    return hum.Sit
 end
 
 -- ============ SPAWN ONCE ============
@@ -125,14 +150,30 @@ local function spawnVehicle(name)
 
     if not name then return nil end
 
+    -- Fire spawn
     SpawnCarEvents.SpawnCar:FireServer(name)
     spawnAttempted = true
 
+    -- Wait for vehicle with proper checks
     local vehicle = nil
     local attempts = 0
-    while not vehicle and attempts < 20 do
-        task.wait(0.5)
-        vehicle = findVehicle()
+    while not vehicle and attempts < 30 do
+        task.wait(0.3)
+        local found = findVehicle()
+        if found and found:IsDescendantOf(workspace) then
+            -- Wait for primary part to exist
+            local hasParts = false
+            for _, part in ipairs(found:GetDescendants()) do
+                if part:IsA("BasePart") and part.Size.Magnitude > 0 then
+                    hasParts = true
+                    break
+                end
+            end
+            if hasParts then
+                vehicle = found
+                break
+            end
+        end
         attempts += 1
     end
 
@@ -151,6 +192,28 @@ local function spawnVehicle(name)
 
     spawnAttempted = false
     return nil
+end
+
+-- ============ SEAT WITH RETRY ============
+local function seatPlayer(vehicle)
+    if not vehicle then return false end
+
+    local maxAttempts = 15
+    for i = 1, maxAttempts do
+        local hrp, char = getHRP()
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum and hum.Sit then
+            return true
+        end
+
+        local success = forceSeatDirect(vehicle)
+        if success then
+            return true
+        end
+
+        task.wait(0.5)
+    end
+    return false
 end
 
 local function goOnline()
@@ -244,14 +307,14 @@ local function tripLoop()
                 tweenToTarget()
             end
         else
-            -- Order complete — reset for next
             if lastPos then
                 lastPos = nil
                 currentToken = nil
-                -- Re-go-online to get next order
                 isOnline = false
                 task.wait(0.5)
-                goOnline()
+                if jobRunning then
+                    goOnline()
+                end
             end
         end
 
@@ -264,36 +327,39 @@ end
 -- ============ AUTO JOB LOOP ============
 local function autoJobLoop()
     while jobRunning do
-        -- Get or spawn vehicle once
+        -- Get or spawn vehicle
         local vehicle = currentVehicle or findVehicle()
 
         if not vehicle then
             vehicle = spawnVehicle(vehicleName)
             if not vehicle then
+                spawnAttempted = false
                 task.wait(2)
                 continue
             end
             currentVehicle = vehicle
         end
 
-        -- Ensure seated
-        local hrp, char = getHRP()
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if not (hum and hum.Sit) then
-            local seated = forceSeat(vehicle, 8)
-            if not seated then
+        -- Ensure seated (direct, no prompt)
+        local seated = seatPlayer(vehicle)
+        if not seated then
+            -- Try respawning vehicle if seat fails completely
+            if currentVehicle then
+                currentVehicle:Destroy()
+                currentVehicle = nil
+                spawnAttempted = false
                 task.wait(1)
                 continue
             end
         end
 
-        -- Go online if not already
-        if not isOnline then
+        -- Go online if seated
+        if seated and not isOnline then
             goOnline()
             task.wait(0.5)
         end
 
-        -- Keep vehicle reference valid
+        -- Check vehicle still exists
         if vehicle and not vehicle.Parent then
             currentVehicle = nil
             spawnAttempted = false
@@ -351,7 +417,6 @@ Tab:CreateDropdown({
     Flag = "VehicleDropdown",
     Callback = function(Option)
         vehicleName = Option[1]
-        -- Reset spawn state when vehicle changes
         currentVehicle = nil
         spawnAttempted = false
     end,
@@ -388,7 +453,6 @@ Tab:CreateToggle({
     Callback = function(Value)
         jobRunning = Value
         if jobRunning then
-            -- Reset state on start
             currentVehicle = nil
             spawnAttempted = false
             isOnline = false
