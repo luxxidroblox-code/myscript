@@ -24,15 +24,15 @@ local Window = Rayfield:CreateWindow({
 local Tab = Window:CreateTab("Main", nil)
 
 -- ============ STATE ============
-local jobRunning    = false
-local vehicleName   = nil
-local currentToken  = nil
-local isOnline      = false
-local tripActive    = false
-local tweenDuration = 20
+local jobRunning     = false
+local vehicleName    = nil
+local currentToken   = nil
+local isOnline       = false
+local tripActive     = false
+local tweenDuration  = 20
 local currentVehicle = nil
-local spawnFired    = false   -- true once FireServer("SpawnCar") is sent; never resets while job is on
-local seatWatcher   = nil
+local spawnFired     = false
+local seatWatcher    = nil
 
 -- ============ VEHICLE LIST ============
 local function getVehicleList()
@@ -48,55 +48,85 @@ end
 
 local vehicleList = getVehicleList()
 vehicleName = vehicleList[1] or nil
+warn("[AutoTaxi] vehicleList built —", #vehicleList, "entries. Default:", tostring(vehicleName))
 
 -- ============ HELPERS ============
 local function findVehicle()
-    -- Returns the first model in workspace matching the spawn pattern that still exists
     for _, obj in ipairs(workspace:GetChildren()) do
         if obj:IsA("Model") and obj.Name:match("^LikasturaMontors_") then
+            warn("[findVehicle] Found:", obj.Name)
             return obj
         end
     end
+    warn("[findVehicle] No vehicle found in workspace")
     return nil
 end
 
 local function getHRP()
     local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    return char:WaitForChild("HumanoidRootPart", 5), char
+    local hrp = char:WaitForChild("HumanoidRootPart", 5)
+    warn("[getHRP] HRP:", hrp and "OK" or "NIL")
+    return hrp, char
 end
 
 local function getDriveSeat(vehicle)
-    if not vehicle then return nil end
-    -- Check exact name first
+    if not vehicle then
+        warn("[getDriveSeat] vehicle is nil")
+        return nil
+    end
     local ds = vehicle:FindFirstChild("DriveSeat")
-    if ds and (ds:IsA("VehicleSeat") or ds:IsA("Seat")) then return ds end
-    -- Walk descendants for any VehicleSeat
-    for _, d in ipairs(vehicle:GetDescendants()) do
-        if d:IsA("VehicleSeat") then return d end
+    if ds and (ds:IsA("VehicleSeat") or ds:IsA("Seat")) then
+        warn("[getDriveSeat] Found by name 'DriveSeat' — class:", ds.ClassName)
+        return ds
     end
-    -- Fallback: any part with "seat" in name
     for _, d in ipairs(vehicle:GetDescendants()) do
-        if d:IsA("BasePart") and d.Name:lower():match("seat") then return d end
+        if d:IsA("VehicleSeat") then
+            warn("[getDriveSeat] Found VehicleSeat descendant:", d.Name)
+            return d
+        end
     end
+    for _, d in ipairs(vehicle:GetDescendants()) do
+        if d:IsA("BasePart") and d.Name:lower():match("seat") then
+            warn("[getDriveSeat] Fallback seat by name match:", d.Name)
+            return d
+        end
+    end
+    warn("[getDriveSeat] No seat found in vehicle:", vehicle.Name)
     return nil
 end
 
 -- ============ FORCE SEAT ============
 local function forceSeat(vehicle)
-    if not vehicle or not vehicle.Parent then return false end
+    warn("[forceSeat] Attempting seat on:", vehicle and vehicle.Name or "NIL")
+    if not vehicle or not vehicle.Parent then
+        warn("[forceSeat] Vehicle invalid or not in workspace")
+        return false
+    end
 
     local seat = getDriveSeat(vehicle)
-    if not seat then return false end
+    if not seat then
+        warn("[forceSeat] No seat found — aborting")
+        return false
+    end
+    warn("[forceSeat] Targeting seat:", seat.Name, "at", tostring(seat.Position))
 
     local hrp, char = getHRP()
-    if not hrp then return false end
+    if not hrp then
+        warn("[forceSeat] HRP is nil — cannot seat")
+        return false
+    end
     local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return false end
+    if not hum then
+        warn("[forceSeat] Humanoid not found")
+        return false
+    end
 
-    -- Already seated
-    if hum.Sit then return true end
+    if hum.Sit then
+        warn("[forceSeat] Already seated — skipping")
+        return true
+    end
 
-    -- Anchor all parts so vehicle doesn't fly away during teleport
+    warn("[forceSeat] Anchoring vehicle parts")
     local anchored = {}
     for _, p in ipairs(vehicle:GetDescendants()) do
         if p:IsA("BasePart") then
@@ -105,24 +135,26 @@ local function forceSeat(vehicle)
         end
     end
 
-    -- Teleport HRP onto seat
+    warn("[forceSeat] Teleporting HRP to seat CFrame")
     hrp.CFrame = seat.CFrame * CFrame.new(0, 2, 0)
     task.wait(0.05)
+    warn("[forceSeat] Setting hum.Sit = true")
     hum.Sit = true
     task.wait(0.15)
 
-    -- Restore anchors
+    warn("[forceSeat] Restoring anchor states")
     for p, was in pairs(anchored) do
         pcall(function() p.Anchored = was end)
     end
 
+    warn("[forceSeat] Sit result:", tostring(hum.Sit))
     return hum.Sit
 end
 
 -- ============ SEAT WATCHER ============
--- Continuous Heartbeat guard — if player falls off seat while job is running, force back in.
 local function stopSeatWatcher()
     if seatWatcher then
+        warn("[SeatWatcher] Disconnecting watcher")
         seatWatcher:Disconnect()
         seatWatcher = nil
     end
@@ -130,11 +162,16 @@ end
 
 local function startSeatWatcher(vehicle)
     stopSeatWatcher()
-    if not vehicle then return end
+    if not vehicle then
+        warn("[SeatWatcher] No vehicle — watcher not started")
+        return
+    end
+    warn("[SeatWatcher] Starting watcher on:", vehicle.Name)
 
     local cooldown = false
     seatWatcher = RunService.Heartbeat:Connect(function()
         if not jobRunning or not vehicle or not vehicle.Parent then
+            warn("[SeatWatcher] Job stopped or vehicle gone — disconnecting")
             stopSeatWatcher()
             return
         end
@@ -144,6 +181,7 @@ local function startSeatWatcher(vehicle)
         if not hum or hum.Sit then return end
         if cooldown then return end
 
+        warn("[SeatWatcher] Player not seated — triggering forceSeat")
         cooldown = true
         task.spawn(function()
             forceSeat(vehicle)
@@ -153,40 +191,44 @@ local function startSeatWatcher(vehicle)
     end)
 end
 
--- ============ SPAWN — FIRES EXACTLY ONCE PER JOB SESSION ============
+-- ============ SPAWN ============
 local function ensureVehicle()
-    -- If we already have a valid vehicle in workspace, use it
+    warn("[ensureVehicle] Checking for existing vehicle in workspace")
     local existing = findVehicle()
     if existing then
+        warn("[ensureVehicle] Using existing vehicle:", existing.Name)
         currentVehicle = existing
         return existing
     end
 
-    -- Only fire SpawnCar once per job session
     if spawnFired then
-        -- Still waiting for it to appear
+        warn("[ensureVehicle] SpawnCar already fired — waiting for vehicle to appear")
         return nil
     end
 
-    if not vehicleName then return nil end
+    if not vehicleName then
+        warn("[ensureVehicle] vehicleName is nil — cannot spawn")
+        return nil
+    end
+
+    warn("[ensureVehicle] Firing SpawnCar for:", vehicleName)
     SpawnCarEvents.SpawnCar:FireServer(vehicleName)
     spawnFired = true
 
-    -- Wait up to 9 seconds for it to appear
     local deadline = tick() + 9
+    warn("[ensureVehicle] Waiting up to 9s for vehicle to materialize")
     while tick() < deadline do
         task.wait(0.3)
         local v = findVehicle()
         if v and v:IsDescendantOf(workspace) then
-            -- Confirm it has geometry
             for _, p in ipairs(v:GetDescendants()) do
                 if p:IsA("BasePart") and p.Size.Magnitude > 0 then
+                    warn("[ensureVehicle] Vehicle confirmed:", v.Name)
                     currentVehicle = v
-                    -- Watch for external destruction (game despawns it)
                     v.AncestryChanged:Connect(function(_, parent)
                         if not parent and currentVehicle == v then
+                            warn("[ensureVehicle] Vehicle removed from workspace externally")
                             currentVehicle = nil
-                            -- Do NOT reset spawnFired here — let autoJobLoop decide
                         end
                     end)
                     startSeatWatcher(v)
@@ -196,26 +238,37 @@ local function ensureVehicle()
         end
     end
 
-    -- Spawn fired but vehicle never appeared — allow one retry
+    warn("[ensureVehicle] Timeout — vehicle never appeared. Resetting spawnFired")
     spawnFired = false
     return nil
 end
 
 -- ============ GO ONLINE ============
 local function goOnline()
-    if isOnline then return end
+    if isOnline then
+        warn("[goOnline] Already online — skipping")
+        return
+    end
+    warn("[goOnline] Firing GoOnline remote")
     TaxiEvent:FireServer("GoOnline")
     isOnline = true
+    warn("[goOnline] isOnline = true")
 end
 
 local function acceptOrder(token)
+    warn("[acceptOrder] Firing AcceptOrder with token:", tostring(token))
     if token then TaxiEvent:FireServer("AcceptOrder", token) end
 end
 
 -- ============ MOVEMENT ENGINE ============
 local function moveToTarget(targetPos, vehicle)
+    warn("[moveToTarget] Moving to:", tostring(targetPos))
     local base = vehicle and (getDriveSeat(vehicle) or vehicle.PrimaryPart or vehicle:FindFirstChildWhichIsA("BasePart"))
-    if not base then return false end
+    if not base then
+        warn("[moveToTarget] No base part found — aborting move")
+        return false
+    end
+    warn("[moveToTarget] Using base part:", base.Name)
 
     local noCollide = {}
     for _, p in ipairs(vehicle:GetDescendants()) do
@@ -238,9 +291,13 @@ local function moveToTarget(targetPos, vehicle)
 
         local char = LocalPlayer.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if hum and not hum.Sit then pcall(function() hum.Sit = true end) end
+        if hum and not hum.Sit then
+            warn("[moveToTarget] Player fell off mid-tween — forcing sit")
+            pcall(function() hum.Sit = true end)
+        end
 
         if alpha >= 1 then
+            warn("[moveToTarget] Tween complete")
             conn:Disconnect()
             for p, was in pairs(noCollide) do pcall(function() p.CanCollide = was end) end
         end
@@ -251,19 +308,34 @@ local function moveToTarget(targetPos, vehicle)
 end
 
 local function tweenToTarget()
+    warn("[tweenToTarget] Looking for ActiveMissions > RideGO_GuideTarget")
     local missions = workspace:FindFirstChild("ActiveMissions")
-    if not missions then return end
+    if not missions then
+        warn("[tweenToTarget] ActiveMissions not found")
+        return
+    end
     local guide = missions:FindFirstChild("RideGO_GuideTarget")
-    if not guide then return end
+    if not guide then
+        warn("[tweenToTarget] RideGO_GuideTarget not found")
+        return
+    end
+    warn("[tweenToTarget] GuideTarget at:", tostring(guide.Position))
     local v = currentVehicle or findVehicle()
-    if not v then return end
+    if not v then
+        warn("[tweenToTarget] No vehicle for movement")
+        return
+    end
     moveToTarget(guide.Position, v)
 end
 
 -- ============ TRIP LOOP ============
 local function tripLoop()
-    if tripActive then return end
+    if tripActive then
+        warn("[tripLoop] Already active — skipping duplicate spawn")
+        return
+    end
     tripActive = true
+    warn("[tripLoop] Trip started")
     local lastPos = nil
 
     while tripActive and jobRunning do
@@ -273,11 +345,13 @@ local function tripLoop()
         if guide then
             local pos = guide.Position
             if not lastPos or (pos - lastPos).Magnitude > 5 then
+                warn("[tripLoop] New guide position detected — tweening:", tostring(pos))
                 lastPos = pos
                 tweenToTarget()
             end
         else
             if lastPos then
+                warn("[tripLoop] GuideTarget gone — trip complete. Going online again")
                 lastPos = nil
                 currentToken = nil
                 isOnline = false
@@ -289,43 +363,52 @@ local function tripLoop()
         task.wait(0.5)
     end
 
+    warn("[tripLoop] Trip loop exited. tripActive:", tostring(tripActive), "jobRunning:", tostring(jobRunning))
     tripActive = false
 end
 
 -- ============ AUTO JOB LOOP ============
 local function autoJobLoop()
-    -- Fire team + online remotes immediately on start
+    warn("[autoJobLoop] Starting — firing TeamChangeRequest + GoOnline")
     TeamChangeRequest:FireServer("RideGO Driver", 11378976, 1, 0, "Detector")
     task.wait(0.3)
     TaxiEvent:FireServer("GoOnline")
     isOnline = true
+    warn("[autoJobLoop] Team set. isOnline = true")
 
     while jobRunning do
         local vehicle = currentVehicle
+        warn("[autoJobLoop] Tick — currentVehicle:", vehicle and vehicle.Name or "NIL")
 
-        -- Vehicle gone externally — allow one respawn
         if not vehicle or not vehicle.Parent then
+            warn("[autoJobLoop] Vehicle missing — resetting spawnFired and respawning")
             currentVehicle = nil
-            spawnFired = false   -- reset ONLY when vehicle is confirmed gone
+            spawnFired = false
             vehicle = ensureVehicle()
             if not vehicle then
+                warn("[autoJobLoop] ensureVehicle returned nil — waiting 2s")
                 task.wait(2)
                 continue
             end
         end
 
-        -- Ensure seated before anything else
+        warn("[autoJobLoop] Attempting seat — up to 10 tries")
         local seated = false
-        for _ = 1, 10 do
+        for i = 1, 10 do
             local char = LocalPlayer.Character
             local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Sit then seated = true break end
+            if hum and hum.Sit then
+                warn("[autoJobLoop] Seated on attempt", i)
+                seated = true
+                break
+            end
+            warn("[autoJobLoop] Seat attempt", i, "— not seated yet")
             forceSeat(vehicle)
             task.wait(0.4)
         end
 
         if not seated then
-            -- Seat completely failed — vehicle might be broken, respawn it
+            warn("[autoJobLoop] All seat attempts failed — destroying vehicle and respawning")
             if currentVehicle and currentVehicle.Parent then
                 currentVehicle:Destroy()
             end
@@ -336,34 +419,47 @@ local function autoJobLoop()
         end
 
         if not isOnline then
+            warn("[autoJobLoop] Not online — calling goOnline()")
             goOnline()
             task.wait(0.5)
         end
 
         task.wait(1)
     end
+
+    warn("[autoJobLoop] jobRunning = false — loop exited")
 end
 
 -- ============ EVENT HANDLERS ============
 for _, key in ipairs({"__AutoTaxiConn","__AutoTaxiNotifConn","__AutoTaxiSeatWatcher"}) do
-    if _G[key] then _G[key]:Disconnect() _G[key] = nil end
+    if _G[key] then
+        warn("[Cleanup] Disconnecting old handler:", key)
+        _G[key]:Disconnect()
+        _G[key] = nil
+    end
 end
 
-_G.__AutoTaxiNotifConn = NotifSound.OnClientEvent:Connect(function() end)
+_G.__AutoTaxiNotifConn = NotifSound.OnClientEvent:Connect(function()
+    warn("[NotifSound] Notification fired")
+end)
 
 _G.__AutoTaxiConn = TaxiEvent.OnClientEvent:Connect(function(...)
     local args = {...}
     local action, data = args[1], args[2]
+    warn("[TaxiEvent] Received action:", tostring(action), "| data type:", typeof(data))
 
     if action == "OrderOffer" and jobRunning and typeof(data) == "table" then
+        warn("[TaxiEvent] OrderOffer — token:", tostring(data.Token))
         currentToken = data.Token
         task.wait(0.3)
         acceptOrder(currentToken)
 
     elseif action == "OrderAccepted" and jobRunning then
+        warn("[TaxiEvent] OrderAccepted — spawning tripLoop")
         if not tripActive then task.spawn(tripLoop) end
 
     elseif action == "OrderCompleted" then
+        warn("[TaxiEvent] OrderCompleted — resetting trip state")
         tripActive = false
         isOnline = false
         task.wait(0.5)
@@ -378,6 +474,7 @@ Tab:CreateDropdown({
     CurrentOption = {vehicleName or ""},
     Flag = "VehicleDropdown",
     Callback = function(Option)
+        warn("[UI] Vehicle changed to:", Option[1])
         vehicleName = Option[1]
         currentVehicle = nil
         spawnFired = false
@@ -389,6 +486,7 @@ Tab:CreateButton({
     Name = "Refresh Daftar Motor",
     Callback = function()
         vehicleList = getVehicleList()
+        warn("[UI] Vehicle list refreshed —", #vehicleList, "entries")
         Rayfield:Notify({ Title = "Refreshed", Content = #vehicleList .. " motor ditemukan", Duration = 3 })
     end,
 })
@@ -400,7 +498,10 @@ Tab:CreateSlider({
     Suffix = " detik",
     CurrentValue = 20,
     Flag = "TweenDuration",
-    Callback = function(Value) tweenDuration = Value end,
+    Callback = function(Value)
+        warn("[UI] tweenDuration set to:", Value)
+        tweenDuration = Value
+    end,
 })
 
 Tab:CreateToggle({
@@ -408,6 +509,7 @@ Tab:CreateToggle({
     CurrentValue = false,
     Flag = "AutoJob",
     Callback = function(Value)
+        warn("[UI] AutoJob toggle:", tostring(Value))
         jobRunning = Value
         if jobRunning then
             currentVehicle = nil
@@ -419,6 +521,7 @@ Tab:CreateToggle({
             tripActive = false
             isOnline = false
             stopSeatWatcher()
+            warn("[UI] Job stopped — watchers cleared")
         end
     end,
 })
