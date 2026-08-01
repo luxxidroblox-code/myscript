@@ -1,9 +1,11 @@
--- Fixed: Auto Taxi with stable movement and collision handling
--- Changes:
--- 1. getHRP() now returns char correctly so sit check works
--- 2. Tween preserves rotation instead of snapping flat
--- 3. RunService.Heartbeat lerp replaces TweenService + Velocity conflict
+-- Auto Taxi — Full Fixed Script
+-- Fixes:
+-- 1. getHRP() returns char correctly
+-- 2. Movement preserves rotation (no snap)
+-- 3. Heartbeat lerp replaces TweenService + Velocity conflict
 -- 4. CanCollide disabled during movement, restored after
+-- 5. Force seat retry with verification
+-- 6. Spawn once + watch until seated
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -72,7 +74,6 @@ local function findVehicle()
     return nil
 end
 
--- FIX 1: Returns both HRP and character
 local function getHRP()
     local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
     return char:WaitForChild("HumanoidRootPart"), char
@@ -98,26 +99,69 @@ local function sitOnVehicle(vehicle)
     return true
 end
 
-local function spawnAndSit(name)
+-- ============ FORCE SEAT WATCHER ============
+local function forceSeat(vehicle, maxRetries)
+    maxRetries = maxRetries or 12
+    local retries = 0
+
+    while retries < maxRetries do
+        local hrp, char = getHRP()
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+        if hum and hum.Sit then
+            return true
+        end
+
+        local driveSeat = vehicle:FindFirstChild("DriveSeat")
+        if driveSeat then
+            hrp.CFrame = driveSeat.CFrame * CFrame.new(0, 3, 0)
+            task.wait(0.2)
+
+            local prompt = driveSeat:FindFirstChild("ProximityPrompt")
+            if prompt then
+                fireproximityprompt(prompt)
+            end
+
+            task.wait(0.3)
+            hum = char and char:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Sit then
+                return true
+            end
+        end
+
+        retries += 1
+        task.wait(0.5)
+    end
+
+    return false
+end
+
+-- ============ SPAWN + WATCH ============
+local function spawnAndSitWithWatch(name)
     if not name then return false end
 
     SpawnCarEvents.SpawnCar:FireServer(name)
-    task.wait(2)
 
-    local vehicle = findVehicle()
-    local tries = 0
-    while not vehicle and tries < 10 do
+    local vehicle = nil
+    local attempts = 0
+    while not vehicle and attempts < 15 do
         task.wait(0.5)
         vehicle = findVehicle()
-        tries += 1
+        attempts += 1
     end
 
-    if vehicle then
-        sitOnVehicle(vehicle)
-        return true
+    if not vehicle then
+        return false
     end
-    warn("[DEBUG] Vehicle not found after", tries, "attempts")
-    return false
+
+    local seated = forceSeat(vehicle, 12)
+    if seated then
+        return true
+    else
+        vehicle:Destroy()
+        task.wait(1)
+        return spawnAndSitWithWatch(name)
+    end
 end
 
 local function goOnline()
@@ -131,16 +175,13 @@ local function acceptOrder(token)
     TaxiEvent:FireServer("AcceptOrder", token)
 end
 
--- ============ MOVEMENT ENGINE (FIX 2 + 3) ============
--- No TweenService. No Velocity fighting. Pure lerp on Heartbeat.
+-- ============ MOVEMENT ENGINE ============
 local function moveToTarget(targetPos, vehicle)
     local basePart = vehicle:FindFirstChild("DriveSeat") or vehicle.PrimaryPart or vehicle:FindFirstChildWhichIsA("BasePart")
     if not basePart then
-        warn("[DEBUG] No BasePart on vehicle")
         return false
     end
 
-    -- Disable collision during movement
     local originalCollide = {}
     for _, part in ipairs(vehicle:GetDescendants()) do
         if part:IsA("BasePart") then
@@ -150,7 +191,6 @@ local function moveToTarget(targetPos, vehicle)
     end
 
     local startCFrame = basePart.CFrame
-    -- Preserve rotation — only move position
     local targetCFrame = CFrame.new(targetPos) * (startCFrame - startCFrame.Position)
 
     local elapsed = 0
@@ -158,14 +198,12 @@ local function moveToTarget(targetPos, vehicle)
     connection = RunService.Heartbeat:Connect(function(dt)
         elapsed += dt
         local alpha = math.min(elapsed / tweenDuration, 1)
-        -- Smoothstep
         local t = alpha * alpha * (3 - 2 * alpha)
 
         pcall(function()
             basePart.CFrame = startCFrame:Lerp(targetCFrame, t)
         end)
 
-        -- Keep seated
         local char = LocalPlayer.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         if hum and not hum.Sit then
@@ -174,11 +212,9 @@ local function moveToTarget(targetPos, vehicle)
 
         if alpha >= 1 then
             connection:Disconnect()
-            -- Restore collision
             for part, wasCollide in pairs(originalCollide) do
                 pcall(function() part.CanCollide = wasCollide end)
             end
-            warn("[DEBUG] Arrived. Collision restored.")
         end
     end)
 
@@ -190,22 +226,13 @@ end
 
 local function tweenToTarget()
     local target = workspace:FindFirstChild("ActiveMissions")
-    if not target then
-        warn("[DEBUG] ActiveMissions missing")
-        return
-    end
+    if not target then return end
 
     local guideTarget = target:FindFirstChild("RideGO_GuideTarget")
-    if not guideTarget then
-        warn("[DEBUG] RideGO_GuideTarget missing")
-        return
-    end
+    if not guideTarget then return end
 
     local vehicle = findVehicle()
-    if not vehicle then
-        warn("[DEBUG] Vehicle missing, abort tween")
-        return
-    end
+    if not vehicle then return end
 
     moveToTarget(guideTarget.Position, vehicle)
 end
@@ -229,7 +256,6 @@ local function tripLoop()
             end
         else
             if lastPos then
-                warn("[DEBUG] GuideTarget lost, trip ended")
                 lastPos = nil
             end
         end
@@ -244,11 +270,20 @@ end
 local function autoJobLoop()
     while jobRunning do
         local vehicle = findVehicle()
+
         if not vehicle then
-            spawnAndSit(vehicleName)
+            local success = spawnAndSitWithWatch(vehicleName)
+            if not success then
+                task.wait(3)
+                continue
+            end
             vehicle = findVehicle()
         else
-            sitOnVehicle(vehicle)
+            local hrp, char = getHRP()
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if not (hum and hum.Sit) then
+                forceSeat(vehicle, 8)
+            end
         end
 
         if vehicle then
@@ -261,7 +296,6 @@ local function autoJobLoop()
                 end
             end)
         else
-            warn("[DEBUG] No vehicle, retrying...")
             task.wait(2)
         end
 
@@ -280,7 +314,7 @@ if _G.__AutoTaxiNotifConn then
 end
 
 _G.__AutoTaxiNotifConn = NotifSound.OnClientEvent:Connect(function()
-    warn("[DEBUG] Incoming order notification")
+    -- Notification received
 end)
 
 local function printTable(t, indent)
@@ -298,10 +332,8 @@ end
 
 _G.__AutoTaxiConn = TaxiEvent.OnClientEvent:Connect(function(...)
     local args = {...}
-    warn("[DEBUG] TaxiEvent fired, args:", #args)
 
     for i, v in ipairs(args) do
-        warn("[DEBUG] arg[" .. i .. "]:", typeof(v), tostring(v))
         if typeof(v) == "table" then
             printTable(v)
         end
@@ -317,9 +349,6 @@ _G.__AutoTaxiConn = TaxiEvent.OnClientEvent:Connect(function(...)
 
     elseif action == "OrderAccepted" and jobRunning and typeof(data) == "table" then
         task.spawn(tripLoop)
-
-    else
-        warn("[DEBUG] Skipped. action:", tostring(action), "jobRunning:", tostring(jobRunning))
     end
 end)
 
@@ -366,6 +395,8 @@ Tab:CreateToggle({
         jobRunning = Value
         if jobRunning then
             task.spawn(autoJobLoop)
+        else
+            tripActive = false
         end
     end,
 })
