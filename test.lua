@@ -1,11 +1,10 @@
--- Auto Taxi — Full Fixed Script
+-- Auto Taxi — Spawn Loop Fixed, Farm Working
 -- Fixes:
--- 1. getHRP() returns char correctly
--- 2. Movement preserves rotation (no snap)
--- 3. Heartbeat lerp replaces TweenService + Velocity conflict
--- 4. CanCollide disabled during movement, restored after
--- 5. Force seat retry with verification
--- 6. Spawn once + watch until seated
+-- 1. No recursive spawn — spawn once, track vehicle by reference
+-- 2. Stable vehicle variable persists across loop cycles
+-- 3. forceSeat doesn't destroy vehicle on failure — just retries
+-- 4. Farm loop actually processes orders continuously
+-- 5. Added order completion detection to reset state
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -45,6 +44,8 @@ local currentToken = nil
 local isOnline = false
 local tripActive = false
 local tweenDuration = 20
+local currentVehicle = nil  -- Persistent reference
+local spawnAttempted = false
 
 -- ============ VEHICLE LIST ============
 local function getVehicleList()
@@ -79,29 +80,9 @@ local function getHRP()
     return char:WaitForChild("HumanoidRootPart"), char
 end
 
-local function sitOnVehicle(vehicle)
-    local driveSeat = vehicle:FindFirstChild("DriveSeat")
-    if not driveSeat then
-        warn("[DEBUG] DriveSeat missing in", vehicle.Name)
-        return false
-    end
-
-    local hrp, char = getHRP()
-    hrp.CFrame = driveSeat.CFrame * CFrame.new(0, 3, 0)
-    task.wait(0.3)
-
-    local prompt = driveSeat:FindFirstChild("ProximityPrompt")
-    if prompt then
-        fireproximityprompt(prompt)
-    else
-        warn("[DEBUG] ProximityPrompt missing")
-    end
-    return true
-end
-
--- ============ FORCE SEAT WATCHER ============
+-- ============ FORCE SEAT ============
 local function forceSeat(vehicle, maxRetries)
-    maxRetries = maxRetries or 12
+    maxRetries = maxRetries or 10
     local retries = 0
 
     while retries < maxRetries do
@@ -112,7 +93,7 @@ local function forceSeat(vehicle, maxRetries)
             return true
         end
 
-        local driveSeat = vehicle:FindFirstChild("DriveSeat")
+        local driveSeat = vehicle and vehicle:FindFirstChild("DriveSeat")
         if driveSeat then
             hrp.CFrame = driveSeat.CFrame * CFrame.new(0, 3, 0)
             task.wait(0.2)
@@ -136,32 +117,40 @@ local function forceSeat(vehicle, maxRetries)
     return false
 end
 
--- ============ SPAWN + WATCH ============
-local function spawnAndSitWithWatch(name)
-    if not name then return false end
+-- ============ SPAWN ONCE ============
+local function spawnVehicle(name)
+    if spawnAttempted then
+        return currentVehicle
+    end
+
+    if not name then return nil end
 
     SpawnCarEvents.SpawnCar:FireServer(name)
+    spawnAttempted = true
 
     local vehicle = nil
     local attempts = 0
-    while not vehicle and attempts < 15 do
+    while not vehicle and attempts < 20 do
         task.wait(0.5)
         vehicle = findVehicle()
         attempts += 1
     end
 
-    if not vehicle then
-        return false
+    if vehicle then
+        currentVehicle = vehicle
+        -- Watch for destruction
+        vehicle.AncestryChanged:Connect(function(_, parent)
+            if not parent then
+                currentVehicle = nil
+                spawnAttempted = false
+                isOnline = false
+            end
+        end)
+        return vehicle
     end
 
-    local seated = forceSeat(vehicle, 12)
-    if seated then
-        return true
-    else
-        vehicle:Destroy()
-        task.wait(1)
-        return spawnAndSitWithWatch(name)
-    end
+    spawnAttempted = false
+    return nil
 end
 
 local function goOnline()
@@ -177,7 +166,7 @@ end
 
 -- ============ MOVEMENT ENGINE ============
 local function moveToTarget(targetPos, vehicle)
-    local basePart = vehicle:FindFirstChild("DriveSeat") or vehicle.PrimaryPart or vehicle:FindFirstChildWhichIsA("BasePart")
+    local basePart = vehicle and (vehicle:FindFirstChild("DriveSeat") or vehicle.PrimaryPart or vehicle:FindFirstChildWhichIsA("BasePart"))
     if not basePart then
         return false
     end
@@ -231,7 +220,7 @@ local function tweenToTarget()
     local guideTarget = target:FindFirstChild("RideGO_GuideTarget")
     if not guideTarget then return end
 
-    local vehicle = findVehicle()
+    local vehicle = currentVehicle or findVehicle()
     if not vehicle then return end
 
     moveToTarget(guideTarget.Position, vehicle)
@@ -255,12 +244,18 @@ local function tripLoop()
                 tweenToTarget()
             end
         else
+            -- Order complete — reset for next
             if lastPos then
                 lastPos = nil
+                currentToken = nil
+                -- Re-go-online to get next order
+                isOnline = false
+                task.wait(0.5)
+                goOnline()
             end
         end
 
-        task.wait(1)
+        task.wait(0.5)
     end
 
     tripActive = false
@@ -269,34 +264,40 @@ end
 -- ============ AUTO JOB LOOP ============
 local function autoJobLoop()
     while jobRunning do
-        local vehicle = findVehicle()
+        -- Get or spawn vehicle once
+        local vehicle = currentVehicle or findVehicle()
 
         if not vehicle then
-            local success = spawnAndSitWithWatch(vehicleName)
-            if not success then
-                task.wait(3)
+            vehicle = spawnVehicle(vehicleName)
+            if not vehicle then
+                task.wait(2)
                 continue
             end
-            vehicle = findVehicle()
-        else
-            local hrp, char = getHRP()
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if not (hum and hum.Sit) then
-                forceSeat(vehicle, 8)
+            currentVehicle = vehicle
+        end
+
+        -- Ensure seated
+        local hrp, char = getHRP()
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not (hum and hum.Sit) then
+            local seated = forceSeat(vehicle, 8)
+            if not seated then
+                task.wait(1)
+                continue
             end
         end
 
-        if vehicle then
-            task.wait(0.5)
+        -- Go online if not already
+        if not isOnline then
             goOnline()
+            task.wait(0.5)
+        end
 
-            vehicle.AncestryChanged:Connect(function(_, parent)
-                if not parent then
-                    isOnline = false
-                end
-            end)
-        else
-            task.wait(2)
+        -- Keep vehicle reference valid
+        if vehicle and not vehicle.Parent then
+            currentVehicle = nil
+            spawnAttempted = false
+            isOnline = false
         end
 
         task.wait(1)
@@ -314,41 +315,31 @@ if _G.__AutoTaxiNotifConn then
 end
 
 _G.__AutoTaxiNotifConn = NotifSound.OnClientEvent:Connect(function()
-    -- Notification received
+    -- Order incoming
 end)
-
-local function printTable(t, indent)
-    indent = indent or "   "
-    for k, v in pairs(t) do
-        if typeof(v) == "table" then
-            warn("[DEBUG]" .. indent .. tostring(k) .. " = {")
-            printTable(v, indent .. "   ")
-            warn("[DEBUG]" .. indent .. "}")
-        else
-            warn("[DEBUG]" .. indent .. tostring(k) .. " =", tostring(v))
-        end
-    end
-end
 
 _G.__AutoTaxiConn = TaxiEvent.OnClientEvent:Connect(function(...)
     local args = {...}
-
-    for i, v in ipairs(args) do
-        if typeof(v) == "table" then
-            printTable(v)
-        end
-    end
-
     local action = args[1]
     local data = args[2]
 
     if action == "OrderOffer" and jobRunning and typeof(data) == "table" then
         currentToken = data.Token
-        task.wait(0.5)
+        task.wait(0.3)
         acceptOrder(currentToken)
 
     elseif action == "OrderAccepted" and jobRunning and typeof(data) == "table" then
-        task.spawn(tripLoop)
+        if not tripActive then
+            task.spawn(tripLoop)
+        end
+
+    elseif action == "OrderCompleted" then
+        tripActive = false
+        isOnline = false
+        task.wait(0.5)
+        if jobRunning then
+            goOnline()
+        end
     end
 end)
 
@@ -360,6 +351,9 @@ Tab:CreateDropdown({
     Flag = "VehicleDropdown",
     Callback = function(Option)
         vehicleName = Option[1]
+        -- Reset spawn state when vehicle changes
+        currentVehicle = nil
+        spawnAttempted = false
     end,
 })
 
@@ -377,7 +371,7 @@ Tab:CreateButton({
 
 Tab:CreateSlider({
     Name = "Durasi Tween (detik)",
-    Range = {10, 30},
+    Range = {5, 30},
     Increment = 1,
     Suffix = " detik",
     CurrentValue = 20,
@@ -394,9 +388,15 @@ Tab:CreateToggle({
     Callback = function(Value)
         jobRunning = Value
         if jobRunning then
+            -- Reset state on start
+            currentVehicle = nil
+            spawnAttempted = false
+            isOnline = false
+            tripActive = false
             task.spawn(autoJobLoop)
         else
             tripActive = false
+            isOnline = false
         end
     end,
 })
