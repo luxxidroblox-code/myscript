@@ -40,7 +40,7 @@ local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local TeleportService = game:GetService("TeleportService")
 
--- â”€â”€ Adonis bypass: wrap all executor globals in newcclosure â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- ── Adonis bypass: wrap all executor globals in newcclosure ────────────────────────
 local _fireproximityprompt = newcclosure(function(prompt, ...)
     return fireproximityprompt(prompt, ...)
 end)
@@ -58,7 +58,7 @@ local _getgc = getgc and newcclosure(function(...)
 end) or nil
 
 local _newcclosure = newcclosure
--- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- ──────────────────────────────────────────────────────────────────────────────────
 
 local CourierSettings = require(ReplicatedStorage:WaitForChild("Delivery System"):WaitForChild("Settings"))
 local MachinePrompt = workspace.BaristaJob.Interactions.MachinePart.MachinePart.MachinePrompt
@@ -227,22 +227,13 @@ end)
 
 local function updateBlackScreen()
     verifyFunction(updateBlackScreen)
+    
+    -- Forced disabled to remove blackscreen permanently
+    _G.blackscreen = false
+    _G.PermanentBlackscreen = false
 
-    local isAnyFarmActive = (_G.AutofarmCourier or _G.AutoFarmBarista or _G.AutoPoliceEnabled)
-
-    if isAnyFarmActive then
-        _G.blackscreen = true
-        _G.PermanentBlackscreen = true
-    else
-        _G.blackscreen = false
-        if _G.PermanentBlackscreen then
-            BlackScreen.Enabled = true
-        end
-        return
-    end
-
-    BlackScreen.Enabled = _G.blackscreen
-    Frame.Visible = _G.blackscreen
+    BlackScreen.Enabled = false
+    Frame.Visible = false
 end
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -637,7 +628,7 @@ task.spawn(function()
     end
 end)
 
--- â”€â”€ Adonis bypass: defer getgc hook 8s to let Adonis finish loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- ── Adonis bypass: defer getgc hook 8s to let Adonis finish loading ────────────────
 task.delay(8, function()
     local d = false
     local h = {}
@@ -673,7 +664,7 @@ task.delay(8, function()
     end
     setthreadidentity(7)
 end)
--- â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- ──────────────────────────────────────────────────────────────────────────────────
 
 pcall(function()
     local getconnections = getconnections or get_signal_cons
