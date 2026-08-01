@@ -4,6 +4,7 @@
 -- 2. Vehicle anchored during seat attempt
 -- 3. Spawn detection waits for vehicle to fully materialize
 -- 4. Single spawn, no recursion, no loop
+-- 5. [NEW] Heartbeat watcher forces seat if HRP not in DriveSeat
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -45,6 +46,7 @@ local tripActive = false
 local tweenDuration = 20
 local currentVehicle = nil
 local spawnAttempted = false
+local seatWatcher = nil  -- [NEW] heartbeat connection handle
 
 -- ============ VEHICLE LIST ============
 local function getVehicleList()
@@ -83,7 +85,6 @@ end
 local function forceSeatDirect(vehicle)
     if not vehicle then return false end
 
-    -- Anchor vehicle so it doesn't move during seat
     local anchorParts = {}
     for _, part in ipairs(vehicle:GetDescendants()) do
         if part:IsA("BasePart") then
@@ -98,7 +99,6 @@ local function forceSeatDirect(vehicle)
 
     local driveSeat = vehicle:FindFirstChild("DriveSeat")
     if not driveSeat then
-        -- Try any seat
         for _, child in ipairs(vehicle:GetDescendants()) do
             if child:IsA("VehicleSeat") or child.Name:lower():match("seat") then
                 driveSeat = child
@@ -111,35 +111,74 @@ local function forceSeatDirect(vehicle)
         return false
     end
 
-    -- Force HRP to seat position
     hrp.CFrame = driveSeat.CFrame * CFrame.new(0, 2, 0)
     task.wait(0.1)
-
-    -- Force sit
     hum.Sit = true
     task.wait(0.2)
 
-    -- Verify
     if hum.Sit then
-        -- Unanchor vehicle after seating
         for part, wasAnchored in pairs(anchorParts) do
             pcall(function() part.Anchored = wasAnchored end)
         end
         return true
     end
 
-    -- Retry once with more force
     hrp.CFrame = driveSeat.CFrame * CFrame.new(0, 1.5, 0)
     task.wait(0.1)
     hum.Sit = true
     task.wait(0.2)
 
-    -- Unanchor regardless
     for part, wasAnchored in pairs(anchorParts) do
         pcall(function() part.Anchored = wasAnchored end)
     end
 
     return hum.Sit
+end
+
+-- ============ [NEW] SEAT WATCHER ============
+-- Fires once per spawned vehicle. Watches every Heartbeat.
+-- If HRP is not within 3 studs of DriveSeat AND player isn't sitting → force seat.
+local function startSeatWatcher(vehicle)
+    if seatWatcher then
+        seatWatcher:Disconnect()
+        seatWatcher = nil
+    end
+
+    if not vehicle then return end
+
+    local cooldown = false
+
+    seatWatcher = RunService.Heartbeat:Connect(function()
+        if not jobRunning then return end
+        if not vehicle or not vehicle.Parent then
+            seatWatcher:Disconnect()
+            seatWatcher = nil
+            return
+        end
+
+        local char = LocalPlayer.Character
+        if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hrp or not hum then return end
+
+        -- Already seated, nothing to do
+        if hum.Sit then return end
+
+        local driveSeat = vehicle:FindFirstChild("DriveSeat")
+        if not driveSeat then return end
+
+        -- HRP not close enough to seat → force it
+        local dist = (hrp.Position - driveSeat.Position).Magnitude
+        if dist > 3 and not cooldown then
+            cooldown = true
+            task.spawn(function()
+                forceSeatDirect(vehicle)
+                task.wait(1) -- prevent hammering
+                cooldown = false
+            end)
+        end
+    end)
 end
 
 -- ============ SPAWN ONCE ============
@@ -150,18 +189,15 @@ local function spawnVehicle(name)
 
     if not name then return nil end
 
-    -- Fire spawn
     SpawnCarEvents.SpawnCar:FireServer(name)
     spawnAttempted = true
 
-    -- Wait for vehicle with proper checks
     local vehicle = nil
     local attempts = 0
     while not vehicle and attempts < 30 do
         task.wait(0.3)
         local found = findVehicle()
         if found and found:IsDescendantOf(workspace) then
-            -- Wait for primary part to exist
             local hasParts = false
             for _, part in ipairs(found:GetDescendants()) do
                 if part:IsA("BasePart") and part.Size.Magnitude > 0 then
@@ -179,9 +215,13 @@ local function spawnVehicle(name)
 
     if vehicle then
         currentVehicle = vehicle
-        -- Watch for destruction
+        startSeatWatcher(vehicle)  -- [NEW] attach watcher immediately after spawn confirms
         vehicle.AncestryChanged:Connect(function(_, parent)
             if not parent then
+                if seatWatcher then
+                    seatWatcher:Disconnect()
+                    seatWatcher = nil
+                end
                 currentVehicle = nil
                 spawnAttempted = false
                 isOnline = false
@@ -327,7 +367,6 @@ end
 -- ============ AUTO JOB LOOP ============
 local function autoJobLoop()
     while jobRunning do
-        -- Get or spawn vehicle
         local vehicle = currentVehicle or findVehicle()
 
         if not vehicle then
@@ -340,10 +379,10 @@ local function autoJobLoop()
             currentVehicle = vehicle
         end
 
-        -- Ensure seated (direct, no prompt)
+        -- Watcher already handles continuous seat enforcement.
+        -- seatPlayer here is the initial hard-seat on job start.
         local seated = seatPlayer(vehicle)
         if not seated then
-            -- Try respawning vehicle if seat fails completely
             if currentVehicle then
                 currentVehicle:Destroy()
                 currentVehicle = nil
@@ -353,13 +392,11 @@ local function autoJobLoop()
             end
         end
 
-        -- Go online if seated
         if seated and not isOnline then
             goOnline()
             task.wait(0.5)
         end
 
-        -- Check vehicle still exists
         if vehicle and not vehicle.Parent then
             currentVehicle = nil
             spawnAttempted = false
@@ -378,6 +415,10 @@ end
 if _G.__AutoTaxiNotifConn then
     _G.__AutoTaxiNotifConn:Disconnect()
     _G.__AutoTaxiNotifConn = nil
+end
+if _G.__AutoTaxiSeatWatcher then
+    _G.__AutoTaxiSeatWatcher:Disconnect()
+    _G.__AutoTaxiSeatWatcher = nil
 end
 
 _G.__AutoTaxiNotifConn = NotifSound.OnClientEvent:Connect(function()
@@ -419,6 +460,10 @@ Tab:CreateDropdown({
         vehicleName = Option[1]
         currentVehicle = nil
         spawnAttempted = false
+        if seatWatcher then
+            seatWatcher:Disconnect()
+            seatWatcher = nil
+        end
     end,
 })
 
@@ -461,6 +506,10 @@ Tab:CreateToggle({
         else
             tripActive = false
             isOnline = false
+            if seatWatcher then
+                seatWatcher:Disconnect()
+                seatWatcher = nil
+            end
         end
     end,
 })
