@@ -1,19 +1,20 @@
 --[[
     PROJECTSION — Driving Experience: Japan
-    Adonis Anti-Cheat Bypass v3 + Full Autofarm Suite
+    Adonis Anti-Cheat Bypass v4 + Full Autofarm Suite
+    Fixes: PHASE 4, 5, 7 removed. gravity zeroing killed. anchor-based tween.
 ]]
 
-local Players       = game:GetService("Players")
-local LogService    = game:GetService("LogService")
-local RunService    = game:GetService("RunService")
-local ScriptContext = game:GetService("ScriptContext")
-local CoreGui       = game:GetService("CoreGui")
-local TweenService  = game:GetService("TweenService")
+local Players           = game:GetService("Players")
+local LogService        = game:GetService("LogService")
+local RunService        = game:GetService("RunService")
+local ScriptContext     = game:GetService("ScriptContext")
+local CoreGui           = game:GetService("CoreGui")
+local TweenService      = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace     = game:GetService("Workspace")
+local Workspace         = game:GetService("Workspace")
 
 -- ============================================================
--- BYPASS — Adonis AC Suppression Stack
+-- BYPASS — Adonis AC Suppression Stack v4
 -- ============================================================
 
 -- PHASE 1: Purge LogService.MessageOut connections
@@ -73,11 +74,9 @@ hookfunction(gcinfo, function()
     return collectgarbage("count")
 end)
 
--- PHASE 4: REMOVED — __newindex hook on Instance meta triggers
--- "newindexInstance detector detected" (Error Code: 267). killed.
-
--- PHASE 5: REMOVED — GetRealPhysicsFPS hook flagged by AC. no replacement needed.
--- autofarm tween is CFrameValue-based, physics FPS irrelevant.
+-- PHASE 4: REMOVED — __newindex instance meta hook flagged AC
+-- PHASE 5: REMOVED — GetRealPhysicsFPS hook flagged AC
+-- PHASE 7: REMOVED — GetLogHistory hook flagged AC
 
 -- PHASE 6: Disable StrafingNoPhysics
 local function patchHumanoid(char)
@@ -93,14 +92,10 @@ if Players.LocalPlayer.Character then
     task.spawn(patchHumanoid, Players.LocalPlayer.Character)
 end
 
--- PHASE 7: REMOVED — hookfunction on LogService.GetLogHistory triggers
--- "0x7D3C GetLogHistory function hooks detected" (Error Code: 267). killed.
-
 -- PHASE 8: Disallowed services guard
 pcall(function()
-    local dm = game
-    local realFindService = dm.FindService
-    hookfunction(dm.FindService, newcclosure(function(self, name)
+    local realFindService = game.FindService
+    hookfunction(game.FindService, newcclosure(function(self, name)
         if name == "VirtualUser" or name == "VirtualInputManager" or name == "UGCValidationService" then
             return nil
         end
@@ -125,7 +120,7 @@ task.delay(3, function()
     end)
 end)
 
-print("[Bypass] Adonis AC suppression stack v3 loaded.")
+print("[Bypass] Adonis AC suppression stack v4 loaded.")
 
 -- ============================================================
 -- RAYFIELD LOADER
@@ -139,9 +134,9 @@ local player    = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local hrp       = character:WaitForChild("HumanoidRootPart")
 
-local autofarmstart  = false
+local autofarmstart   = false
 local selectedVehicle = "2024ElfEV"
-local teleportTime   = 21
+local teleportTime    = 21
 
 local initialMoney      = 0
 local farmStartTime     = 0
@@ -220,7 +215,7 @@ local lokasijomok = {
 -- ============================================================
 local function getPlayerMoney()
     local ok, val = pcall(function()
-        local pd  = player:FindFirstChild("PlayerData")
+        local pd = player:FindFirstChild("PlayerData")
         if pd then
             local yen = pd:FindFirstChild("Yen")
             if yen then return tonumber(yen.Value) or 0 end
@@ -296,9 +291,9 @@ end)
 -- ============================================================
 -- TELEPORTATION LOGIC
 -- ============================================================
-local currentState            = nil
-local lastestdetectedCframe   = nil
-local lastestdetectedName     = nil
+local currentState          = nil
+local lastestdetectedCframe = nil
+local lastestdetectedName   = nil
 
 local MoveArrow = ReplicatedStorage.General.MoveArrow
 MoveArrow.OnClientEvent:Connect(function(pos)
@@ -464,10 +459,20 @@ local function main()
             end
         end
 
+        -- anchor-based tween: no gravity touching, no physics FPS interference
         local function v191(targetCF, duration)
             local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut)
             local cfValue   = Instance.new("CFrameValue")
             cfValue.Value   = _Parent2:GetPrimaryPartCFrame()
+
+            -- anchor all parts so physics doesn't fight tween
+            local anchoredState = {}
+            for _, part in ipairs(_Parent2:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    anchoredState[part] = part.Anchored
+                    part.Anchored       = true
+                end
+            end
 
             cfValue.Changed:Connect(function()
                 _Parent2:PivotTo(cfValue.Value)
@@ -489,6 +494,14 @@ local function main()
 
             tween.Completed:Wait()
             cfValue:Destroy()
+
+            -- restore anchor states
+            for part, wasAnchored in pairs(anchoredState) do
+                if part and part.Parent then
+                    part.Anchored = wasAnchored
+                end
+            end
+
             resetVelocity()
         end
 
@@ -504,7 +517,9 @@ local function main()
             _Parent2.PrimaryPart = humanoid.SeatPart
             _PrimaryPart         = _Parent2.PrimaryPart
 
-            local waypoint = workspace:FindFirstChild("General") and workspace.General:FindFirstChild("Waypoint")
+            local waypoint = workspace:FindFirstChild("General")
+                and workspace.General:FindFirstChild("Waypoint")
+
             if not waypoint then
                 task.wait(0.5)
             else
@@ -525,7 +540,7 @@ local function main()
                     or string.find(_Parent2.Name:lower(), "elf")
                     or string.find(_Parent2.Name:lower(), "truck")
 
-                local forwardOffset = isElfOrTruck and 5.5 or 2.0
+                local forwardOffset  = isElfOrTruck and 5.5 or 2.0
 
                 local waypointCFrame = isBeBackwards and baseCFrame
                     or (baseCFrame + (baseCFrame.LookVector * forwardOffset) - Vector3.new(0, 1.2, 0))
@@ -533,12 +548,10 @@ local function main()
                 if lastWaypointCFrame ~= nil and waypointCFrame == lastWaypointCFrame then
                     task.wait(0.5)
                 else
-                    workspace.Gravity = 0
                     resetVelocity()
                     v191(_PrimaryPart.CFrame + Vector3.new(0, 1000, 0), 0)
                     v191(waypointCFrame + Vector3.new(0, 1000, 0), 0)
                     v191(waypointCFrame, teleportTime)
-                    workspace.Gravity = 196.2
                     resetVelocity()
                     task.wait(1.2)
                     lastWaypointCFrame = waypointCFrame
@@ -546,7 +559,6 @@ local function main()
             end
         end
 
-        workspace.Gravity = 196.2
         resetVelocity()
         task.wait(0.5)
     end
@@ -576,11 +588,11 @@ local window = Rayfield:CreateWindow({
 local autoJobTab = window:CreateTab({name = "AutoFarm"})
 
 autoJobTab:CreateDropdown({
-    name           = "Select Vehicle",
-    options        = vehiclelist,
-    currentOption  = {selectedVehicle},
+    name            = "Select Vehicle",
+    options         = vehiclelist,
+    currentOption   = {selectedVehicle},
     multipleOptions = false,
-    callback       = function(option)
+    callback        = function(option)
         selectedVehicle = type(option) == "table" and option[1] or option
     end,
 })
@@ -599,15 +611,14 @@ autoJobTab:CreateToggle({
     callback = function(value)
         autofarmstart = value
         if autofarmstart then
-            initialMoney    = getPlayerMoney()
-            farmStartTime   = tick()
-            lastEarned      = 0
+            initialMoney      = getPlayerMoney()
+            farmStartTime     = tick()
+            lastEarned        = 0
             currentHourlyRate = 0
             task.spawn(main)
         else
-            countdownTime   = 0
-            workspace.Gravity = 196.2
-            lastEarned      = 0
+            countdownTime     = 0
+            lastEarned        = 0
             currentHourlyRate = 0
         end
     end,
@@ -615,9 +626,9 @@ autoJobTab:CreateToggle({
 
 local statsTab = window:CreateTab({name = "Stats"})
 
-local nextTeleportStat = statsTab:CreateStat({name = "Next Teleport In",      suffix = "s",      value = 0})
-local earnedMoneyStat  = statsTab:CreateStat({name = "Total Earned Money",    prefix = "¥",      value = 0})
-local hourlyRateStat   = statsTab:CreateStat({name = "Income per Hour",       prefix = "¥", suffix = " / Hour", value = 0})
+local nextTeleportStat = statsTab:CreateStat({name = "Next Teleport In",   suffix = "s",        value = 0})
+local earnedMoneyStat  = statsTab:CreateStat({name = "Total Earned Money", prefix = "¥",        value = 0})
+local hourlyRateStat   = statsTab:CreateStat({name = "Income per Hour",    prefix = "¥", suffix = " / Hour", value = 0})
 
 task.spawn(function()
     while task.wait(0.5) do
@@ -686,11 +697,11 @@ local killConn = nil
 miscTab:CreateSection({name = "Gashapon Auto Spin"})
 
 miscTab:CreateDropdown({
-    name           = "Item Type",
-    options        = {"Basic A", "Basic B", "Basic C", "Basic D", "Basic E", "Basic F"},
-    currentOption  = {"Basic A"},
+    name            = "Item Type",
+    options         = {"Basic A", "Basic B", "Basic C", "Basic D", "Basic E", "Basic F"},
+    currentOption   = {"Basic A"},
     multipleOptions = false,
-    callback       = function(option)
+    callback        = function(option)
         gashaponConfig.ItemType = type(option) == "table" and option[1] or option
     end,
 })
