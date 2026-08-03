@@ -68,11 +68,11 @@ hookfunction(loadstring, function(src, ...)
     return realLoadstring(src, ...)
 end)
 
--- PHASE 3: Align gcinfo()
-local realGcinfo = gcinfo
-hookfunction(gcinfo, function()
+-- PHASE 3: Align gcinfo() — non-recursive
+local _realGcinfo = gcinfo
+hookfunction(_realGcinfo, newcclosure(function()
     return collectgarbage("count")
-end)
+end))
 
 -- PHASE 4: REMOVED — __newindex instance meta hook flagged AC
 -- PHASE 5: REMOVED — GetRealPhysicsFPS hook flagged AC
