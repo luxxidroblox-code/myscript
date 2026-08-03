@@ -76,11 +76,8 @@ end)
 -- PHASE 4: REMOVED — __newindex hook on Instance meta triggers
 -- "newindexInstance detector detected" (Error Code: 267). killed.
 
--- PHASE 5: Cap GetRealPhysicsFPS
-local realGetFPS = hookfunction(workspace.GetRealPhysicsFPS, newcclosure(function(self)
-    local fps = realGetFPS(self)
-    return math.min(fps, 59)
-end))
+-- PHASE 5: REMOVED — GetRealPhysicsFPS hook flagged by AC. no replacement needed.
+-- autofarm tween is CFrameValue-based, physics FPS irrelevant.
 
 -- PHASE 6: Disable StrafingNoPhysics
 local function patchHumanoid(char)
