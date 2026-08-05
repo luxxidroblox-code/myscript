@@ -15,11 +15,11 @@ BlackScreen.Name         = "ProjectsionBlackout"
 BlackScreen.Parent       = game:GetService("CoreGui")
 BlackScreen.DisplayOrder = -1
 BlackScreen.Enabled      = false
-Frame.Parent             = BlackScreen
-Frame.BackgroundColor3   = Color3.fromRGB(0,0,0)
-Frame.Size               = UDim2.new(1.5,0,1.5,0)
-Frame.Position           = UDim2.new(-0.25,0,-0.25,0)
-Frame.BorderSizePixel    = 0
+Frame.Parent           = BlackScreen
+Frame.BackgroundColor3 = Color3.fromRGB(0,0,0)
+Frame.Size             = UDim2.new(1.5,0,1.5,0)
+Frame.Position         = UDim2.new(-0.25,0,-0.25,0)
+Frame.BorderSizePixel  = 0
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace         = game:GetService("Workspace")
@@ -55,7 +55,7 @@ local mapDeleted        = false
 
 -- ── upright CFrame ────────────────────────────────────────
 local function uprightCF(cf, yOffset)
-    yOffset = yOffset or 0
+    yOffset    = yOffset or 0
     local pos  = cf.Position + Vector3.new(0, yOffset, 0)
     local look = cf.LookVector
     local yaw  = math.atan2(look.X, look.Z)
@@ -68,15 +68,15 @@ local function buildPlatform(position, sizeX, sizeZ, yOffset)
     sizeZ   = sizeZ   or 350
     yOffset = yOffset or 4
     local p = Instance.new("Part")
-    p.Name        = "FarmPlatform"
-    p.Size        = Vector3.new(sizeX, 8, sizeZ)
-    p.CFrame      = CFrame.new(position.X, position.Y - yOffset, position.Z)
-    p.Anchored    = true
-    p.CanCollide  = true
-    p.CastShadow  = false
-    p.Material    = Enum.Material.SmoothPlastic
-    p.BrickColor  = BrickColor.new("Dark grey")
-    p.Parent      = Workspace
+    p.Name       = "FarmPlatform"
+    p.Size       = Vector3.new(sizeX, 8, sizeZ)
+    p.CFrame     = CFrame.new(position.X, position.Y - yOffset, position.Z)
+    p.Anchored   = true
+    p.CanCollide = true
+    p.CastShadow = false
+    p.Material   = Enum.Material.SmoothPlastic
+    p.BrickColor = BrickColor.new("Dark grey")
+    p.Parent     = Workspace
     table.insert(activePlatforms, p)
     return p
 end
@@ -105,14 +105,17 @@ local function rebuildPlatforms()
     local starter = etc:FindFirstChild("Job")
         and etc.Job:FindFirstChild("Truck")
         and etc.Job.Truck:FindFirstChild("Starter")
-    if starter then buildPlatform(starter:GetPivot().Position, 200, 200) end
+    if starter then
+        buildPlatform(starter:GetPivot().Position, 200, 200)
+    end
 
     local spawnerPart = etc:FindFirstChild("Job")
         and etc.Job:FindFirstChild("Truck")
         and etc.Job.Truck:FindFirstChild("Spawner")
         and etc.Job.Truck.Spawner:FindFirstChild("Part")
-    if spawnerPart then buildPlatform(spawnerPart.Position - Vector3.new(0, 6, 0), 200, 200) 
-end
+    if spawnerPart then
+        buildPlatform(spawnerPart.Position - Vector3.new(0, 6, 0), 200, 200)
+    end
 end
 
 -- ── map delete ────────────────────────────────────────────
@@ -366,16 +369,16 @@ local function sendWebhook(income)
         title  = "Cycle Completed",
         color  = 0xFFFFFF,
         fields = {
-            { name="Username",      value=lp.Name,                                                       inline=false },
-            { name="Cycle Income",  value=formatRP(income),                                              inline=false },
-            { name="Current Money", value=formatRP(getCleanMoney()).." (Est)",                            inline=false },
-            { name="Total Earning", value=formatRP(_G.TotalEarning).." (Est)",                           inline=false },
-            { name="Cycle Count",   value=tostring(_G.CycleCount),                                       inline=false },
-            { name="Running Time",  value=getRunningTime(),                                              inline=false },
-            { name="Session Time",  value=SessionStart and formatDuration(os.time()-SessionStart) or "—",inline=false },
-            { name="Session /Hour", value="RP. "..formatShort(getSessionIPH()),                          inline=false },
-            { name="Est /Hour",     value="RP. "..formatShort(getIncomePerHour()),                       inline=false },
-            { name="FPS",           value=string.format("%.0f fps", getFPS()),                           inline=false },
+            { name="Username",      value=lp.Name,                                                        inline=false },
+            { name="Cycle Income",  value=formatRP(income),                                               inline=false },
+            { name="Current Money", value=formatRP(getCleanMoney()).." (Est)",                             inline=false },
+            { name="Total Earning", value=formatRP(_G.TotalEarning).." (Est)",                            inline=false },
+            { name="Cycle Count",   value=tostring(_G.CycleCount),                                        inline=false },
+            { name="Running Time",  value=getRunningTime(),                                               inline=false },
+            { name="Session Time",  value=SessionStart and formatDuration(os.time()-SessionStart) or "—", inline=false },
+            { name="Session /Hour", value="RP. "..formatShort(getSessionIPH()),                           inline=false },
+            { name="Est /Hour",     value="RP. "..formatShort(getIncomePerHour()),                        inline=false },
+            { name="FPS",           value=string.format("%.0f fps", getFPS()),                            inline=false },
         },
         image  = { url="https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&" },
         footer = { text="Made by .projectsion | "..os.date("%m/%d/%Y %I:%M %p") },
@@ -400,7 +403,7 @@ local function isTargetDestination(waypoint)
         local tl = gui:FindFirstChildOfClass("TextLabel")
         if tl then wpLabel = tl.Text:lower() end
     end
-    for _, t in pairs({"malang","sidoarjo","cargo"}) do
+    for _, t in pairs({"malang","sidoarjo","cargo","surabaya"}) do
         if wpName:find(t) or wpLabel:find(t) then return true end
     end
     return false
@@ -440,11 +443,12 @@ local function runAutofarm()
                 and etc.Job.Truck:FindFirstChild("Starter")
 
             if starter and hrp then
+                -- fast starter
                 hrp.CFrame = uprightCF(starter:GetPivot(), 3)
-                task.wait(0.3)
+                task.wait(0.1)
                 local prompt = starter:FindFirstChild("Prompt")
                 if prompt then fireproximityprompt(prompt) end
-                task.wait(1.2)
+                task.wait(0.7)
             end
 
             local waypointFolder = etc and etc:FindFirstChild("Waypoint")
@@ -546,7 +550,24 @@ local function runAutofarm()
                         end
                         task.wait(3.5)
 
-                        break
+                        -- skip unemployed kalo destinasi berikutnya langsung ada
+                        local nextWp = waypointFolder:FindFirstChild("Waypoint")
+                        if nextWp and isTargetDestination(nextWp) then
+                            if _G.DeleteMap then
+                                local wpos = nextWp:IsA("Model")
+                                    and nextWp:GetPivot().Position
+                                    or nextWp.Position
+                                buildPlatform(wpos, 400, 400, 25)
+                            end
+                            if DelayLabel then
+                                DelayLabel:Set({ Title="Status:", Content="Next dest ready — skipping reset!" })
+                            end
+                            EarnedMoney    = getCleanMoney() - StartMoney
+                            NextTeleportIn = 42
+                            -- lanjut loop, ga break
+                        else
+                            break
+                        end
                     end
                 else
                     break
@@ -577,19 +598,18 @@ end
 local Window = Rayfield:CreateWindow({
     Name            = "Car Driving Indonesia | By .projectsion",
     LoadingTitle    = "Projectsion Loading...",
-    LoadingSubtitle = "Version 3.2 (upright tp + map delete)",
+    LoadingSubtitle = "Version 3.3 (skip reset + fast starter)",
     ConfigurationSaving = { Enabled=false },
     Discord         = { Enabled=false },
     KeySystem       = false,
 })
 
--- AUTOFARM TAB
 local FarmTab = Window:CreateTab("Autofarm", "truck")
 FarmTab:CreateSection("Autofarm Truck")
 
 FarmTab:CreateToggle({
     Name="On Autofarm Truck (yes)",
-    Info="Filter job Malang / Sidoarjo only",
+    Info="Filter job Malang / Sidoarjo / Surabaya / Cargo",
     CurrentValue=false,
     Callback=function(v)
         _G.Autofarm = v
@@ -608,7 +628,6 @@ FarmTab:CreateToggle({
     Callback=function(v) BlackScreen.Enabled = v end,
 })
 
--- STATS TAB
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 StatsTab:CreateSection("Session")
 SessionTimeLabel   = StatsTab:CreateParagraph({ Title="Session Time:",   Content="—" })
@@ -625,7 +644,6 @@ EarnedLabel     = StatsTab:CreateParagraph({ Title="Total Earned:",             
 CurrentLabel    = StatsTab:CreateParagraph({ Title="Current Money:",              Content="RP. 0" })
 FpsLabel        = StatsTab:CreateParagraph({ Title="Current FPS:",                Content="-- fps" })
 
--- MISC TAB
 local ProxTab = Window:CreateTab("Misc", "bot")
 ProxTab:CreateSection("Open NPC")
 ProxTab:CreateDropdown({
@@ -668,7 +686,6 @@ ProxTab:CreateButton({
     end,
 })
 
--- WEBHOOK TAB
 local WebhookTab = Window:CreateTab("Webhook","webhook")
 WebhookTab:CreateSection("Webhook Farm")
 WebhookTab:CreateInput({
@@ -682,7 +699,6 @@ WebhookTab:CreateToggle({
     Callback=function(v) _G.AutoWebhook=v end,
 })
 
--- TELEPORT TAB
 local TpTab = Window:CreateTab("Teleport","map-pin")
 TpTab:CreateSection("Teleport Player")
 local PlayerDropdown = TpTab:CreateDropdown({
@@ -737,7 +753,6 @@ task.spawn(function()
     end
 end)
 
--- countdown loop
 task.spawn(function()
     while true do
         task.wait(1)
