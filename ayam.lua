@@ -448,7 +448,7 @@ local function runAutofarm()
                 task.wait(0.1)
                 local prompt = starter:FindFirstChild("Prompt")
                 if prompt then fireproximityprompt(prompt) end
-                task.wait(0.7)
+                task.wait(1)
             end
 
             local waypointFolder = etc and etc:FindFirstChild("Waypoint")
