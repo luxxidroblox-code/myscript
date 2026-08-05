@@ -63,13 +63,14 @@ local function uprightCF(cf, yOffset)
 end
 
 -- ── platform builder ──────────────────────────────────────
-local function buildPlatform(position, sizeX, sizeZ)
-    sizeX = sizeX or 350
-    sizeZ = sizeZ or 350
+local function buildPlatform(position, sizeX, sizeZ, yOffset)
+    sizeX   = sizeX   or 350
+    sizeZ   = sizeZ   or 350
+    yOffset = yOffset or 4
     local p = Instance.new("Part")
     p.Name        = "FarmPlatform"
     p.Size        = Vector3.new(sizeX, 8, sizeZ)
-    p.CFrame      = CFrame.new(position.X, position.Y - 4, position.Z)
+    p.CFrame      = CFrame.new(position.X, position.Y - yOffset, position.Z)
     p.Anchored    = true
     p.CanCollide  = true
     p.CastShadow  = false
@@ -97,7 +98,7 @@ local function rebuildPlatforms()
         for _, wp in ipairs(waypointFolder:GetChildren()) do
             local pos = (wp:IsA("Model") and wp:GetPivot().Position)
                 or (wp:IsA("BasePart") and wp.Position)
-            if pos then buildPlatform(pos, 400, 400) end
+            if pos then buildPlatform(pos, 400, 400, 14) end
         end
     end
 
@@ -454,7 +455,7 @@ local function runAutofarm()
                     local wpos = waypoint:IsA("Model")
                         and waypoint:GetPivot().Position
                         or waypoint.Position
-                    buildPlatform(wpos, 400, 400)
+                    buildPlatform(wpos, 400, 400, 14)
                 end
                 dapetRuteBagus = true
             else
