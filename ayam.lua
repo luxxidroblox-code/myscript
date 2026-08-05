@@ -506,7 +506,7 @@ local function runAutofarm()
                     end
 
                     EarnedMoney    = getCleanMoney() - StartMoney
-                    NextTeleportIn = 42
+                    NextTeleportIn = 42.5
 
                     repeat
                         task.wait(1)
