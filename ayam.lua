@@ -4,20 +4,22 @@ local DelayLabel, TeleportLabel, DestMinLabel, Dest5MinLabel
 local IncomeHourLabel, EarnedLabel, CurrentLabel, FpsLabel
 local SessionTimeLabel, SessionEarnedLabel, SessionIPHLabel
 
-local targetProp = workspace.Map.Prop:GetChildren()[1627]
-if targetProp then targetProp:Destroy() end
+pcall(function()
+    local targetProp = workspace.Map.Prop:GetChildren()[1627]
+    if targetProp then targetProp:Destroy() end
+end)
 
 local BlackScreen = Instance.new("ScreenGui")
-local Frame = Instance.new("Frame")
-BlackScreen.Name = "ProjectsionBlackout"
-BlackScreen.Parent = game:GetService("CoreGui")
+local Frame       = Instance.new("Frame")
+BlackScreen.Name         = "ProjectsionBlackout"
+BlackScreen.Parent       = game:GetService("CoreGui")
 BlackScreen.DisplayOrder = -1
-BlackScreen.Enabled = false
-Frame.Parent = BlackScreen
-Frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-Frame.Size = UDim2.new(1.5, 0, 1.5, 0)
-Frame.Position = UDim2.new(-0.25, 0, -0.25, 0)
-Frame.BorderSizePixel = 0
+BlackScreen.Enabled      = false
+Frame.Parent             = BlackScreen
+Frame.BackgroundColor3   = Color3.fromRGB(0,0,0)
+Frame.Size               = UDim2.new(1.5,0,1.5,0)
+Frame.Position           = UDim2.new(-0.25,0,-0.25,0)
+Frame.BorderSizePixel    = 0
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace         = game:GetService("Workspace")
@@ -27,6 +29,7 @@ local lp                = Players.LocalPlayer
 
 _G.Autofarm           = false
 _G.AutoWebhook        = false
+_G.DeleteMap          = false
 _G.WebhookURL         = _G.WebhookURL         or ""
 _G.StartTime          = _G.StartTime          or os.time()
 _G.CycleCount         = _G.CycleCount         or 0
@@ -47,6 +50,82 @@ local lastMoney         = 0
 local pendingIncome     = 0
 local isRunning         = false
 local destinationTimestamps = {}
+local activePlatforms   = {}
+local mapDeleted        = false
+
+-- ── upright CFrame ────────────────────────────────────────
+local function uprightCF(cf, yOffset)
+    yOffset = yOffset or 0
+    local pos  = cf.Position + Vector3.new(0, yOffset, 0)
+    local look = cf.LookVector
+    local yaw  = math.atan2(look.X, look.Z)
+    return CFrame.new(pos) * CFrame.Angles(0, yaw, 0)
+end
+
+-- ── platform builder ──────────────────────────────────────
+local function buildPlatform(position, sizeX, sizeZ)
+    sizeX = sizeX or 350
+    sizeZ = sizeZ or 350
+    local p = Instance.new("Part")
+    p.Name        = "FarmPlatform"
+    p.Size        = Vector3.new(sizeX, 8, sizeZ)
+    p.CFrame      = CFrame.new(position.X, position.Y - 4, position.Z)
+    p.Anchored    = true
+    p.CanCollide  = true
+    p.CastShadow  = false
+    p.Material    = Enum.Material.SmoothPlastic
+    p.BrickColor  = BrickColor.new("Dark grey")
+    p.Parent      = Workspace
+    table.insert(activePlatforms, p)
+    return p
+end
+
+local function clearPlatforms()
+    for _, p in ipairs(activePlatforms) do
+        if p and p.Parent then p:Destroy() end
+    end
+    activePlatforms = {}
+end
+
+local function rebuildPlatforms()
+    clearPlatforms()
+    local etc = Workspace:FindFirstChild("Etc")
+    if not etc then return end
+
+    local waypointFolder = etc:FindFirstChild("Waypoint")
+    if waypointFolder then
+        for _, wp in ipairs(waypointFolder:GetChildren()) do
+            local pos = (wp:IsA("Model") and wp:GetPivot().Position)
+                or (wp:IsA("BasePart") and wp.Position)
+            if pos then buildPlatform(pos, 400, 400) end
+        end
+    end
+
+    local starter = etc:FindFirstChild("Job")
+        and etc.Job:FindFirstChild("Truck")
+        and etc.Job.Truck:FindFirstChild("Starter")
+    if starter then buildPlatform(starter:GetPivot().Position, 200, 200) end
+
+    local spawnerPart = etc:FindFirstChild("Job")
+        and etc.Job:FindFirstChild("Truck")
+        and etc.Job.Truck:FindFirstChild("Spawner")
+        and etc.Job.Truck.Spawner:FindFirstChild("Part")
+    if spawnerPart then buildPlatform(spawnerPart.Position, 200, 200) end
+end
+
+-- ── map delete ────────────────────────────────────────────
+local function deleteMap()
+    if mapDeleted then return end
+    mapDeleted = true
+    rebuildPlatforms()
+    local map = Workspace:FindFirstChild("Map")
+    if map then
+        for _, child in ipairs(map:GetChildren()) do
+            pcall(function() child:Destroy() end)
+        end
+    end
+    pcall(function() Workspace.Terrain:Clear() end)
+end
 
 -- ── anti-staff / anti-join ────────────────────────────────
 local STAFF_GROUP_ID = 10884667
@@ -235,20 +314,19 @@ end)
 local SelectedNPC, SelectedDealer, SelectedPlayer = "", "", ""
 
 local Dealer_Paths = {
-    ["Toyota"]       = workspace.Etc.Dealership.Toyota.Prompt,
-    ["Suzuki"]       = workspace.Etc.Dealership.Suzuki.Prompt,
-    ["Premium"]      = workspace.Etc.Dealership.Premium.Prompt,
-    ["Nissan"]       = workspace.Etc.Dealership.Nissan.Prompt,
-    ["Mercedes"]     = workspace.Etc.Dealership.MercedesBenz.Prompt,
-    ["Komersial"]    = workspace.Etc.Dealership.Komersial.Prompt,
-    ["KIA"]          = workspace.Etc.Dealership.KIA.Prompt,
-    ["Hyundai"]      = workspace.Etc.Dealership.Hyundai.Prompt,
-    ["Honda"]        = workspace.Etc.Dealership.Honda.Prompt,
-    ["Daihatsu"]     = workspace.Etc.Dealership.Daihatsu.Prompt,
-    ["Chery"]        = workspace.Etc.Dealership.Chery.Prompt,
-    ["Bandung"]      = workspace.Etc.Dealership.Bandung.Prompt,
-    ["Dealer 77"]    = workspace.Etc.Dealership["77"].Prompt,
-    ["Modification"] = workspace.Map.Building.Modification,
+    ["Toyota"]    = workspace.Etc.Dealership.Toyota.Prompt,
+    ["Suzuki"]    = workspace.Etc.Dealership.Suzuki.Prompt,
+    ["Premium"]   = workspace.Etc.Dealership.Premium.Prompt,
+    ["Nissan"]    = workspace.Etc.Dealership.Nissan.Prompt,
+    ["Mercedes"]  = workspace.Etc.Dealership.MercedesBenz.Prompt,
+    ["Komersial"] = workspace.Etc.Dealership.Komersial.Prompt,
+    ["KIA"]       = workspace.Etc.Dealership.KIA.Prompt,
+    ["Hyundai"]   = workspace.Etc.Dealership.Hyundai.Prompt,
+    ["Honda"]     = workspace.Etc.Dealership.Honda.Prompt,
+    ["Daihatsu"]  = workspace.Etc.Dealership.Daihatsu.Prompt,
+    ["Chery"]     = workspace.Etc.Dealership.Chery.Prompt,
+    ["Bandung"]   = workspace.Etc.Dealership.Bandung.Prompt,
+    ["Dealer 77"] = workspace.Etc.Dealership["77"].Prompt,
 }
 local NPC_Paths = {
     ["Npc job select"]       = workspace.Etc.Job.Selection.Model.Prompt,
@@ -286,16 +364,16 @@ local function sendWebhook(income)
         title  = "Cycle Completed",
         color  = 0xFFFFFF,
         fields = {
-            { name="Username",      value=lp.Name,                                              inline=false },
-            { name="Cycle Income",  value=formatRP(income),                                     inline=false },
-            { name="Current Money", value=formatRP(getCleanMoney()).." (Est)",                   inline=false },
-            { name="Total Earning", value=formatRP(_G.TotalEarning).." (Est)",                  inline=false },
-            { name="Cycle Count",   value=tostring(_G.CycleCount),                              inline=false },
-            { name="Running Time",  value=getRunningTime(),                                     inline=false },
-            { name="Session Time",  value=SessionStart and formatDuration(os.time()-SessionStart) or "—", inline=false },
-            { name="Session /Hour", value="RP. "..formatShort(getSessionIPH()),                 inline=false },
-            { name="Est /Hour",     value="RP. "..formatShort(getIncomePerHour()),              inline=false },
-            { name="FPS",           value=string.format("%.0f fps", getFPS()),                  inline=false },
+            { name="Username",      value=lp.Name,                                                       inline=false },
+            { name="Cycle Income",  value=formatRP(income),                                              inline=false },
+            { name="Current Money", value=formatRP(getCleanMoney()).." (Est)",                            inline=false },
+            { name="Total Earning", value=formatRP(_G.TotalEarning).." (Est)",                           inline=false },
+            { name="Cycle Count",   value=tostring(_G.CycleCount),                                       inline=false },
+            { name="Running Time",  value=getRunningTime(),                                              inline=false },
+            { name="Session Time",  value=SessionStart and formatDuration(os.time()-SessionStart) or "—",inline=false },
+            { name="Session /Hour", value="RP. "..formatShort(getSessionIPH()),                          inline=false },
+            { name="Est /Hour",     value="RP. "..formatShort(getIncomePerHour()),                       inline=false },
+            { name="FPS",           value=string.format("%.0f fps", getFPS()),                           inline=false },
         },
         image  = { url="https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&" },
         footer = { text="Made by .projectsion | "..os.date("%m/%d/%Y %I:%M %p") },
@@ -360,7 +438,7 @@ local function runAutofarm()
                 and etc.Job.Truck:FindFirstChild("Starter")
 
             if starter and hrp then
-                hrp.CFrame = starter:GetPivot()
+                hrp.CFrame = uprightCF(starter:GetPivot(), 3)
                 task.wait(0.3)
                 local prompt = starter:FindFirstChild("Prompt")
                 if prompt then fireproximityprompt(prompt) end
@@ -371,6 +449,12 @@ local function runAutofarm()
             local waypoint       = waypointFolder and waypointFolder:FindFirstChild("Waypoint")
 
             if waypoint and isTargetDestination(waypoint) then
+                if _G.DeleteMap then
+                    local wpos = waypoint:IsA("Model")
+                        and waypoint:GetPivot().Position
+                        or waypoint.Position
+                    buildPlatform(wpos, 400, 400)
+                end
                 dapetRuteBagus = true
             else
                 if remote then remote:FireServer("Unemployed") end
@@ -388,7 +472,7 @@ local function runAutofarm()
             :WaitForChild("Etc"):WaitForChild("Job")
             :WaitForChild("Truck"):WaitForChild("Spawner"):WaitForChild("Part")
 
-        hrp.CFrame = spawnerPart.CFrame
+        hrp.CFrame = uprightCF(spawnerPart.CFrame, 3)
         task.wait(0.4)
         fireproximityprompt(spawnerPart:WaitForChild("Prompt"))
         task.wait(2.5)
@@ -396,7 +480,7 @@ local function runAutofarm()
         local myTruck = getMyTruck()
 
         if myTruck then
-            hrp.CFrame = myTruck.DriveSeat.CFrame
+            hrp.CFrame = uprightCF(myTruck.DriveSeat.CFrame, 1)
             task.wait(0.2)
             fireproximityprompt(myTruck.DriveSeat:WaitForChild("PromptDriveSeat"))
 
@@ -420,7 +504,7 @@ local function runAutofarm()
                     end
 
                     EarnedMoney    = getCleanMoney() - StartMoney
-                    NextTeleportIn = 41.5
+                    NextTeleportIn = 42
 
                     repeat
                         task.wait(1)
@@ -446,7 +530,6 @@ local function runAutofarm()
                         _G.TotalTeleportCount += 1
                         logDestinationComplete()
 
-                        -- tunggu waypoint confirm
                         local timeout = 0
                         repeat
                             task.wait(0.5); timeout += 0.5
@@ -456,7 +539,6 @@ local function runAutofarm()
                             end
                         until timeout >= 2
 
-                        -- tunggu server transfer duit sebelum destroy
                         if DelayLabel then
                             DelayLabel:Set({ Title="Status:", Content="Waiting payment..." })
                         end
@@ -493,12 +575,13 @@ end
 local Window = Rayfield:CreateWindow({
     Name            = "Car Driving Indonesia | By .projectsion",
     LoadingTitle    = "Projectsion Loading...",
-    LoadingSubtitle = "Version 3.1 (payment wait fix)",
+    LoadingSubtitle = "Version 3.2 (upright tp + map delete)",
     ConfigurationSaving = { Enabled=false },
     Discord         = { Enabled=false },
     KeySystem       = false,
 })
 
+-- AUTOFARM TAB
 local FarmTab = Window:CreateTab("Autofarm", "truck")
 FarmTab:CreateSection("Autofarm Truck")
 
@@ -523,15 +606,14 @@ FarmTab:CreateToggle({
     Callback=function(v) BlackScreen.Enabled = v end,
 })
 
+-- STATS TAB
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 StatsTab:CreateSection("Session")
-
 SessionTimeLabel   = StatsTab:CreateParagraph({ Title="Session Time:",   Content="—" })
 SessionEarnedLabel = StatsTab:CreateParagraph({ Title="Session Earned:", Content="RP. 0" })
 SessionIPHLabel    = StatsTab:CreateParagraph({ Title="Session / Hour:", Content="RP. 0/h" })
 
 StatsTab:CreateSection("Overall")
-
 DelayLabel      = StatsTab:CreateParagraph({ Title="Status / Next TP:",          Content="Waiting Job..." })
 TeleportLabel   = StatsTab:CreateParagraph({ Title="Total Teleport Done:",        Content="0 Times" })
 DestMinLabel    = StatsTab:CreateParagraph({ Title="Destinations (Last 1 Min):",  Content="0" })
@@ -541,6 +623,7 @@ EarnedLabel     = StatsTab:CreateParagraph({ Title="Total Earned:",             
 CurrentLabel    = StatsTab:CreateParagraph({ Title="Current Money:",              Content="RP. 0" })
 FpsLabel        = StatsTab:CreateParagraph({ Title="Current FPS:",                Content="-- fps" })
 
+-- MISC TAB
 local ProxTab = Window:CreateTab("Misc", "bot")
 ProxTab:CreateSection("Open NPC")
 ProxTab:CreateDropdown({
@@ -550,7 +633,8 @@ ProxTab:CreateDropdown({
     Callback=function(v) SelectedNPC=v[1] end,
 })
 ProxTab:CreateButton({ Name="Open NPC UI", Callback=function()
-    local t=NPC_Paths[SelectedNPC]; if t then fireproximityprompt(t) end
+    local t = NPC_Paths[SelectedNPC]
+    if t then fireproximityprompt(t) end
 end })
 
 ProxTab:CreateSection("Open Dealership")
@@ -561,9 +645,28 @@ ProxTab:CreateDropdown({
     Callback=function(v) SelectedDealer=v[1] end,
 })
 ProxTab:CreateButton({ Name="Open Dealer UI", Callback=function()
-    local t=Dealer_Paths[SelectedDealer]; if t then fireproximityprompt(t) end
+    local t = Dealer_Paths[SelectedDealer]
+    if t then fireproximityprompt(t) end
 end })
 
+ProxTab:CreateSection("Map / Performance")
+ProxTab:CreateToggle({
+    Name="Delete Map (Low Lag Mode)",
+    Info="Hapus map + terrain, otomatis buat platform di semua destinasi",
+    CurrentValue=false,
+    Callback=function(v)
+        _G.DeleteMap = v
+        if v then deleteMap() else clearPlatforms() end
+    end,
+})
+ProxTab:CreateButton({
+    Name="Rebuild Destination Platforms",
+    Callback=function()
+        if _G.DeleteMap then rebuildPlatforms() end
+    end,
+})
+
+-- WEBHOOK TAB
 local WebhookTab = Window:CreateTab("Webhook","webhook")
 WebhookTab:CreateSection("Webhook Farm")
 WebhookTab:CreateInput({
@@ -577,6 +680,7 @@ WebhookTab:CreateToggle({
     Callback=function(v) _G.AutoWebhook=v end,
 })
 
+-- TELEPORT TAB
 local TpTab = Window:CreateTab("Teleport","map-pin")
 TpTab:CreateSection("Teleport Player")
 local PlayerDropdown = TpTab:CreateDropdown({
@@ -592,7 +696,7 @@ local function refreshPlayers()
 end
 TpTab:CreateButton({ Name="Refresh Player List", Callback=refreshPlayers })
 TpTab:CreateButton({ Name="Teleport to Player", Callback=function()
-    local t=workspace.Lives:FindFirstChild(SelectedPlayer)
+    local t = workspace.Lives:FindFirstChild(SelectedPlayer)
     if t then lp.Character:PivotTo(t:GetPivot()) end
 end })
 task.spawn(refreshPlayers)
@@ -608,8 +712,7 @@ task.spawn(function()
             local sessionEarned = math.max(0, current - SessionMoneyStart)
             SessionTimeLabel:Set({
                 Title="Session Time:",
-                Content=formatDuration(os.time()-SessionStart)
-                    ..(_G.Autofarm and "" or "  (paused)"),
+                Content=formatDuration(os.time()-SessionStart)..(_G.Autofarm and "" or "  (paused)"),
             })
             SessionEarnedLabel:Set({ Title="Session Earned:", Content="RP. "..formatNominal(sessionEarned) })
             SessionIPHLabel:Set({ Title="Session / Hour:", Content="RP. "..formatShort(getSessionIPH()) })
@@ -618,12 +721,12 @@ task.spawn(function()
         if not _G.Autofarm then continue end
 
         EarnedMoney = current - StartMoney
-        TeleportLabel:Set({ Title="Total Teleport Done:", Content=_G.TotalTeleportCount.." Times" })
-        DestMinLabel:Set({ Title="Destinations (Last 1 Min):", Content=getDestinationsInWindow(60).." (Chance of Double!)" })
+        TeleportLabel:Set({ Title="Total Teleport Done:",        Content=_G.TotalTeleportCount.." Times" })
+        DestMinLabel:Set({ Title="Destinations (Last 1 Min):",   Content=getDestinationsInWindow(60).." (Chance of Double!)" })
         Dest5MinLabel:Set({ Title="Destinations (Last 5 Mins):", Content=tostring(getDestinationsInWindow(300)) })
-        IncomeHourLabel:Set({ Title="Est. Income / Hour:", Content="RP. "..formatShort(getIncomePerHour()) })
-        EarnedLabel:Set({ Title="Total Earned:", Content="RP. "..formatNominal(EarnedMoney) })
-        CurrentLabel:Set({ Title="Current Money:", Content="RP. "..formatNominal(current) })
+        IncomeHourLabel:Set({ Title="Est. Income / Hour:",       Content="RP. "..formatShort(getIncomePerHour()) })
+        EarnedLabel:Set({ Title="Total Earned:",                 Content="RP. "..formatNominal(EarnedMoney) })
+        CurrentLabel:Set({ Title="Current Money:",               Content="RP. "..formatNominal(current) })
         FpsLabel:Set({
             Title="Current FPS:",
             Content=string.format("%.0f fps  %s", fps,
