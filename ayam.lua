@@ -37,15 +37,15 @@ local MoneyPath = lp.PlayerGui
     :WaitForChild("Main"):WaitForChild("Container"):WaitForChild("Hub")
     :WaitForChild("CashFrame"):WaitForChild("Frame"):WaitForChild("TextLabel")
 
-local StartMoney      = 0
-local EarnedMoney     = 0
-local NextTeleportIn  = 0
-local SessionStart    = nil
+local StartMoney        = 0
+local EarnedMoney       = 0
+local NextTeleportIn    = 0
+local SessionStart      = nil
 local SessionMoneyStart = 0
-local incomeLog       = {}
-local lastMoney       = 0
-local pendingIncome   = 0
-local isRunning       = false
+local incomeLog         = {}
+local lastMoney         = 0
+local pendingIncome     = 0
+local isRunning         = false
 local destinationTimestamps = {}
 
 -- ── anti-staff / anti-join ────────────────────────────────
@@ -58,7 +58,7 @@ end
 
 local function selfKick(player)
     local tag = isStaff(player) and "STAFF" or "PLAYER"
-    lp:Kick(tag .. " DETECTED (".. player.Name ..") — player/staff join kacung semua tu staff co")
+    lp:Kick(tag.." DETECTED ("..player.Name..") — player/staff join kacung semua tu staff co")
 end
 
 Players.PlayerAdded:Connect(function(player)
@@ -71,10 +71,7 @@ task.spawn(function()
     while true do
         task.wait(3)
         for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= lp then
-                selfKick(player)
-                return
-            end
+            if player ~= lp then selfKick(player); return end
         end
     end
 end)
@@ -124,8 +121,7 @@ local function logIncome(amount)
 end
 
 local function getIncomePerHour()
-    local now = os.time()
-    local total = 0
+    local now, total = os.time(), 0
     for i = #incomeLog, 1, -1 do
         if now - incomeLog[i].t <= 600 then
             total = total + incomeLog[i].amount
@@ -171,11 +167,11 @@ local function steppedTruckTeleport(truck, targetCF)
         if not truck or not truck.Parent or not _G.Autofarm then
             conn:Disconnect(); done = true; return
         end
-        local fps      = getFPS()
-        local scale    = fps >= 50 and 1 or fps >= 30 and 0.75 or 0.5
-        elapsed        = elapsed + math.min(dt, 0.1) * scale
-        local alpha    = math.min(elapsed / dur, 1)
-        local eased    = alpha < 0.5 and 4*alpha^3 or 1-(-2*alpha+2)^3/2
+        local fps   = getFPS()
+        local scale = fps >= 50 and 1 or fps >= 30 and 0.75 or 0.5
+        elapsed     = elapsed + math.min(dt, 0.1) * scale
+        local alpha = math.min(elapsed / dur, 1)
+        local eased = alpha < 0.5 and 4*alpha^3 or 1-(-2*alpha+2)^3/2
         truck:PivotTo(origin:Lerp(targetCF, eased))
         if alpha >= 1 then
             conn:Disconnect()
@@ -290,16 +286,16 @@ local function sendWebhook(income)
         title  = "Cycle Completed",
         color  = 0xFFFFFF,
         fields = {
-            { name="Username",      value=lp.Name,                                        inline=false },
-            { name="Cycle Income",  value=formatRP(income),                               inline=false },
-            { name="Current Money", value=formatRP(getCleanMoney()).." (Est)",             inline=false },
-            { name="Total Earning", value=formatRP(_G.TotalEarning).." (Est)",            inline=false },
-            { name="Cycle Count",   value=tostring(_G.CycleCount),                        inline=false },
-            { name="Running Time",  value=getRunningTime(),                               inline=false },
+            { name="Username",      value=lp.Name,                                              inline=false },
+            { name="Cycle Income",  value=formatRP(income),                                     inline=false },
+            { name="Current Money", value=formatRP(getCleanMoney()).." (Est)",                   inline=false },
+            { name="Total Earning", value=formatRP(_G.TotalEarning).." (Est)",                  inline=false },
+            { name="Cycle Count",   value=tostring(_G.CycleCount),                              inline=false },
+            { name="Running Time",  value=getRunningTime(),                                     inline=false },
             { name="Session Time",  value=SessionStart and formatDuration(os.time()-SessionStart) or "—", inline=false },
-            { name="Session /Hour", value="RP. "..formatShort(getSessionIPH()),           inline=false },
-            { name="Est /Hour",     value="RP. "..formatShort(getIncomePerHour()),        inline=false },
-            { name="FPS",           value=string.format("%.0f fps", getFPS()),            inline=false },
+            { name="Session /Hour", value="RP. "..formatShort(getSessionIPH()),                 inline=false },
+            { name="Est /Hour",     value="RP. "..formatShort(getIncomePerHour()),              inline=false },
+            { name="FPS",           value=string.format("%.0f fps", getFPS()),                  inline=false },
         },
         image  = { url="https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&" },
         footer = { text="Made by .projectsion | "..os.date("%m/%d/%Y %I:%M %p") },
@@ -355,8 +351,6 @@ local function runAutofarm()
                 and network.RemoteEvents:FindFirstChild("Job")
 
             if remote then remote:FireServer("Truck") end
-
-            -- optimized jitter: 0.3 + 0.15~0.25s
             task.wait(0.3 + math.random(15, 25) / 100)
 
             local etc     = Workspace:FindFirstChild("Etc")
@@ -384,7 +378,6 @@ local function runAutofarm()
                 while waypointFolder and waypointFolder:FindFirstChild("Waypoint") and checkTimeout < 2 do
                     task.wait(0.2); checkTimeout += 0.2
                 end
-                -- optimized fail jitter: 0.15~0.30s
                 task.wait(0.15 + math.random(0, 15) / 100)
             end
         until dapetRuteBagus or not _G.Autofarm
@@ -398,21 +391,13 @@ local function runAutofarm()
         hrp.CFrame = spawnerPart.CFrame
         task.wait(0.4)
         fireproximityprompt(spawnerPart:WaitForChild("Prompt"))
+        task.wait(2.5)
 
-        -- wait for waypoint to confirm, then hold for payment
-                        local timeout = 0
-                        repeat
-                            task.wait(0.5); timeout += 0.5
-                            local wCheck = waypointFolder:FindFirstChild("Waypoint")
-                            if not wCheck or (wCheck:GetPivot().Position - oldWaypointPos).Magnitude > 10 then
-                                break
-                            end
-                        until timeout >= 2
+        local myTruck = getMyTruck()
 
-                        -- tunggu server transfer duit sebelum destroy
-                        task.wait(3.5)
-
-                        break
+        if myTruck then
+            hrp.CFrame = myTruck.DriveSeat.CFrame
+            task.wait(0.2)
             fireproximityprompt(myTruck.DriveSeat:WaitForChild("PromptDriveSeat"))
 
             while _G.Autofarm do
@@ -435,7 +420,6 @@ local function runAutofarm()
                     end
 
                     EarnedMoney    = getCleanMoney() - StartMoney
-                    -- optimized: 45 → 42s
                     NextTeleportIn = 38
 
                     repeat
@@ -448,18 +432,21 @@ local function runAutofarm()
 
                     if _G.Autofarm and myTruck and myTruck.Parent then
                         local oldWaypointPos = targetCFrame.Position
+
                         if primary then
                             primary.AssemblyLinearVelocity = Vector3.zero
                             primary.AssemblyAngularVelocity = Vector3.zero
                         end
+
                         if DelayLabel then
                             DelayLabel:Set({ Title="Status:", Content=string.format("Teleporting... (%.0f fps)", getFPS()) })
                         end
+
                         steppedTruckTeleport(myTruck, targetCFrame)
                         _G.TotalTeleportCount += 1
                         logDestinationComplete()
 
-                        -- optimized: 4s → 2s
+                        -- tunggu waypoint confirm
                         local timeout = 0
                         repeat
                             task.wait(0.5); timeout += 0.5
@@ -468,6 +455,12 @@ local function runAutofarm()
                                 break
                             end
                         until timeout >= 2
+
+                        -- tunggu server transfer duit sebelum destroy
+                        if DelayLabel then
+                            DelayLabel:Set({ Title="Status:", Content="Waiting payment..." })
+                        end
+                        task.wait(3.5)
 
                         break
                     end
@@ -490,7 +483,6 @@ local function runAutofarm()
             if humanoid and humanoid.SeatPart then humanoid.Jump = true end
             if myTruck and myTruck.Parent then myTruck:Destroy() end
 
-            -- optimized: 1.5s → 0.8s
             task.wait(0.8)
         end
         task.wait(0.5)
@@ -501,7 +493,7 @@ end
 local Window = Rayfield:CreateWindow({
     Name            = "Car Driving Indonesia | By .projectsion",
     LoadingTitle    = "Projectsion Loading...",
-    LoadingSubtitle = "Version 3.1 (optimized cycle + auto kick)",
+    LoadingSubtitle = "Version 3.1 (payment wait fix)",
     ConfigurationSaving = { Enabled=false },
     Discord         = { Enabled=false },
     KeySystem       = false,
