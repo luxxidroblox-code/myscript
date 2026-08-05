@@ -399,14 +399,20 @@ local function runAutofarm()
         task.wait(0.4)
         fireproximityprompt(spawnerPart:WaitForChild("Prompt"))
 
-        -- optimized: 4s → 2.5s
-        task.wait(2.5)
+        -- wait for waypoint to confirm, then hold for payment
+                        local timeout = 0
+                        repeat
+                            task.wait(0.5); timeout += 0.5
+                            local wCheck = waypointFolder:FindFirstChild("Waypoint")
+                            if not wCheck or (wCheck:GetPivot().Position - oldWaypointPos).Magnitude > 10 then
+                                break
+                            end
+                        until timeout >= 2
 
-        local myTruck = getMyTruck()
+                        -- tunggu server transfer duit sebelum destroy
+                        task.wait(3.5)
 
-        if myTruck then
-            hrp.CFrame = myTruck.DriveSeat.CFrame
-            task.wait(0.2)
+                        break
             fireproximityprompt(myTruck.DriveSeat:WaitForChild("PromptDriveSeat"))
 
             while _G.Autofarm do
@@ -430,7 +436,7 @@ local function runAutofarm()
 
                     EarnedMoney    = getCleanMoney() - StartMoney
                     -- optimized: 45 → 42s
-                    NextTeleportIn = 42
+                    NextTeleportIn = 38
 
                     repeat
                         task.wait(1)
