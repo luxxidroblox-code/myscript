@@ -477,7 +477,7 @@ local function runAutofarm()
         hrp.CFrame = uprightCF(spawnerPart.CFrame, 3)
         task.wait(0.4)
         fireproximityprompt(spawnerPart:WaitForChild("Prompt"))
-        task.wait(2.5)
+        task.wait(2)
 
         local myTruck = getMyTruck()
 
@@ -544,7 +544,7 @@ local function runAutofarm()
                         if DelayLabel then
                             DelayLabel:Set({ Title="Status:", Content="Waiting payment..." })
                         end
-                        task.wait(3.5)
+                        task.wait(1.5)
 
                         break
                     end
