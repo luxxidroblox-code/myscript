@@ -98,7 +98,7 @@ local function rebuildPlatforms()
         for _, wp in ipairs(waypointFolder:GetChildren()) do
             local pos = (wp:IsA("Model") and wp:GetPivot().Position)
                 or (wp:IsA("BasePart") and wp.Position)
-            if pos then buildPlatform(pos, 400, 400, 14) end
+            if pos then buildPlatform(pos, 400, 400, 25) end
         end
     end
 
@@ -455,7 +455,7 @@ local function runAutofarm()
                     local wpos = waypoint:IsA("Model")
                         and waypoint:GetPivot().Position
                         or waypoint.Position
-                    buildPlatform(wpos, 400, 400, 14)
+                    buildPlatform(wpos, 400, 400, 25)
                 end
                 dapetRuteBagus = true
             else
