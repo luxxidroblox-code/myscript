@@ -444,7 +444,7 @@ local function runAutofarm()
                 task.wait(0.3)
                 local prompt = starter:FindFirstChild("Prompt")
                 if prompt then fireproximityprompt(prompt) end
-                task.wait(0.5)
+                task.wait(1)
             end
 
             local waypointFolder = etc and etc:FindFirstChild("Waypoint")
@@ -506,7 +506,7 @@ local function runAutofarm()
                     end
 
                     EarnedMoney    = getCleanMoney() - StartMoney
-                    NextTeleportIn = 42.5
+                    NextTeleportIn = 42
 
                     repeat
                         task.wait(1)
