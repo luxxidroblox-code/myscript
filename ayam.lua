@@ -110,7 +110,8 @@ local function rebuildPlatforms()
         and etc.Job:FindFirstChild("Truck")
         and etc.Job.Truck:FindFirstChild("Spawner")
         and etc.Job.Truck.Spawner:FindFirstChild("Part")
-    if spawnerPart then buildPlatform(spawnerPart.Position, 200, 200) end
+    if spawnerPart then buildPlatform(spawnerPart.Position - Vector3.new(0, 6, 0), 200, 200) 
+end
 end
 
 -- ── map delete ────────────────────────────────────────────
