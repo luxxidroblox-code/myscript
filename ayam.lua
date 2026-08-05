@@ -98,7 +98,7 @@ local function rebuildPlatforms()
         for _, wp in ipairs(waypointFolder:GetChildren()) do
             local pos = (wp:IsA("Model") and wp:GetPivot().Position)
                 or (wp:IsA("BasePart") and wp.Position)
-            if pos then buildPlatform(pos, 400, 400, 25) end
+            if pos then buildPlatform(pos, 1000, 1000, 25) end
         end
     end
 
@@ -459,7 +459,7 @@ local function runAutofarm()
                     local wpos = waypoint:IsA("Model")
                         and waypoint:GetPivot().Position
                         or waypoint.Position
-                    buildPlatform(wpos, 400, 400, 25)
+                    buildPlatform(wpos, 1000, 1000, 25)
                 end
                 dapetRuteBagus = true
             else
@@ -557,7 +557,7 @@ local function runAutofarm()
                                 local wpos = nextWp:IsA("Model")
                                     and nextWp:GetPivot().Position
                                     or nextWp.Position
-                                buildPlatform(wpos, 400, 400, 25)
+                                buildPlatform(wpos, 1000, 1000, 25)
                             end
                             if DelayLabel then
                                 DelayLabel:Set({ Title="Status:", Content="Next dest ready — skipping reset!" })
