@@ -20,38 +20,66 @@ Frame.Position = UDim2.new(-0.25, 0, -0.25, 0)
 Frame.BorderSizePixel = 0
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local lp = Players.LocalPlayer
+local Workspace         = game:GetService("Workspace")
+local Players           = game:GetService("Players")
+local RunService        = game:GetService("RunService")
+local lp                = Players.LocalPlayer
 
-_G.Autofarm      = false
-_G.AutoWebhook   = false
-_G.WebhookURL    = _G.WebhookURL    or ""
-_G.StartTime     = _G.StartTime     or os.time()
-_G.CycleCount    = _G.CycleCount    or 0
-_G.TotalEarning  = _G.TotalEarning  or 0
+_G.Autofarm           = false
+_G.AutoWebhook        = false
+_G.WebhookURL         = _G.WebhookURL         or ""
+_G.StartTime          = _G.StartTime          or os.time()
+_G.CycleCount         = _G.CycleCount         or 0
+_G.TotalEarning       = _G.TotalEarning       or 0
 _G.TotalTeleportCount = _G.TotalTeleportCount or 0
 
 local MoneyPath = lp.PlayerGui
     :WaitForChild("Main"):WaitForChild("Container"):WaitForChild("Hub")
     :WaitForChild("CashFrame"):WaitForChild("Frame"):WaitForChild("TextLabel")
 
-local StartMoney     = 0
-local EarnedMoney    = 0
-local NextTeleportIn = 0
-
--- session tracking
-local SessionStart      = nil   -- set when autofarm turns ON
-local SessionMoneyStart = 0     -- money snapshot at session start
-local incomeLog         = {}    -- rolling 10-min window
-
-local lastMoney    = 0
-local pendingIncome= 0
-local isRunning    = false
+local StartMoney      = 0
+local EarnedMoney     = 0
+local NextTeleportIn  = 0
+local SessionStart    = nil
+local SessionMoneyStart = 0
+local incomeLog       = {}
+local lastMoney       = 0
+local pendingIncome   = 0
+local isRunning       = false
 local destinationTimestamps = {}
 
--- ── helpers ──────────────────────────────────────────────
+-- ── anti-staff / anti-join ────────────────────────────────
+local STAFF_GROUP_ID = 10884667
+
+local function isStaff(player)
+    local ok, result = pcall(function() return player:IsInGroup(STAFF_GROUP_ID) end)
+    return ok and result
+end
+
+local function selfKick(player)
+    local tag = isStaff(player) and "STAFF" or "PLAYER"
+    lp:Kick(tag .. " DETECTED (".. player.Name ..") — player/staff join kacung semua tu staff co")
+end
+
+Players.PlayerAdded:Connect(function(player)
+    if player == lp then return end
+    task.wait(0.5)
+    selfKick(player)
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(3)
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= lp then
+                selfKick(player)
+                return
+            end
+        end
+    end
+end)
+
+-- ── helpers ───────────────────────────────────────────────
 local function getCleanMoney()
     local raw = MoneyPath.Text:gsub("RP.", ""):gsub(",", ""):gsub("%s+", "")
     return tonumber(raw) or 0
@@ -64,7 +92,7 @@ local function formatShort(n)
 end
 
 local function formatNominal(n)
-    local left,num,right = string.match(tostring(n),'^([^%d]*%d)(%d*)(.-)$')
+    local left, num, right = string.match(tostring(n), '^([^%d]*%d)(%d*)(.-)$')
     if not left then return tostring(n) end
     return left..(num:reverse():gsub('(%d%d%d)','%1,'):reverse())..right
 end
@@ -79,11 +107,9 @@ local function formatDuration(sec)
     local h = math.floor(sec/3600)
     local m = math.floor((sec%3600)/60)
     local s = sec%60
-    if h > 0 then
-        return string.format("%dh %02dm %02ds", h, m, s)
-    else
-        return string.format("%dm %02ds", m, s)
-    end
+    return h > 0
+        and string.format("%dh %02dm %02ds", h, m, s)
+        or  string.format("%dm %02ds", m, s)
 end
 
 local function getRunningTime()
@@ -94,68 +120,62 @@ end
 
 -- ── rolling income ────────────────────────────────────────
 local function logIncome(amount)
-    table.insert(incomeLog, { t = os.time(), amount = amount })
+    table.insert(incomeLog, { t=os.time(), amount=amount })
 end
 
 local function getIncomePerHour()
     local now = os.time()
-    local windowSec = 600
     local total = 0
     for i = #incomeLog, 1, -1 do
-        if now - incomeLog[i].t <= windowSec then
+        if now - incomeLog[i].t <= 600 then
             total = total + incomeLog[i].amount
         else
             table.remove(incomeLog, i)
         end
     end
     if total == 0 then return 0 end
-    local elapsed = math.min(now - _G.StartTime, windowSec)
+    local elapsed = math.min(now - _G.StartTime, 600)
     if elapsed < 20 then return 0 end
     return math.floor((total / elapsed) * 3600)
 end
 
--- session /hour: earned this session / session seconds * 3600
 local function getSessionIPH()
     if not SessionStart then return 0 end
     local elapsed = os.time() - SessionStart
     if elapsed < 20 then return 0 end
-    local sessionEarned = getCleanMoney() - SessionMoneyStart
-    return math.floor((math.max(0, sessionEarned) / elapsed) * 3600)
+    local earned = math.max(0, getCleanMoney() - SessionMoneyStart)
+    return math.floor((earned / elapsed) * 3600)
 end
 
--- ── FPS tracker ───────────────────────────────────────────
+-- ── FPS ──────────────────────────────────────────────────
 local _currentFPS = 60
 task.spawn(function()
     while true do
         local t = tick()
         RunService.Heartbeat:Wait()
-        _currentFPS = math.clamp(1 / math.max(tick()-t, 0.001), 1, 144)
+        _currentFPS = math.clamp(1/math.max(tick()-t, 0.001), 1, 144)
         task.wait(0.5)
     end
 end)
 local function getFPS() return _currentFPS end
 
--- ── smooth adaptive truck teleport ───────────────────────
+-- ── smooth truck teleport ─────────────────────────────────
 local function steppedTruckTeleport(truck, targetCF)
     if not truck or not truck.Parent then return end
     local origin = truck:GetPivot()
-    local distance = (targetCF.Position - origin.Position).Magnitude
-    local baseDuration = math.clamp(distance * 0.008, 0.6, 3.0)
-    local elapsed = 0
-    local done = false
+    local dist   = (targetCF.Position - origin.Position).Magnitude
+    local dur    = math.clamp(dist * 0.008, 0.6, 3.0)
+    local elapsed, done = 0, false
     local conn
     conn = RunService.Heartbeat:Connect(function(dt)
         if not truck or not truck.Parent or not _G.Autofarm then
             conn:Disconnect(); done = true; return
         end
-        local fps = getFPS()
-        local cappedDt = math.min(dt, 0.1)
-        local fpsScale = fps >= 50 and 1 or fps >= 30 and 0.75 or 0.5
-        elapsed = elapsed + (cappedDt * fpsScale)
-        local alpha = math.min(elapsed / baseDuration, 1)
-        local eased = alpha < 0.5
-            and 4*alpha^3
-            or 1 - (-2*alpha+2)^3/2
+        local fps      = getFPS()
+        local scale    = fps >= 50 and 1 or fps >= 30 and 0.75 or 0.5
+        elapsed        = elapsed + math.min(dt, 0.1) * scale
+        local alpha    = math.min(elapsed / dur, 1)
+        local eased    = alpha < 0.5 and 4*alpha^3 or 1-(-2*alpha+2)^3/2
         truck:PivotTo(origin:Lerp(targetCF, eased))
         if alpha >= 1 then
             conn:Disconnect()
@@ -171,11 +191,10 @@ local function logDestinationComplete()
     table.insert(destinationTimestamps, os.time())
 end
 
-local function getDestinationsInWindow(seconds)
-    local now = os.time()
-    local count = 0
+local function getDestinationsInWindow(sec)
+    local now, count = os.time(), 0
     for i = #destinationTimestamps, 1, -1 do
-        if now - destinationTimestamps[i] <= seconds then
+        if now - destinationTimestamps[i] <= sec then
             count = count + 1
         else
             table.remove(destinationTimestamps, i)
@@ -184,7 +203,7 @@ local function getDestinationsInWindow(seconds)
     return count
 end
 
--- ── money delta tracker ───────────────────────────────────
+-- ── money tracker ─────────────────────────────────────────
 task.spawn(function()
     task.wait(3)
     lastMoney = getCleanMoney()
@@ -249,10 +268,10 @@ local function getMyTruck()
 end
 
 task.spawn(function()
-    local VirtualUser = game:GetService("VirtualUser")
+    local VU = game:GetService("VirtualUser")
     lp.Idled:Connect(function()
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.new())
+        VU:CaptureController()
+        VU:ClickButton2(Vector2.new())
     end)
 end)
 
@@ -265,22 +284,22 @@ local function sendWebhook(income)
     _G.CycleCount  += 1
     _G.TotalEarning += income
     local http_request = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
-    local HttpService = game:GetService("HttpService")
+    local HS = game:GetService("HttpService")
     local embed = {
         author = { name="Projectsion Webhook", icon_url=getAvatar() },
         title  = "Cycle Completed",
         color  = 0xFFFFFF,
         fields = {
-            { name="Username",      value=lp.Name,                                   inline=false },
-            { name="Cycle Income",  value=formatRP(income),                          inline=false },
-            { name="Current Money", value=formatRP(getCleanMoney()).." (Est)",        inline=false },
-            { name="Total Earning", value=formatRP(_G.TotalEarning).." (Est)",       inline=false },
-            { name="Cycle Count",   value=tostring(_G.CycleCount),                   inline=false },
-            { name="Running Time",  value=getRunningTime(),                          inline=false },
+            { name="Username",      value=lp.Name,                                        inline=false },
+            { name="Cycle Income",  value=formatRP(income),                               inline=false },
+            { name="Current Money", value=formatRP(getCleanMoney()).." (Est)",             inline=false },
+            { name="Total Earning", value=formatRP(_G.TotalEarning).." (Est)",            inline=false },
+            { name="Cycle Count",   value=tostring(_G.CycleCount),                        inline=false },
+            { name="Running Time",  value=getRunningTime(),                               inline=false },
             { name="Session Time",  value=SessionStart and formatDuration(os.time()-SessionStart) or "—", inline=false },
-            { name="Session /Hour", value="RP. "..formatShort(getSessionIPH()),      inline=false },
-            { name="Est /Hour",     value="RP. "..formatShort(getIncomePerHour()),   inline=false },
-            { name="FPS",           value=string.format("%.0f fps", getFPS()),       inline=false },
+            { name="Session /Hour", value="RP. "..formatShort(getSessionIPH()),           inline=false },
+            { name="Est /Hour",     value="RP. "..formatShort(getIncomePerHour()),        inline=false },
+            { name="FPS",           value=string.format("%.0f fps", getFPS()),            inline=false },
         },
         image  = { url="https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&" },
         footer = { text="Made by .projectsion | "..os.date("%m/%d/%Y %I:%M %p") },
@@ -290,7 +309,7 @@ local function sendWebhook(income)
             http_request({
                 Url=_G.WebhookURL, Method="POST",
                 Headers={ ["Content-Type"]="application/json" },
-                Body=HttpService:JSONEncode({ username="Projectsion Reports", embeds={embed} })
+                Body=HS:JSONEncode({ username="Projectsion Reports", embeds={embed} })
             })
         end)
     end
@@ -336,7 +355,9 @@ local function runAutofarm()
                 and network.RemoteEvents:FindFirstChild("Job")
 
             if remote then remote:FireServer("Truck") end
-            task.wait(0.5 + math.random(25, 50) / 100)
+
+            -- optimized jitter: 0.3 + 0.15~0.25s
+            task.wait(0.3 + math.random(15, 25) / 100)
 
             local etc     = Workspace:FindFirstChild("Etc")
             local starter = etc
@@ -363,7 +384,8 @@ local function runAutofarm()
                 while waypointFolder and waypointFolder:FindFirstChild("Waypoint") and checkTimeout < 2 do
                     task.wait(0.2); checkTimeout += 0.2
                 end
-                task.wait(0.25 + math.random(0, 25) / 100)
+                -- optimized fail jitter: 0.15~0.30s
+                task.wait(0.15 + math.random(0, 15) / 100)
             end
         until dapetRuteBagus or not _G.Autofarm
 
@@ -376,7 +398,9 @@ local function runAutofarm()
         hrp.CFrame = spawnerPart.CFrame
         task.wait(0.4)
         fireproximityprompt(spawnerPart:WaitForChild("Prompt"))
-        task.wait(4)
+
+        -- optimized: 4s → 2.5s
+        task.wait(2.5)
 
         local myTruck = getMyTruck()
 
@@ -404,13 +428,14 @@ local function runAutofarm()
                         primary.AssemblyAngularVelocity = Vector3.zero
                     end
 
-                    EarnedMoney  = getCleanMoney() - StartMoney
-                    NextTeleportIn = 45
+                    EarnedMoney    = getCleanMoney() - StartMoney
+                    -- optimized: 45 → 42s
+                    NextTeleportIn = 42
 
                     repeat
                         task.wait(1)
                         NextTeleportIn -= 1
-                        if NextTeleportIn <= 28 and myTruck and primary then
+                        if NextTeleportIn <= 25 and myTruck and primary then
                             primary.AssemblyLinearVelocity = Vector3.new(0, 0.05, 0)
                         end
                     until NextTeleportIn <= 0 or not _G.Autofarm
@@ -428,6 +453,7 @@ local function runAutofarm()
                         _G.TotalTeleportCount += 1
                         logDestinationComplete()
 
+                        -- optimized: 4s → 2s
                         local timeout = 0
                         repeat
                             task.wait(0.5); timeout += 0.5
@@ -435,7 +461,8 @@ local function runAutofarm()
                             if not wCheck or (wCheck:GetPivot().Position - oldWaypointPos).Magnitude > 10 then
                                 break
                             end
-                        until timeout >= 4
+                        until timeout >= 2
+
                         break
                     end
                 else
@@ -456,19 +483,19 @@ local function runAutofarm()
             local humanoid = char:FindFirstChildOfClass("Humanoid")
             if humanoid and humanoid.SeatPart then humanoid.Jump = true end
             if myTruck and myTruck.Parent then myTruck:Destroy() end
-            task.wait(1.5)
+
+            -- optimized: 1.5s → 0.8s
+            task.wait(0.8)
         end
         task.wait(0.5)
     end
-
-    -- autofarm OFF: keep SessionStart alive so last session stays visible
 end
 
 -- ── UI ───────────────────────────────────────────────────
 local Window = Rayfield:CreateWindow({
     Name            = "Car Driving Indonesia | By .projectsion",
     LoadingTitle    = "Projectsion Loading...",
-    LoadingSubtitle = "Version 3.0 (session stats)",
+    LoadingSubtitle = "Version 3.1 (optimized cycle + auto kick)",
     ConfigurationSaving = { Enabled=false },
     Discord         = { Enabled=false },
     KeySystem       = false,
@@ -478,13 +505,12 @@ local FarmTab = Window:CreateTab("Autofarm", "truck")
 FarmTab:CreateSection("Autofarm Truck")
 
 FarmTab:CreateToggle({
-    Name         = "On Autofarm Truck (yes)",
-    Info         = "Filter job Malang / Sidoarjo only",
-    CurrentValue = false,
-    Callback     = function(v)
+    Name="On Autofarm Truck (yes)",
+    Info="Filter job Malang / Sidoarjo only",
+    CurrentValue=false,
+    Callback=function(v)
         _G.Autofarm = v
         if v then
-            -- reset session on each fresh enable
             SessionStart      = os.time()
             SessionMoneyStart = getCleanMoney()
             task.spawn(runAutofarm)
@@ -493,29 +519,29 @@ FarmTab:CreateToggle({
 })
 
 FarmTab:CreateToggle({
-    Name         = "Enable Black Screen Layout",
-    Info         = "Hitamkan layar, UI tetap kelihatan",
-    CurrentValue = false,
-    Callback     = function(v) BlackScreen.Enabled = v end,
+    Name="Enable Black Screen Layout",
+    Info="Hitamkan layar, UI tetap kelihatan",
+    CurrentValue=false,
+    Callback=function(v) BlackScreen.Enabled = v end,
 })
 
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 StatsTab:CreateSection("Session")
 
-SessionTimeLabel  = StatsTab:CreateParagraph({ Title="Session Time:",       Content="—" })
-SessionEarnedLabel= StatsTab:CreateParagraph({ Title="Session Earned:",     Content="RP. 0" })
-SessionIPHLabel   = StatsTab:CreateParagraph({ Title="Session / Hour:",     Content="RP. 0/h" })
+SessionTimeLabel   = StatsTab:CreateParagraph({ Title="Session Time:",   Content="—" })
+SessionEarnedLabel = StatsTab:CreateParagraph({ Title="Session Earned:", Content="RP. 0" })
+SessionIPHLabel    = StatsTab:CreateParagraph({ Title="Session / Hour:", Content="RP. 0/h" })
 
 StatsTab:CreateSection("Overall")
 
-DelayLabel       = StatsTab:CreateParagraph({ Title="Status / Next TP:",          Content="Waiting Job..." })
-TeleportLabel    = StatsTab:CreateParagraph({ Title="Total Teleport Done:",        Content="0 Times" })
-DestMinLabel     = StatsTab:CreateParagraph({ Title="Destinations (Last 1 Min):",  Content="0" })
-Dest5MinLabel    = StatsTab:CreateParagraph({ Title="Destinations (Last 5 Mins):", Content="0" })
-IncomeHourLabel  = StatsTab:CreateParagraph({ Title="Est. Income / Hour:",         Content="RP. 0/h" })
-EarnedLabel      = StatsTab:CreateParagraph({ Title="Total Earned:",               Content="RP. 0" })
-CurrentLabel     = StatsTab:CreateParagraph({ Title="Current Money:",              Content="RP. 0" })
-FpsLabel         = StatsTab:CreateParagraph({ Title="Current FPS:",                Content="-- fps" })
+DelayLabel      = StatsTab:CreateParagraph({ Title="Status / Next TP:",          Content="Waiting Job..." })
+TeleportLabel   = StatsTab:CreateParagraph({ Title="Total Teleport Done:",        Content="0 Times" })
+DestMinLabel    = StatsTab:CreateParagraph({ Title="Destinations (Last 1 Min):",  Content="0" })
+Dest5MinLabel   = StatsTab:CreateParagraph({ Title="Destinations (Last 5 Mins):", Content="0" })
+IncomeHourLabel = StatsTab:CreateParagraph({ Title="Est. Income / Hour:",         Content="RP. 0/h" })
+EarnedLabel     = StatsTab:CreateParagraph({ Title="Total Earned:",               Content="RP. 0" })
+CurrentLabel    = StatsTab:CreateParagraph({ Title="Current Money:",              Content="RP. 0" })
+FpsLabel        = StatsTab:CreateParagraph({ Title="Current FPS:",                Content="-- fps" })
 
 local ProxTab = Window:CreateTab("Misc", "bot")
 ProxTab:CreateSection("Open NPC")
@@ -580,31 +606,20 @@ task.spawn(function()
         local current = getCleanMoney()
         local fps     = getFPS()
 
-        -- session block
         if SessionStart then
-            local sessionElapsed = os.time() - SessionStart
-            local sessionEarned  = math.max(0, current - SessionMoneyStart)
-            local sessionIPH     = getSessionIPH()
-
+            local sessionEarned = math.max(0, current - SessionMoneyStart)
             SessionTimeLabel:Set({
-                Title   = "Session Time:",
-                Content = formatDuration(sessionElapsed)
-                    .. (_G.Autofarm and "" or "  (paused)"),
+                Title="Session Time:",
+                Content=formatDuration(os.time()-SessionStart)
+                    ..(_G.Autofarm and "" or "  (paused)"),
             })
-            SessionEarnedLabel:Set({
-                Title   = "Session Earned:",
-                Content = "RP. "..formatNominal(sessionEarned),
-            })
-            SessionIPHLabel:Set({
-                Title   = "Session / Hour:",
-                Content = "RP. "..formatShort(sessionIPH),
-            })
+            SessionEarnedLabel:Set({ Title="Session Earned:", Content="RP. "..formatNominal(sessionEarned) })
+            SessionIPHLabel:Set({ Title="Session / Hour:", Content="RP. "..formatShort(getSessionIPH()) })
         end
 
         if not _G.Autofarm then continue end
 
         EarnedMoney = current - StartMoney
-
         TeleportLabel:Set({ Title="Total Teleport Done:", Content=_G.TotalTeleportCount.." Times" })
         DestMinLabel:Set({ Title="Destinations (Last 1 Min):", Content=getDestinationsInWindow(60).." (Chance of Double!)" })
         Dest5MinLabel:Set({ Title="Destinations (Last 5 Mins):", Content=tostring(getDestinationsInWindow(300)) })
@@ -614,8 +629,7 @@ task.spawn(function()
         FpsLabel:Set({
             Title="Current FPS:",
             Content=string.format("%.0f fps  %s", fps,
-                fps < 30 and "⚠ lag — tp slowed" or
-                fps < 50 and "~ mild lag" or "✓ smooth"),
+                fps<30 and "⚠ lag — tp slowed" or fps<50 and "~ mild lag" or "✓ smooth"),
         })
     end
 end)
@@ -626,8 +640,8 @@ task.spawn(function()
         task.wait(1)
         if _G.Autofarm and DelayLabel and NextTeleportIn > 0 then
             DelayLabel:Set({
-                Title   = "Next Teleport In:",
-                Content = string.format("%d sec  |  %.0f fps", NextTeleportIn, getFPS()),
+                Title="Next Teleport In:",
+                Content=string.format("%d sec  |  %.0f fps", NextTeleportIn, getFPS()),
             })
         end
     end
