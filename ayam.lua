@@ -230,7 +230,7 @@ task.spawn(function()
 end)
 local function getFPS() return _currentFPS end
 
--- ── smooth truck teleport (ease in-out quint) ─────────────
+-- ── smooth truck teleport ─────────────────────────────────
 local function steppedTruckTeleport(truck, targetCF)
     if not truck or not truck.Parent then return end
     local origin = truck:GetPivot()
@@ -413,7 +413,7 @@ local function isTargetDestination(waypoint)
     return false
 end
 
--- ── roll until target (fixed) ─────────────────────────────
+-- ── roll until target ─────────────────────────────────────
 local function rollUntilTarget(remote, etc, hrp)
     local waypointFolder = etc and etc:FindFirstChild("Waypoint")
     if not waypointFolder then return false end
@@ -430,7 +430,7 @@ local function rollUntilTarget(remote, etc, hrp)
             DelayLabel:Set({ Title = "Status:", Content = "Rolling Job (Attempt " .. attempt .. ")..." })
         end
 
-        -- 1. fire unemployed, wait for server to process
+        -- fire unemployed, wait for server
         if remote then remote:FireServer("Unemployed") end
         task.wait(0.5)
 
@@ -440,7 +440,7 @@ local function rollUntilTarget(remote, etc, hrp)
             clearTimeout = clearTimeout + 0.1
         end
 
-        -- 2. hook ChildAdded BEFORE firing anything
+        -- hook ChildAdded BEFORE firing
         local gotWaypoint = nil
         local wpDone = false
         local conn
@@ -450,10 +450,10 @@ local function rollUntilTarget(remote, etc, hrp)
             conn:Disconnect()
         end)
 
-        -- 3. fire truck job
+        -- fire truck job
         if remote then remote:FireServer("Truck") end
 
-        -- 4. teleport to starter + fire prompt
+        -- teleport to starter + fire prompt
         if starter and hrp then
             hrp.CFrame = uprightCF(starter:GetPivot(), 3)
             task.wait(0.15)
@@ -461,7 +461,7 @@ local function rollUntilTarget(remote, etc, hrp)
             if prompt then fireproximityprompt(prompt) end
         end
 
-        -- 5. wait for waypoint (max 3s)
+        -- wait for waypoint (max 3s)
         local wpTimeout = 0
         while not wpDone and wpTimeout < 3 do
             task.wait(0.05)
@@ -469,12 +469,14 @@ local function rollUntilTarget(remote, etc, hrp)
         end
         pcall(function() conn:Disconnect() end)
 
-        -- 6. fallback scan
+        -- fallback scan
         if not gotWaypoint then
             gotWaypoint = waypointFolder:FindFirstChild("Waypoint")
         end
 
-        -- 7. check target
+        -- small settle so BillboardGui text can populate
+        if gotWaypoint then task.wait(0.2) end
+
         if gotWaypoint and isTargetDestination(gotWaypoint) then
             if DelayLabel then
                 DelayLabel:Set({ Title = "Status:", Content = "Target found! Going to spawner..." })
@@ -497,7 +499,37 @@ local function rollUntilTarget(remote, etc, hrp)
     return false
 end
 
--- ── autofarm (fixed) ─────────────────────────────────────
+-- ── try spawn truck (retries spawner WITHOUT losing the job) ──
+local function trySpawnTruck(hrp, spawnerPart, maxAttempts)
+    maxAttempts = maxAttempts or 4
+    local myTruck = nil
+
+    for attempt = 1, maxAttempts do
+        if not _G.Autofarm then break end
+        if DelayLabel then
+            DelayLabel:Set({ Title = "Status:", Content = "Spawning truck (try " .. attempt .. "/" .. maxAttempts .. ")..." })
+        end
+
+        hrp.CFrame = uprightCF(spawnerPart.CFrame, 3)
+        task.wait(0.3)
+        fireproximityprompt(spawnerPart:WaitForChild("Prompt"))
+
+        -- wait up to 5s per attempt
+        local t = 0
+        repeat
+            task.wait(0.4)
+            t = t + 0.4
+            myTruck = getMyTruck()
+        until myTruck or t >= 5
+
+        if myTruck then break end
+        task.wait(0.5)
+    end
+
+    return myTruck
+end
+
+-- ── autofarm ─────────────────────────────────────────────
 local function runAutofarm()
     StartMoney = getCleanMoney()
     SessionStart = os.time()
@@ -513,6 +545,7 @@ local function runAutofarm()
             and network:FindFirstChild("RemoteEvents")
             and network.RemoteEvents:FindFirstChild("Job")
 
+        -- roll for target destination
         local dapetRuteBagus = rollUntilTarget(remote, etc, hrp)
         if not dapetRuteBagus or not _G.Autofarm then continue end
 
@@ -520,18 +553,8 @@ local function runAutofarm()
             :WaitForChild("Etc"):WaitForChild("Job")
             :WaitForChild("Truck"):WaitForChild("Spawner"):WaitForChild("Part")
 
-        hrp.CFrame = uprightCF(spawnerPart.CFrame, 3)
-        task.wait(0.4)
-        fireproximityprompt(spawnerPart:WaitForChild("Prompt"))
-
-        -- retry loop — no more flat wait + single check
-        local myTruck = nil
-        local truckTimeout = 0
-        repeat
-            task.wait(0.5)
-            truckTimeout = truckTimeout + 0.5
-            myTruck = getMyTruck()
-        until myTruck or truckTimeout >= 6
+        -- retry spawner WITHOUT firing Unemployed — keeps the job + destination alive
+        local myTruck = trySpawnTruck(hrp, spawnerPart, 4)
 
         if myTruck then
             hrp.CFrame = uprightCF(myTruck.DriveSeat.CFrame, 1)
@@ -628,23 +651,19 @@ local function runAutofarm()
                 DelayLabel:Set({ Title = "Status:", Content = "Clearing truck..." })
             end
 
-            -- NO Unemployed fire here — rollUntilTarget owns it
+            -- jump out of seat, destroy truck, then rollUntilTarget handles Unemployed
             local humanoid = char:FindFirstChildOfClass("Humanoid")
             if humanoid and humanoid.SeatPart then humanoid.Jump = true end
+            task.wait(0.3)
             if myTruck and myTruck.Parent then myTruck:Destroy() end
-
-            task.wait(1)
+            task.wait(0.8)
         else
-            -- truck never spawned — manual unemployed before retry
+            -- spawner genuinely failed after all retries — NOW safe to unemployed
             if DelayLabel then
-                DelayLabel:Set({ Title = "Status:", Content = "Truck spawn failed — retrying..." })
+                DelayLabel:Set({ Title = "Status:", Content = "Spawner failed — full reset..." })
             end
-            local network2 = ReplicatedStorage:FindFirstChild("NetworkContainer")
-            local remote2 = network2
-                and network2:FindFirstChild("RemoteEvents")
-                and network2.RemoteEvents:FindFirstChild("Job")
-            if remote2 then remote2:FireServer("Unemployed") end
-            task.wait(1)
+            if remote then remote:FireServer("Unemployed") end
+            task.wait(1.5)
         end
 
         task.wait(0.3)
@@ -655,7 +674,7 @@ end
 local Window = Rayfield:CreateWindow({
     Name = "Car Driving Indonesia | By .projectsion",
     LoadingTitle = "Projectsion Loading...",
-    LoadingSubtitle = "Version 3.5 (fixed spam + truck retry)",
+    LoadingSubtitle = "Version 3.6 (spawner retry — no job loss)",
     ConfigurationSaving = { Enabled = false },
     Discord = { Enabled = false },
     KeySystem = false,
