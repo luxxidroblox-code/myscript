@@ -54,7 +54,7 @@ local destinationTimestamps = {}
 local activePlatforms = {}
 local mapDeleted = false
 local lastDestEarned = 0
-local lastDestName = "—"
+local lastDestName = "â€”"
 local cycleMoneySnapshot = 0
 
 local function uprightCF(cf, yOffset)
@@ -135,7 +135,7 @@ end
 
 local function selfKick(player)
     local tag = isStaff(player) and "STAFF" or "PLAYER"
-    lp:Kick(tag .. " DETECTED (" .. player.Name .. ") — player/staff join kacung semua tu staff co")
+    lp:Kick(tag .. " DETECTED (" .. player.Name .. ") â€” player/staff join kacung semua tu staff co")
 end
 
 Players.PlayerAdded:Connect(function(player)
@@ -370,7 +370,7 @@ local function sendWebhook(income)
             { name = "Total Earning", value = formatRP(_G.TotalEarning) .. " (Est)",                           inline = false },
             { name = "Cycle Count",   value = tostring(_G.CycleCount),                                         inline = false },
             { name = "Running Time",  value = getRunningTime(),                                                 inline = false },
-            { name = "Session Time",  value = SessionStart and formatDuration(os.time() - SessionStart) or "—", inline = false },
+            { name = "Session Time",  value = SessionStart and formatDuration(os.time() - SessionStart) or "â€”", inline = false },
             { name = "Session /Hour", value = "RP. " .. formatShort(getSessionIPH()),                          inline = false },
             { name = "Est /Hour",     value = "RP. " .. formatShort(getIncomePerHour()),                       inline = false },
             { name = "FPS",           value = string.format("%.0f fps", getFPS()),                             inline = false },
@@ -427,7 +427,7 @@ local function updateCycleLabels(earned, destName)
     if LastDestLabel then
         LastDestLabel:Set({
             Title = "Last Destination:",
-            Content = destName .. "  →  RP. " .. formatNominal(earned)
+            Content = destName .. "  â†’  RP. " .. formatNominal(earned)
         })
     end
 end
@@ -502,6 +502,7 @@ local function rollUntilTarget(remote, etc, hrp)
     return false
 end
 
+-- â”€â”€â”€ AUTOFARM (repeat-until, goto continue pattern) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 local function runAutofarm()
     StartMoney = getCleanMoney()
     SessionStart = os.time()
@@ -618,7 +619,7 @@ local function runAutofarm()
                             end
 
                             if DelayLabel then
-                                DelayLabel:Set({ Title = "Status:", Content = "Next dest ready — skipping reset!" })
+                                DelayLabel:Set({ Title = "Status:", Content = "Next dest ready â€” skipping reset!" })
                             end
 
                             cycleMoneySnapshot = getCleanMoney()
@@ -661,6 +662,7 @@ local function runAutofarm()
         ::continue::
     until not _G.Autofarm
 end
+-- â”€â”€â”€ END AUTOFARM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 local Window = Rayfield:CreateWindow({
     Name = "Car Driving Indonesia | By .projectsion",
@@ -696,10 +698,10 @@ FarmTab:CreateToggle({
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 StatsTab:CreateSection("Cycle")
 CycleEarnedLabel = StatsTab:CreateParagraph({ Title = "Cycle Earned:",    Content = "RP. 0" })
-LastDestLabel    = StatsTab:CreateParagraph({ Title = "Last Destination:", Content = "—" })
+LastDestLabel    = StatsTab:CreateParagraph({ Title = "Last Destination:", Content = "â€”" })
 
 StatsTab:CreateSection("Session")
-SessionTimeLabel   = StatsTab:CreateParagraph({ Title = "Session Time:",   Content = "—" })
+SessionTimeLabel   = StatsTab:CreateParagraph({ Title = "Session Time:",   Content = "â€”" })
 SessionEarnedLabel = StatsTab:CreateParagraph({ Title = "Session Earned:", Content = "RP. 0" })
 SessionIPHLabel    = StatsTab:CreateParagraph({ Title = "Session / Hour:", Content = "RP. 0/h" })
 
@@ -829,8 +831,8 @@ task.spawn(function()
         FpsLabel:Set({
             Title = "Current FPS:",
             Content = string.format("%.0f fps  %s", fps,
-                fps < 30 and "⚠ lag — tp slowed" or
-                fps < 50 and "~ mild lag" or "✓ smooth"),
+                fps < 30 and "âš  lag â€” tp slowed" or
+                fps < 50 and "~ mild lag" or "âœ“ smooth"),
         })
     end
 end)
