@@ -566,7 +566,7 @@ local function runAutofarm()
                     -- snapshot sebelum deliver
                     cycleMoneySnapshot = getCleanMoney()
                     EarnedMoney = cycleMoneySnapshot - StartMoney
-                    NextTeleportIn = 42
+                    NextTeleportIn = 42.5
 
                     repeat
                         task.wait(1)
@@ -636,7 +636,7 @@ local function runAutofarm()
                             cycleMoneySnapshot = getCleanMoney()
                             lastDestName = getWaypointName(nextWaypoint)
                             EarnedMoney = cycleMoneySnapshot - StartMoney
-                            NextTeleportIn = 42
+                            NextTeleportIn = 42.5
                             -- lanjut loop tanpa break
 
                         else
