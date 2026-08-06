@@ -92,7 +92,6 @@ local function rebuildPlatforms()
     clearPlatforms()
     local etc = Workspace:FindFirstChild("Etc")
     if not etc then return end
-
     local waypointFolder = etc:FindFirstChild("Waypoint")
     if waypointFolder then
         for _, wp in ipairs(waypointFolder:GetChildren()) do
@@ -101,21 +100,15 @@ local function rebuildPlatforms()
             if pos then buildPlatform(pos, 400, 400, 25) end
         end
     end
-
     local starter = etc:FindFirstChild("Job")
         and etc.Job:FindFirstChild("Truck")
         and etc.Job.Truck:FindFirstChild("Starter")
-    if starter then
-        buildPlatform(starter:GetPivot().Position, 200, 200)
-    end
-
+    if starter then buildPlatform(starter:GetPivot().Position, 200, 200) end
     local spawnerPart = etc:FindFirstChild("Job")
         and etc.Job:FindFirstChild("Truck")
         and etc.Job.Truck:FindFirstChild("Spawner")
         and etc.Job.Truck.Spawner:FindFirstChild("Part")
-    if spawnerPart then
-        buildPlatform(spawnerPart.Position - Vector3.new(0, 6, 0), 200, 200)
-    end
+    if spawnerPart then buildPlatform(spawnerPart.Position - Vector3.new(0, 6, 0), 200, 200) end
 end
 
 local function deleteMap()
@@ -131,7 +124,7 @@ local function deleteMap()
     pcall(function() Workspace.Terrain:Clear() end)
 end
 
--- ── anti-staff / anti-join ────────────────────────────────
+-- ── anti-staff ────────────────────────────────────────────
 local STAFF_GROUP_ID = 10884667
 
 local function isStaff(player)
@@ -154,10 +147,7 @@ task.spawn(function()
     while true do
         task.wait(3)
         for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= lp then
-                selfKick(player)
-                return
-            end
+            if player ~= lp then selfKick(player) return end
         end
     end
 end)
@@ -169,13 +159,9 @@ local function getCleanMoney()
 end
 
 local function formatShort(n)
-    if n >= 1000000 then
-        return string.format("%.1fM/h", n / 1000000):gsub("%.0M", "M")
-    elseif n >= 1000 then
-        return string.format("%.1fK/h", n / 1000):gsub("%.0K", "K")
-    else
-        return tostring(n) .. "/h"
-    end
+    if n >= 1000000 then return string.format("%.1fM/h", n / 1000000):gsub("%.0M", "M")
+    elseif n >= 1000 then return string.format("%.1fK/h", n / 1000):gsub("%.0K", "K")
+    else return tostring(n) .. "/h" end
 end
 
 local function formatNominal(n)
@@ -194,22 +180,16 @@ local function formatDuration(sec)
     local h = math.floor(sec / 3600)
     local m = math.floor((sec % 3600) / 60)
     local s = sec % 60
-    if h > 0 then
-        return string.format("%dh %02dm %02ds", h, m, s)
-    else
-        return string.format("%dm %02ds", m, s)
-    end
+    if h > 0 then return string.format("%dh %02dm %02ds", h, m, s)
+    else return string.format("%dm %02ds", m, s) end
 end
 
 local function getRunningTime()
     local diff = os.time() - _G.StartTime
     return string.format("%02d:%02d:%02d",
-        math.floor(diff / 3600),
-        math.floor((diff % 3600) / 60),
-        diff % 60)
+        math.floor(diff / 3600), math.floor((diff % 3600) / 60), diff % 60)
 end
 
--- ── rolling income ────────────────────────────────────────
 local function logIncome(amount)
     table.insert(incomeLog, { t = os.time(), amount = amount })
 end
@@ -238,7 +218,7 @@ local function getSessionIPH()
     return math.floor((earned / elapsed) * 3600)
 end
 
--- ── FPS tracker ───────────────────────────────────────────
+-- ── FPS ──────────────────────────────────────────────────
 local _currentFPS = 60
 task.spawn(function()
     while true do
@@ -266,23 +246,17 @@ local function steppedTruckTeleport(truck, targetCF)
             done = true
             return
         end
-
         local fps = getFPS()
         local fpsScale = fps >= 50 and 1 or fps >= 30 and 0.75 or 0.5
         elapsed = elapsed + math.min(dt, 0.1) * fpsScale
-
         local alpha = math.min(elapsed / duration, 1)
-
-        -- ease in-out quint: smoother than cubic, very soft start + end
         local eased
         if alpha < 0.5 then
             eased = 16 * alpha ^ 5
         else
             eased = 1 - (-2 * alpha + 2) ^ 5 / 2
         end
-
         truck:PivotTo(origin:Lerp(targetCF, eased))
-
         if alpha >= 1 then
             conn:Disconnect()
             truck:PivotTo(targetCF)
@@ -398,16 +372,16 @@ local function sendWebhook(income)
         title = "Cycle Completed",
         color = 0xFFFFFF,
         fields = {
-            { name = "Username",      value = lp.Name,                                                        inline = false },
-            { name = "Cycle Income",  value = formatRP(income),                                               inline = false },
-            { name = "Current Money", value = formatRP(getCleanMoney()) .. " (Est)",                          inline = false },
-            { name = "Total Earning", value = formatRP(_G.TotalEarning) .. " (Est)",                         inline = false },
-            { name = "Cycle Count",   value = tostring(_G.CycleCount),                                       inline = false },
-            { name = "Running Time",  value = getRunningTime(),                                               inline = false },
+            { name = "Username",      value = lp.Name,                                                          inline = false },
+            { name = "Cycle Income",  value = formatRP(income),                                                 inline = false },
+            { name = "Current Money", value = formatRP(getCleanMoney()) .. " (Est)",                            inline = false },
+            { name = "Total Earning", value = formatRP(_G.TotalEarning) .. " (Est)",                           inline = false },
+            { name = "Cycle Count",   value = tostring(_G.CycleCount),                                         inline = false },
+            { name = "Running Time",  value = getRunningTime(),                                                 inline = false },
             { name = "Session Time",  value = SessionStart and formatDuration(os.time() - SessionStart) or "—", inline = false },
-            { name = "Session /Hour", value = "RP. " .. formatShort(getSessionIPH()),                        inline = false },
-            { name = "Est /Hour",     value = "RP. " .. formatShort(getIncomePerHour()),                     inline = false },
-            { name = "FPS",           value = string.format("%.0f fps", getFPS()),                           inline = false },
+            { name = "Session /Hour", value = "RP. " .. formatShort(getSessionIPH()),                          inline = false },
+            { name = "Est /Hour",     value = "RP. " .. formatShort(getIncomePerHour()),                       inline = false },
+            { name = "FPS",           value = string.format("%.0f fps", getFPS()),                             inline = false },
         },
         image = { url = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&" },
         footer = { text = "Made by .projectsion | " .. os.date("%m/%d/%Y %I:%M %p") },
@@ -439,7 +413,9 @@ local function isTargetDestination(waypoint)
     return false
 end
 
--- ── fast roll: ChildAdded react instant ──────────────────
+-- ── roll until target ─────────────────────────────────────
+-- FIX: ChildAdded dipasang SEBELUM fire + prompt
+-- biar ga kelewat waypoint yang muncul cepet
 local function rollUntilTarget(remote, etc, hrp)
     local waypointFolder = etc and etc:FindFirstChild("Waypoint")
     if not waypointFolder then return false end
@@ -452,21 +428,28 @@ local function rollUntilTarget(remote, etc, hrp)
             DelayLabel:Set({ Title = "Status:", Content = "Rolling Job (Attempt " .. attempt .. ")..." })
         end
 
-        -- clear waypoint lama
-        local existing = waypointFolder:FindFirstChild("Waypoint")
-        if existing then
-            if remote then remote:FireServer("Unemployed") end
-            local clearTimeout = 0
-            while waypointFolder:FindFirstChild("Waypoint") and clearTimeout < 1.5 do
-                task.wait(0.1)
-                clearTimeout = clearTimeout + 0.1
-            end
+        -- 1. clear waypoint lama dulu
+        if remote then remote:FireServer("Unemployed") end
+        local clearTimeout = 0
+        while waypointFolder:FindFirstChild("Waypoint") and clearTimeout < 2 do
+            task.wait(0.1)
+            clearTimeout = clearTimeout + 0.1
         end
 
-        -- fire truck
+        -- 2. pasang ChildAdded SEBELUM fire apapun
+        local gotWaypoint = nil
+        local wpDone = false
+        local conn
+        conn = waypointFolder.ChildAdded:Connect(function(child)
+            gotWaypoint = child
+            wpDone = true
+            conn:Disconnect()
+        end)
+
+        -- 3. fire truck
         if remote then remote:FireServer("Truck") end
 
-        -- teleport ke starter
+        -- 4. teleport ke starter + prompt
         local starter = etc:FindFirstChild("Job")
             and etc.Job:FindFirstChild("Truck")
             and etc.Job.Truck:FindFirstChild("Starter")
@@ -477,35 +460,20 @@ local function rollUntilTarget(remote, etc, hrp)
             if prompt then fireproximityprompt(prompt) end
         end
 
-        -- tunggu waypoint muncul via ChildAdded (react instant)
-        local gotWaypoint = nil
-        local wpDone = false
-        local conn
-
-        conn = waypointFolder.ChildAdded:Connect(function(child)
-            gotWaypoint = child
-            wpDone = true
-            conn:Disconnect()
-        end)
-
-        -- cek yang udah ada (fallback)
-        local alreadyExists = waypointFolder:FindFirstChild("Waypoint")
-        if alreadyExists then
-            conn:Disconnect()
-            gotWaypoint = alreadyExists
-            wpDone = true
-        end
-
-        -- max wait 1.5s
+        -- 5. tunggu waypoint muncul (max 2s)
         local wpTimeout = 0
-        while not wpDone and wpTimeout < 1.5 do
+        while not wpDone and wpTimeout < 2 do
             task.wait(0.05)
             wpTimeout = wpTimeout + 0.05
         end
-        if not wpDone then
-            pcall(function() conn:Disconnect() end)
+        pcall(function() conn:Disconnect() end)
+
+        -- 6. fallback: cek manual kalo ChildAdded miss
+        if not gotWaypoint then
+            gotWaypoint = waypointFolder:FindFirstChild("Waypoint")
         end
 
+        -- 7. cek target
         if gotWaypoint and isTargetDestination(gotWaypoint) then
             if _G.DeleteMap then
                 local wpos = gotWaypoint:IsA("Model")
@@ -516,7 +484,8 @@ local function rollUntilTarget(remote, etc, hrp)
             return true
         end
 
-        task.wait(0.1)
+        -- bukan target, langsung loop ulang
+        task.wait(0.05)
     end
 
     return false
@@ -541,7 +510,6 @@ local function runAutofarm()
         local dapetRuteBagus = rollUntilTarget(remote, etc, hrp)
         if not dapetRuteBagus or not _G.Autofarm then continue end
 
-        -- spawn truck
         local spawnerPart = Workspace
             :WaitForChild("Etc"):WaitForChild("Job")
             :WaitForChild("Truck"):WaitForChild("Spawner"):WaitForChild("Part")
@@ -636,7 +604,6 @@ local function runAutofarm()
                             end
                             EarnedMoney = getCleanMoney() - StartMoney
                             NextTeleportIn = 42
-                            -- lanjut loop langsung
                         else
                             break
                         end
@@ -671,7 +638,7 @@ end
 local Window = Rayfield:CreateWindow({
     Name = "Car Driving Indonesia | By .projectsion",
     LoadingTitle = "Projectsion Loading...",
-    LoadingSubtitle = "Version 3.4 (fast roll + smooth tween)",
+    LoadingSubtitle = "Version 3.4 (fixed roll + smooth tween)",
     ConfigurationSaving = { Enabled = false },
     Discord = { Enabled = false },
     KeySystem = false,
