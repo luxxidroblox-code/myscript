@@ -114,7 +114,7 @@ local function rebuildPlatforms()
         and etc.Job.Truck:FindFirstChild("Spawner")
         and etc.Job.Truck.Spawner:FindFirstChild("Part")
     if spawnerPart then
-        buildPlatform(spawnerPart.Position - Vector3.new(0, 6, 0), 200, 200)
+        buildPlatform(spawnerPart.Position - Vector3.new(0, 6, 0), 1000, 1000)
     end
 end
 
