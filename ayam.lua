@@ -3,6 +3,7 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local DelayLabel, TeleportLabel, DestMinLabel, Dest5MinLabel
 local IncomeHourLabel, EarnedLabel, CurrentLabel, FpsLabel
 local SessionTimeLabel, SessionEarnedLabel, SessionIPHLabel
+local CycleEarnedLabel, LastDestLabel
 
 pcall(function()
     local p = workspace.Map.Prop:GetChildren()[1627]
@@ -52,6 +53,9 @@ local isRunning = false
 local destinationTimestamps = {}
 local activePlatforms = {}
 local mapDeleted = false
+local lastDestEarned = 0
+local lastDestName = "—"
+local cycleMoneySnapshot = 0
 
 local function uprightCF(cf, yOffset)
     yOffset = yOffset or 0
@@ -106,7 +110,7 @@ local function rebuildPlatforms()
         and etc.Job:FindFirstChild("Truck")
         and etc.Job.Truck:FindFirstChild("Spawner")
         and etc.Job.Truck.Spawner:FindFirstChild("Part")
-    if spawnerPart then buildPlatform(spawnerPart.Position - Vector3.new(0, 6, 0), 200, 200) end
+    if spawnerPart then buildPlatform(spawnerPart.Position - Vector3.new(0, 6, 0), 1000, 1000) end
 end
 
 local function deleteMap()
@@ -239,8 +243,7 @@ local function steppedTruckTeleport(truck, targetCF)
             done = true
             return
         end
-        local fps = getFPS()
-        local fpsScale = fps >= 50 and 1 or fps >= 30 and 0.75 or 0.5
+        local fpsScale = _currentFPS >= 50 and 1 or _currentFPS >= 30 and 0.75 or 0.5
         elapsed = elapsed + math.min(dt, 0.1) * fpsScale
         local alpha = math.min(elapsed / duration, 1)
         local eased
@@ -361,16 +364,16 @@ local function sendWebhook(income)
         title = "Cycle Completed",
         color = 0xFFFFFF,
         fields = {
-            { name = "Username",      value = lp.Name,                                                           inline = false },
-            { name = "Cycle Income",  value = formatRP(income),                                                  inline = false },
-            { name = "Current Money", value = formatRP(getCleanMoney()) .. " (Est)",                             inline = false },
-            { name = "Total Earning", value = formatRP(_G.TotalEarning) .. " (Est)",                            inline = false },
-            { name = "Cycle Count",   value = tostring(_G.CycleCount),                                          inline = false },
-            { name = "Running Time",  value = getRunningTime(),                                                  inline = false },
-            { name = "Session Time",  value = SessionStart and formatDuration(os.time() - SessionStart) or "—",  inline = false },
-            { name = "Session /Hour", value = "RP. " .. formatShort(getSessionIPH()),                           inline = false },
-            { name = "Est /Hour",     value = "RP. " .. formatShort(getIncomePerHour()),                        inline = false },
-            { name = "FPS",           value = string.format("%.0f fps", getFPS()),                              inline = false },
+            { name = "Username",      value = lp.Name,                                                          inline = false },
+            { name = "Cycle Income",  value = formatRP(income),                                                 inline = false },
+            { name = "Current Money", value = formatRP(getCleanMoney()) .. " (Est)",                            inline = false },
+            { name = "Total Earning", value = formatRP(_G.TotalEarning) .. " (Est)",                           inline = false },
+            { name = "Cycle Count",   value = tostring(_G.CycleCount),                                         inline = false },
+            { name = "Running Time",  value = getRunningTime(),                                                 inline = false },
+            { name = "Session Time",  value = SessionStart and formatDuration(os.time() - SessionStart) or "—", inline = false },
+            { name = "Session /Hour", value = "RP. " .. formatShort(getSessionIPH()),                          inline = false },
+            { name = "Est /Hour",     value = "RP. " .. formatShort(getIncomePerHour()),                       inline = false },
+            { name = "FPS",           value = string.format("%.0f fps", getFPS()),                             inline = false },
         },
         image = { url = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&" },
         footer = { text = "Made by .projectsion | " .. os.date("%m/%d/%Y %I:%M %p") },
@@ -387,6 +390,16 @@ local function sendWebhook(income)
     end
 end
 
+local function getWaypointName(waypoint)
+    if not waypoint then return "Unknown" end
+    local gui = waypoint:FindFirstChildOfClass("BillboardGui") or waypoint:FindFirstChildOfClass("SurfaceGui")
+    if gui then
+        local tl = gui:FindFirstChildOfClass("TextLabel")
+        if tl and tl.Text ~= "" then return tl.Text end
+    end
+    return waypoint.Name
+end
+
 local function isTargetDestination(waypoint)
     if not waypoint then return false end
     local wpName = waypoint.Name:lower()
@@ -400,6 +413,23 @@ local function isTargetDestination(waypoint)
         if wpName:find(t) or wpLabel:find(t) then return true end
     end
     return false
+end
+
+local function updateCycleLabels(earned, destName)
+    lastDestEarned = earned
+    lastDestName = destName
+    if CycleEarnedLabel then
+        CycleEarnedLabel:Set({
+            Title = "Cycle Earned:",
+            Content = "RP. " .. formatNominal(earned)
+        })
+    end
+    if LastDestLabel then
+        LastDestLabel:Set({
+            Title = "Last Destination:",
+            Content = destName .. "  →  RP. " .. formatNominal(earned)
+        })
+    end
 end
 
 local function rollUntilTarget(remote, etc, hrp)
@@ -422,7 +452,7 @@ local function rollUntilTarget(remote, etc, hrp)
             clearTimeout = clearTimeout + 0.1
         end
 
-        -- 2. pasang ChildAdded SEBELUM fire apapun
+        -- 2. pasang ChildAdded SEBELUM fire
         local gotWaypoint = nil
         local wpDone = false
         local conn
@@ -446,7 +476,7 @@ local function rollUntilTarget(remote, etc, hrp)
             if prompt then fireproximityprompt(prompt) end
         end
 
-        -- 5. tunggu waypoint muncul via ChildAdded (max 2s)
+        -- 5. tunggu waypoint muncul (max 2s)
         local wpTimeout = 0
         while not wpDone and wpTimeout < 2 do
             task.wait(0.05)
@@ -460,13 +490,11 @@ local function rollUntilTarget(remote, etc, hrp)
         end
 
         if gotWaypoint then
-            -- 7. tunggu billboard text populate dari server
+            -- 7. tunggu billboard text populate
             task.wait(0.35)
-
-            -- re-fetch object terbaru
             local wp = waypointFolder:FindFirstChild("Waypoint") or gotWaypoint
-
             if isTargetDestination(wp) then
+                lastDestName = getWaypointName(wp)
                 if _G.DeleteMap then
                     local wpos = wp:IsA("Model") and wp:GetPivot().Position or wp.Position
                     buildPlatform(wpos, 400, 400, 25)
@@ -525,6 +553,7 @@ local function runAutofarm()
                 if isTargetDestination(waypoint) then
                     local targetCFrame = waypoint:IsA("Model") and waypoint:GetPivot() or waypoint.CFrame
                     local primary = myTruck.PrimaryPart
+                    local currentDestName = getWaypointName(waypoint)
 
                     if primary then
                         local dir = targetCFrame.Position - primary.Position
@@ -534,7 +563,9 @@ local function runAutofarm()
                         primary.AssemblyAngularVelocity = Vector3.zero
                     end
 
-                    EarnedMoney = getCleanMoney() - StartMoney
+                    -- snapshot sebelum deliver
+                    cycleMoneySnapshot = getCleanMoney()
+                    EarnedMoney = cycleMoneySnapshot - StartMoney
                     NextTeleportIn = 42
 
                     repeat
@@ -564,6 +595,7 @@ local function runAutofarm()
                         _G.TotalTeleportCount = _G.TotalTeleportCount + 1
                         logDestinationComplete()
 
+                        -- tunggu server register arrival (waypoint berubah)
                         local timeout = 0
                         repeat
                             task.wait(0.5)
@@ -574,25 +606,51 @@ local function runAutofarm()
                             end
                         until timeout >= 2
 
-                        if DelayLabel then
-                            DelayLabel:Set({ Title = "Status:", Content = "Waiting payment..." })
-                        end
-                        task.wait(3.5)
+                        -- tunggu billboard text populate untuk next waypoint
+                        task.wait(0.35)
 
+                        -- cek apakah ada destinasi target berikutnya
                         local nextWaypoint = waypointFolder:FindFirstChild("Waypoint")
+
                         if nextWaypoint and isTargetDestination(nextWaypoint) then
+                            -- ada next target: tunggu payment, skip unemployed, lanjut loop
+                            if DelayLabel then
+                                DelayLabel:Set({ Title = "Status:", Content = "Payment + next dest ready..." })
+                            end
+                            task.wait(1.5)
+
+                            local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
+                            updateCycleLabels(earned, currentDestName)
+
                             if _G.DeleteMap then
                                 local npos = nextWaypoint:IsA("Model")
                                     and nextWaypoint:GetPivot().Position
                                     or nextWaypoint.Position
                                 buildPlatform(npos, 400, 400, 25)
                             end
+
                             if DelayLabel then
                                 DelayLabel:Set({ Title = "Status:", Content = "Next dest ready — skipping reset!" })
                             end
-                            EarnedMoney = getCleanMoney() - StartMoney
+
+                            cycleMoneySnapshot = getCleanMoney()
+                            lastDestName = getWaypointName(nextWaypoint)
+                            EarnedMoney = cycleMoneySnapshot - StartMoney
                             NextTeleportIn = 42
+                            -- lanjut loop tanpa break
+
                         else
+                            -- tidak ada next target: fire unemployed + tunggu payment
+                            if remote then remote:FireServer("Unemployed") end
+
+                            if DelayLabel then
+                                DelayLabel:Set({ Title = "Status:", Content = "Waiting payment..." })
+                            end
+                            task.wait(1.5)
+
+                            local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
+                            updateCycleLabels(earned, currentDestName)
+
                             break
                         end
                     end
@@ -604,12 +662,6 @@ local function runAutofarm()
             if DelayLabel then
                 DelayLabel:Set({ Title = "Status:", Content = "Clearing old truck & job..." })
             end
-
-            local network2 = ReplicatedStorage:FindFirstChild("NetworkContainer")
-            local remote2 = network2
-                and network2:FindFirstChild("RemoteEvents")
-                and network2.RemoteEvents:FindFirstChild("Job")
-            if remote2 then remote2:FireServer("Unemployed") end
 
             local humanoid = char:FindFirstChildOfClass("Humanoid")
             if humanoid and humanoid.SeatPart then humanoid.Jump = true end
@@ -625,7 +677,7 @@ end
 local Window = Rayfield:CreateWindow({
     Name = "Car Driving Indonesia | By .projectsion",
     LoadingTitle = "Projectsion Loading...",
-    LoadingSubtitle = "Version 3.4 (fixed roll + smooth tween)",
+    LoadingSubtitle = "Version 3.5 (smart unemployed + cycle earning)",
     ConfigurationSaving = { Enabled = false },
     Discord = { Enabled = false },
     KeySystem = false,
@@ -654,10 +706,15 @@ FarmTab:CreateToggle({
 })
 
 local StatsTab = Window:CreateTab("Stats", "trending-up")
+StatsTab:CreateSection("Cycle")
+CycleEarnedLabel = StatsTab:CreateParagraph({ Title = "Cycle Earned:",    Content = "RP. 0" })
+LastDestLabel    = StatsTab:CreateParagraph({ Title = "Last Destination:", Content = "—" })
+
 StatsTab:CreateSection("Session")
 SessionTimeLabel   = StatsTab:CreateParagraph({ Title = "Session Time:",   Content = "—" })
 SessionEarnedLabel = StatsTab:CreateParagraph({ Title = "Session Earned:", Content = "RP. 0" })
 SessionIPHLabel    = StatsTab:CreateParagraph({ Title = "Session / Hour:", Content = "RP. 0/h" })
+
 StatsTab:CreateSection("Overall")
 DelayLabel      = StatsTab:CreateParagraph({ Title = "Status / Next TP:",          Content = "Waiting Job..." })
 TeleportLabel   = StatsTab:CreateParagraph({ Title = "Total Teleport Done:",        Content = "0 Times" })
