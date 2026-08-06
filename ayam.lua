@@ -444,7 +444,6 @@ local function rollUntilTarget(remote, etc, hrp)
             DelayLabel:Set({ Title = "Status:", Content = "Rolling Job (Attempt " .. attempt .. ")..." })
         end
 
-        -- 1. clear waypoint lama
         if remote then remote:FireServer("Unemployed") end
         local clearTimeout = 0
         while waypointFolder:FindFirstChild("Waypoint") and clearTimeout < 2 do
@@ -452,7 +451,6 @@ local function rollUntilTarget(remote, etc, hrp)
             clearTimeout = clearTimeout + 0.1
         end
 
-        -- 2. pasang ChildAdded SEBELUM fire
         local gotWaypoint = nil
         local wpDone = false
         local conn
@@ -462,10 +460,8 @@ local function rollUntilTarget(remote, etc, hrp)
             conn:Disconnect()
         end)
 
-        -- 3. fire truck
         if remote then remote:FireServer("Truck") end
 
-        -- 4. teleport ke starter + prompt
         local starter = etc:FindFirstChild("Job")
             and etc.Job:FindFirstChild("Truck")
             and etc.Job.Truck:FindFirstChild("Starter")
@@ -476,7 +472,6 @@ local function rollUntilTarget(remote, etc, hrp)
             if prompt then fireproximityprompt(prompt) end
         end
 
-        -- 5. tunggu waypoint muncul (max 2s)
         local wpTimeout = 0
         while not wpDone and wpTimeout < 2 do
             task.wait(0.05)
@@ -484,13 +479,11 @@ local function rollUntilTarget(remote, etc, hrp)
         end
         pcall(function() conn:Disconnect() end)
 
-        -- 6. fallback manual
         if not gotWaypoint then
             gotWaypoint = waypointFolder:FindFirstChild("Waypoint")
         end
 
         if gotWaypoint then
-            -- 7. tunggu billboard text populate
             task.wait(0.35)
             local wp = waypointFolder:FindFirstChild("Waypoint") or gotWaypoint
             if isTargetDestination(wp) then
@@ -514,7 +507,7 @@ local function runAutofarm()
     SessionStart = os.time()
     SessionMoneyStart = StartMoney
 
-    while _G.Autofarm do
+    repeat
         local char = lp.Character or lp.CharacterAdded:Wait()
         local hrp = char:WaitForChild("HumanoidRootPart")
 
@@ -525,7 +518,7 @@ local function runAutofarm()
             and network.RemoteEvents:FindFirstChild("Job")
 
         local dapetRuteBagus = rollUntilTarget(remote, etc, hrp)
-        if not dapetRuteBagus or not _G.Autofarm then continue end
+        if not dapetRuteBagus or not _G.Autofarm then goto continue end
 
         local spawnerPart = Workspace
             :WaitForChild("Etc"):WaitForChild("Job")
@@ -563,7 +556,6 @@ local function runAutofarm()
                         primary.AssemblyAngularVelocity = Vector3.zero
                     end
 
-                    -- snapshot sebelum deliver
                     cycleMoneySnapshot = getCleanMoney()
                     EarnedMoney = cycleMoneySnapshot - StartMoney
                     NextTeleportIn = 42.9
@@ -595,7 +587,6 @@ local function runAutofarm()
                         _G.TotalTeleportCount = _G.TotalTeleportCount + 1
                         logDestinationComplete()
 
-                        -- tunggu server register arrival (waypoint berubah)
                         local timeout = 0
                         repeat
                             task.wait(0.5)
@@ -606,14 +597,11 @@ local function runAutofarm()
                             end
                         until timeout >= 2
 
-                        -- tunggu billboard text populate untuk next waypoint
                         task.wait(0.35)
 
-                        -- cek apakah ada destinasi target berikutnya
                         local nextWaypoint = waypointFolder:FindFirstChild("Waypoint")
 
                         if nextWaypoint and isTargetDestination(nextWaypoint) then
-                            -- ada next target: tunggu payment, skip unemployed, lanjut loop
                             if DelayLabel then
                                 DelayLabel:Set({ Title = "Status:", Content = "Payment + next dest ready..." })
                             end
@@ -637,10 +625,8 @@ local function runAutofarm()
                             lastDestName = getWaypointName(nextWaypoint)
                             EarnedMoney = cycleMoneySnapshot - StartMoney
                             NextTeleportIn = 42.9
-                            -- lanjut loop tanpa break
 
                         else
-                            -- tidak ada next target: fire unemployed + tunggu payment
                             if remote then remote:FireServer("Unemployed") end
 
                             if DelayLabel then
@@ -671,7 +657,9 @@ local function runAutofarm()
         end
 
         task.wait(0.3)
-    end
+
+        ::continue::
+    until not _G.Autofarm
 end
 
 local Window = Rayfield:CreateWindow({
