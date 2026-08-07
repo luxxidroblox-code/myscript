@@ -1,5 +1,8 @@
+warn("sebelum loadstring")
 local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/X5Dermaster/RayField-Loader/refs/heads/main/rayfieldloader.lua'))()
-
+warn("sesudah loadstring")
+warn("kalau ini atau yang bawah hasilnya tables berarti berhasil rayfieldnya", Rayfield)
+warn(Rayfield)
 local DelayLabel, TeleportLabel, DestMinLabel, Dest5MinLabel
 local IncomeHourLabel, EarnedLabel, CurrentLabel, FpsLabel
 local SessionTimeLabel, SessionEarnedLabel, SessionIPHLabel
@@ -28,6 +31,8 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local lp = Players.LocalPlayer
 
+warn("berhasil lewatin services")
+
 _G.Autofarm = false
 _G.AutoWebhook = false
 _G.DeleteMap = false
@@ -37,9 +42,13 @@ _G.CycleCount = _G.CycleCount or 0
 _G.TotalEarning = _G.TotalEarning or 0
 _G.TotalTeleportCount = _G.TotalTeleportCount or 0
 
+warn("berhasil lewatin global")
+
 local MoneyPath = lp.PlayerGui
     :WaitForChild("Main"):WaitForChild("Container"):WaitForChild("Hub")
     :WaitForChild("CashFrame"):WaitForChild("Frame"):WaitForChild("TextLabel")
+
+warn("berhasil lewatin moneypath")
 
 local StartMoney = 0
 local EarnedMoney = 0
@@ -54,8 +63,10 @@ local destinationTimestamps = {}
 local activePlatforms = {}
 local mapDeleted = false
 local lastDestEarned = 0
-local lastDestName = "â€”"
+local lastDestName = "Ã¢â‚¬â€"
 local cycleMoneySnapshot = 0
+
+warn("berhasil lewatin global 2")
 
 local function uprightCF(cf, yOffset)
     yOffset = yOffset or 0
@@ -135,7 +146,7 @@ end
 
 local function selfKick(player)
     local tag = isStaff(player) and "STAFF" or "PLAYER"
-    lp:Kick(tag .. " DETECTED (" .. player.Name .. ") â€” player/staff join kacung semua tu staff co")
+    lp:Kick(tag .. " DETECTED (" .. player.Name .. ") Ã¢â‚¬â€ player/staff join kacung semua tu staff co")
 end
 
 Players.PlayerAdded:Connect(function(player)
@@ -370,7 +381,7 @@ local function sendWebhook(income)
             { name = "Total Earning", value = formatRP(_G.TotalEarning) .. " (Est)",                           inline = false },
             { name = "Cycle Count",   value = tostring(_G.CycleCount),                                         inline = false },
             { name = "Running Time",  value = getRunningTime(),                                                 inline = false },
-            { name = "Session Time",  value = SessionStart and formatDuration(os.time() - SessionStart) or "â€”", inline = false },
+            { name = "Session Time",  value = SessionStart and formatDuration(os.time() - SessionStart) or "Ã¢â‚¬â€", inline = false },
             { name = "Session /Hour", value = "RP. " .. formatShort(getSessionIPH()),                          inline = false },
             { name = "Est /Hour",     value = "RP. " .. formatShort(getIncomePerHour()),                       inline = false },
             { name = "FPS",           value = string.format("%.0f fps", getFPS()),                             inline = false },
@@ -427,7 +438,7 @@ local function updateCycleLabels(earned, destName)
     if LastDestLabel then
         LastDestLabel:Set({
             Title = "Last Destination:",
-            Content = destName .. "  â†’  RP. " .. formatNominal(earned)
+            Content = destName .. "  Ã¢â€ â€™  RP. " .. formatNominal(earned)
         })
     end
 end
@@ -502,7 +513,7 @@ local function rollUntilTarget(remote, etc, hrp)
     return false
 end
 
--- â”€â”€â”€ AUTOFARM (repeat-until, goto continue pattern) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ AUTOFARM (repeat-until, goto continue pattern) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 local function runAutofarm()
     StartMoney = getCleanMoney()
     SessionStart = os.time()
@@ -619,7 +630,7 @@ local function runAutofarm()
                             end
 
                             if DelayLabel then
-                                DelayLabel:Set({ Title = "Status:", Content = "Next dest ready â€” skipping reset!" })
+                                DelayLabel:Set({ Title = "Status:", Content = "Next dest ready Ã¢â‚¬â€ skipping reset!" })
                             end
 
                             cycleMoneySnapshot = getCleanMoney()
@@ -662,7 +673,7 @@ local function runAutofarm()
         ::continue::
     until not _G.Autofarm
 end
--- â”€â”€â”€ END AUTOFARM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ END AUTOFARM Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 local Window = Rayfield:CreateWindow({
     Name = "Car Driving Indonesia | By .projectsion",
@@ -698,10 +709,10 @@ FarmTab:CreateToggle({
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 StatsTab:CreateSection("Cycle")
 CycleEarnedLabel = StatsTab:CreateParagraph({ Title = "Cycle Earned:",    Content = "RP. 0" })
-LastDestLabel    = StatsTab:CreateParagraph({ Title = "Last Destination:", Content = "â€”" })
+LastDestLabel    = StatsTab:CreateParagraph({ Title = "Last Destination:", Content = "Ã¢â‚¬â€" })
 
 StatsTab:CreateSection("Session")
-SessionTimeLabel   = StatsTab:CreateParagraph({ Title = "Session Time:",   Content = "â€”" })
+SessionTimeLabel   = StatsTab:CreateParagraph({ Title = "Session Time:",   Content = "Ã¢â‚¬â€" })
 SessionEarnedLabel = StatsTab:CreateParagraph({ Title = "Session Earned:", Content = "RP. 0" })
 SessionIPHLabel    = StatsTab:CreateParagraph({ Title = "Session / Hour:", Content = "RP. 0/h" })
 
@@ -831,8 +842,8 @@ task.spawn(function()
         FpsLabel:Set({
             Title = "Current FPS:",
             Content = string.format("%.0f fps  %s", fps,
-                fps < 30 and "âš  lag â€” tp slowed" or
-                fps < 50 and "~ mild lag" or "âœ“ smooth"),
+                fps < 30 and "Ã¢Å¡  lag Ã¢â‚¬â€ tp slowed" or
+                fps < 50 and "~ mild lag" or "Ã¢Å“â€œ smooth"),
         })
     end
 end)
