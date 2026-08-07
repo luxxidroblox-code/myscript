@@ -799,3 +799,15 @@ task.spawn(function()
         })
     end
 end)
+
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if _G.Autofarm and DelayLabel and NextTeleportIn > 0 then
+            DelayLabel:Set({
+                Title = "Next Teleport In:",
+                Content = string.format("%d sec  |  %.0f fps", NextTeleportIn, getFPS()),
+            })
+        end
+    end
+end)
