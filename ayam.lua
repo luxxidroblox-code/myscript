@@ -230,18 +230,21 @@ end)
 local function getFPS() return _currentFPS end
 
 -- ─── TWEEN TELEPORT ──────────────────────────────────────────────────────────
--- duration di-pass dari luar sebagai float random [35, 45]
--- CFrameValue + TweenService Sine InOut: akselerasi masuk, deselerasi keluar
--- countdown heartbeat berjalan paralel — truck nyampe tepat saat timer = 0
+-- Logic baru: teleport langsung ke atas destinasi (800 studs)
+-- Lalu turun pelan-pelan (mengikuti durasi random 35-45s) lewat CFrame & Heartbeat
 local function tweenTruckToDestination(truck, targetCF, duration, onTick)
     if not truck or not truck.Parent then return end
 
-    local origin  = truck:GetPivot()
     local elapsed = 0
     local conn
 
+    -- Teleport ke titik di atas destinasi (Y + 800)
+    local DropHeight = 800
+    local startCF = targetCF + Vector3.new(0, DropHeight, 0)
+    truck:PivotTo(startCF)
+
     local cfVal   = Instance.new("CFrameValue")
-    cfVal.Value   = origin
+    cfVal.Value   = startCF
 
     cfVal.Changed:Connect(function(v)
         if truck and truck.Parent then
@@ -254,15 +257,17 @@ local function tweenTruckToDestination(truck, targetCF, duration, onTick)
         end
     end)
 
+    -- Tween turun ke target perlahan menggunakan Easing Linear
     local tweenInfo = TweenInfo.new(
         duration,
-        Enum.EasingStyle.Sine,
+        Enum.EasingStyle.Linear,
         Enum.EasingDirection.InOut,
         0, false, 0
     )
     local tween = TweenService:Create(cfVal, tweenInfo, {Value = targetCF})
     tween:Play()
 
+    -- Heartbeat paralel buat update HUD dan zero out velocity
     conn = RunService.Heartbeat:Connect(function(dt)
         if not _G.Autofarm or not truck or not truck.Parent then
             tween:Cancel()
@@ -274,6 +279,7 @@ local function tweenTruckToDestination(truck, targetCF, duration, onTick)
         local remaining = math.max(0, duration - elapsed)
         NextTeleportIn  = math.ceil(remaining)
         if onTick then onTick(remaining) end
+        
         if elapsed >= duration then
             conn:Disconnect()
             cfVal:Destroy()
@@ -558,11 +564,11 @@ local function runAutofarm()
                         })
                     end
 
-                    -- tween smooth Sine InOut, countdown parallel di heartbeat
+                    -- tween vertikal dari atas ke bawah bareng heartbeat countdown
                     tweenTruckToDestination(myTruck, targetCFrame, tweenDuration, function(remaining)
                         if DelayLabel then
                             DelayLabel:Set({
-                                Title   = "Teleporting → "..currentDestName,
+                                Title   = "Dropping → "..currentDestName,
                                 Content = string.format("%d sec remaining  |  %.0f fps", math.ceil(remaining), getFPS()),
                             })
                         end
@@ -644,7 +650,7 @@ end
 local Window = Rayfield:CreateWindow({
     Name             = "Car Driving Indonesia | By .projectsion",
     LoadingTitle     = "Projectsion Loading...",
-    LoadingSubtitle  = "Version 3.7 (random tween 35–45s, anti-pattern)",
+    LoadingSubtitle  = "Version 3.8 (Vertical Drop Tween)",
     ConfigurationSaving = {Enabled=false},
     Discord          = {Enabled=false},
     KeySystem        = false,
