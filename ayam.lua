@@ -27,6 +27,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace         = game:GetService("Workspace")
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
+local TweenService      = game:GetService("TweenService") -- [ADDED] TweenService untuk smooth TP
 local lp                = Players.LocalPlayer
 
 _G.Autofarm           = false
@@ -226,14 +227,15 @@ task.spawn(function()
 end)
 local function getFPS() return _currentFPS end
 
--- ─── METODE TELEPORT (SKY HOLD & SMOOTH DROP - NO GRAVITY TOUCH) ───────────
+-- ─── METODE TELEPORT (SKY HOLD & EXTREME SMOOTH DROP) ───────────
 local function tweenTruckToDestination(truck, targetCF, duration, onTick)
     if not truck or not truck.Parent then return end
 
-    local descentTime = math.min(10, duration * 0.3) -- 10 detik terakhir turun perlahan
+    -- [UPDATED] Descent time dibikin proporsional lebih lama (40% dari durasi) biar makin smooth
+    local descentTime = math.min(15, duration * 0.4) 
     local skyWaitTime = math.max(0, duration - descentTime)
 
-    local targetLandingCF = uprightCF(targetCF, 2)
+    local targetLandingCF = uprightCF(targetCF, 2.5) -- Sedikit dinaikin biar roda nggak tembus platform
     local skyCF           = uprightCF(CFrame.new(targetCF.Position.X, targetCF.Position.Y + 800, targetCF.Position.Z), 0)
 
     local function freezeVelocity()
@@ -272,10 +274,18 @@ local function tweenTruckToDestination(truck, targetCF, duration, onTick)
 
     -- 2. Turun Perlahan (Smooth Descent) ke Destinasi
     local descentElapsed = 0
+    
+    -- [UPDATED] Fungsi Easing Out Cubic: Makin ke bawah makin pelan jatohnya
+    local function easeOutCubic(x)
+        return 1 - math.pow(1 - x, 3)
+    end
+
     local descentConn = RunService.Heartbeat:Connect(function(dt)
         if not _G.Autofarm or not truck or not truck.Parent then return end
         descentElapsed = descentElapsed + dt
-        local alpha = math.clamp(descentElapsed / descentTime, 0, 1)
+        
+        local linearAlpha = math.clamp(descentElapsed / descentTime, 0, 1)
+        local alpha = easeOutCubic(linearAlpha) -- Terapin smoothing
 
         local currentCF = skyCF:Lerp(targetLandingCF, alpha)
         truck:PivotTo(currentCF)
@@ -292,10 +302,14 @@ local function tweenTruckToDestination(truck, targetCF, duration, onTick)
 
     pcall(function() descentConn:Disconnect() end)
 
-    -- 3. Sampai di Platform / Destinasi
+    -- 3. [UPDATED] Sampai di Platform - Tahan Posisi Bawah Biar Gak Langsung Lepas Gravity (Biar sampe napak mulus)
     if truck and truck.Parent then
-        truck:PivotTo(targetLandingCF)
-        freezeVelocity()
+        local holdEnd = os.clock() + 1.5 -- Tahan 1.5 detik
+        while os.clock() < holdEnd and _G.Autofarm and truck and truck.Parent do
+            truck:PivotTo(targetLandingCF)
+            freezeVelocity()
+            RunService.Heartbeat:Wait()
+        end
     end
 end
 
@@ -527,11 +541,27 @@ local function runAutofarm()
         local dapetRute = rollUntilTarget(remote, etc, hrp)
         if not dapetRute or not _G.Autofarm then continue end
 
+        -- [UPDATED] Jeda dulu setelah dapet rute job (Jangan langsung teleport)
+        if DelayLabel then
+            DelayLabel:Set({Title="Status:", Content="Job found! Moving to spawner..."})
+        end
+        task.wait(0.8)
+
         local spawnerPart = Workspace
             :WaitForChild("Etc"):WaitForChild("Job")
             :WaitForChild("Truck"):WaitForChild("Spawner"):WaitForChild("Part")
 
-        hrp.CFrame = uprightCF(spawnerPart.CFrame, 3)
+        -- [UPDATED] Ganti dari teleport instant jadi Tween CFrame mulus ke Spawner
+        local spawnerCF = uprightCF(spawnerPart.CFrame, 3)
+        hrp.Anchored = true -- Anchor bentar biar animasinya nggak nabrak map
+        
+        local tweenInfo = TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
+        local charTween = TweenService:Create(hrp, tweenInfo, {CFrame = spawnerCF})
+        charTween:Play()
+        charTween.Completed:Wait() -- Tunggu sampe karakternya sampe titik spawner
+        
+        hrp.Anchored = false
+        
         RunService.Heartbeat:Wait()
         task.wait(0.4)
         task.wait(0.4)
@@ -562,10 +592,10 @@ local function runAutofarm()
                     EarnedMoney        = cycleMoneySnapshot - StartMoney
                     NextTeleportIn     = math.ceil(tweenDuration)
 
-                    -- Eksekusi Teleport Tanpa Ubah/Matiin Gravity
+                    -- Eksekusi Teleport Tanpa Ubah/Matiin Gravity (Udah diupdate makin smooth)
                     tweenTruckToDestination(myTruck, targetCFrame, tweenDuration, function(remaining, mode)
                         if DelayLabel then
-                            local stateTxt = mode == "sky" and "Floating in Sky" or "Dropping down"
+                            local stateTxt = mode == "sky" and "Floating in Sky" or "Smooth Dropping"
                             DelayLabel:Set({
                                 Title   = stateTxt .. " → " .. currentDestName,
                                 Content = string.format("%d sec remaining  |  %.0f fps", math.ceil(remaining), getFPS()),
@@ -651,7 +681,7 @@ end
 local Window = Rayfield:CreateWindow({
     Name             = "Car Driving Indonesia | By .projectsion",
     LoadingTitle     = "Projectsion Loading...",
-    LoadingSubtitle  = "Version 4.2 (Sky-Hold & Smooth Drop)",
+    LoadingSubtitle  = "Version 4.3 (Tween Spawner & Smooth Drop)",
     ConfigurationSaving = {Enabled=false},
     Discord          = {Enabled=false},
     KeySystem        = false,
