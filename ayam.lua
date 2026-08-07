@@ -12,16 +12,16 @@ pcall(function()
 end)
 
 local BlackScreen = Instance.new("ScreenGui")
-local Frame = Instance.new("Frame")
-BlackScreen.Name = "ProjectsionBlackout"
-BlackScreen.Parent = game:GetService("CoreGui")
+local Frame       = Instance.new("Frame")
+BlackScreen.Name         = "ProjectsionBlackout"
+BlackScreen.Parent       = game:GetService("CoreGui")
 BlackScreen.DisplayOrder = -1
-BlackScreen.Enabled = false
-Frame.Parent = BlackScreen
+BlackScreen.Enabled      = false
+Frame.Parent           = BlackScreen
 Frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-Frame.Size = UDim2.new(1.5, 0, 1.5, 0)
-Frame.Position = UDim2.new(-0.25, 0, -0.25, 0)
-Frame.BorderSizePixel = 0
+Frame.Size             = UDim2.new(1.5, 0, 1.5, 0)
+Frame.Position         = UDim2.new(-0.25, 0, -0.25, 0)
+Frame.BorderSizePixel  = 0
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace         = game:GetService("Workspace")
@@ -39,8 +39,9 @@ _G.CycleCount         = _G.CycleCount or 0
 _G.TotalEarning       = _G.TotalEarning or 0
 _G.TotalTeleportCount = _G.TotalTeleportCount or 0
 
--- durasi tween = durasi countdown, nyampe bareng
-local TP_TWEEN_DURATION = 39
+-- random float 35.00–45.00 per cycle — anti-cheat can't fingerprint a fixed interval
+local TP_MIN = 35
+local TP_MAX = 45
 
 local MoneyPath = lp.PlayerGui
     :WaitForChild("Main"):WaitForChild("Container"):WaitForChild("Hub")
@@ -64,6 +65,11 @@ local cycleMoneySnapshot    = 0
 
 -- ─── UTILS ───────────────────────────────────────────────────────────────────
 
+-- float biar interval ga bisa di-profile (e.g. 37.43s, 41.08s, 39.76s)
+local function randomTweenDuration()
+    return TP_MIN + math.random() * (TP_MAX - TP_MIN)
+end
+
 local function uprightCF(cf, yOffset)
     yOffset = yOffset or 0
     local pos = cf.Position + Vector3.new(0, yOffset, 0)
@@ -74,13 +80,15 @@ end
 local function buildPlatform(position, sizeX, sizeZ, yOffset)
     sizeX = sizeX or 350; sizeZ = sizeZ or 350; yOffset = yOffset or 4
     local p = Instance.new("Part")
-    p.Name = "FarmPlatform"
-    p.Size = Vector3.new(sizeX, 8, sizeZ)
-    p.CFrame = CFrame.new(position.X, position.Y - yOffset, position.Z)
-    p.Anchored = true; p.CanCollide = true; p.CastShadow = false
-    p.Material = Enum.Material.SmoothPlastic
-    p.BrickColor = BrickColor.new("Dark grey")
-    p.Parent = Workspace
+    p.Name          = "FarmPlatform"
+    p.Size          = Vector3.new(sizeX, 8, sizeZ)
+    p.CFrame        = CFrame.new(position.X, position.Y - yOffset, position.Z)
+    p.Anchored      = true
+    p.CanCollide    = true
+    p.CastShadow    = false
+    p.Material      = Enum.Material.SmoothPlastic
+    p.BrickColor    = BrickColor.new("Dark grey")
+    p.Parent        = Workspace
     table.insert(activePlatforms, p)
     return p
 end
@@ -156,8 +164,8 @@ local function getCleanMoney()
 end
 
 local function formatShort(n)
-    if n >= 1000000 then return string.format("%.1fM/h", n/1000000):gsub("%.0M","M")
-    elseif n >= 1000 then return string.format("%.1fK/h", n/1000):gsub("%.0K","K")
+    if n >= 1000000 then return string.format("%.1fM/h", n/1000000):gsub("%.0M", "M")
+    elseif n >= 1000 then return string.format("%.1fK/h", n/1000):gsub("%.0K", "K")
     else return tostring(n).."/h" end
 end
 
@@ -169,7 +177,7 @@ end
 
 local function formatRP(v)
     local s = string.format("%.0f", v)
-    return "RP. "..s:reverse():gsub("(%d%d%d)","%1."):reverse():gsub("^%.","")
+    return "RP. "..s:reverse():gsub("(%d%d%d)", "%1."):reverse():gsub("^%.", "")
 end
 
 local function formatDuration(sec)
@@ -221,25 +229,23 @@ task.spawn(function()
 end)
 local function getFPS() return _currentFPS end
 
--- ─── TWEEN TELEPORT (DEJP STYLE) ─────────────────────────────────────────────
--- Mulai dari detik 0, truck lerp heartbeat selama TP_TWEEN_DURATION detik
--- pas timer countdown habis = truck udah tepat di destinasi
+-- ─── TWEEN TELEPORT ──────────────────────────────────────────────────────────
+-- duration di-pass dari luar sebagai float random [35, 45]
+-- CFrameValue + TweenService Sine InOut: akselerasi masuk, deselerasi keluar
+-- countdown heartbeat berjalan paralel — truck nyampe tepat saat timer = 0
 local function tweenTruckToDestination(truck, targetCF, duration, onTick)
     if not truck or not truck.Parent then return end
 
     local origin  = truck:GetPivot()
     local elapsed = 0
-    local done    = false
     local conn
 
-    -- pakai CFrameValue + tween biar smooth & engine-driven
-    local cfVal = Instance.new("CFrameValue")
-    cfVal.Value = origin
+    local cfVal   = Instance.new("CFrameValue")
+    cfVal.Value   = origin
 
     cfVal.Changed:Connect(function(v)
         if truck and truck.Parent then
             truck:PivotTo(v)
-            -- nol-in velocity biar ga kelempar fisika
             local pp = truck.PrimaryPart
             if pp then
                 pp.AssemblyLinearVelocity  = Vector3.zero
@@ -257,28 +263,24 @@ local function tweenTruckToDestination(truck, targetCF, duration, onTick)
     local tween = TweenService:Create(cfVal, tweenInfo, {Value = targetCF})
     tween:Play()
 
-    -- countdown parallel di heartbeat
     conn = RunService.Heartbeat:Connect(function(dt)
         if not _G.Autofarm or not truck or not truck.Parent then
             tween:Cancel()
             conn:Disconnect()
             cfVal:Destroy()
-            done = true
             return
         end
         elapsed = elapsed + dt
         local remaining = math.max(0, duration - elapsed)
-        NextTeleportIn = math.ceil(remaining)
+        NextTeleportIn  = math.ceil(remaining)
         if onTick then onTick(remaining) end
         if elapsed >= duration then
             conn:Disconnect()
             cfVal:Destroy()
-            truck:PivotTo(targetCF) -- snap final
-            done = true
+            truck:PivotTo(targetCF)
         end
     end)
 
-    -- block sampai tween selesai
     tween.Completed:Wait()
     pcall(function() conn:Disconnect() end)
     pcall(function() cfVal:Destroy() end)
@@ -361,20 +363,20 @@ local function sendWebhook(income)
     local http_request = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
     local HttpService  = game:GetService("HttpService")
     local embed = {
-        author  = {name = "Projectsion Webhook", icon_url = getAvatar()},
-        title   = "Cycle Completed",
-        color   = 0xFFFFFF,
-        fields  = {
-            {name="Username",      value=lp.Name,                                                           inline=false},
-            {name="Cycle Income",  value=formatRP(income),                                                  inline=false},
-            {name="Current Money", value=formatRP(getCleanMoney()).." (Est)",                               inline=false},
-            {name="Total Earning", value=formatRP(_G.TotalEarning).." (Est)",                              inline=false},
-            {name="Cycle Count",   value=tostring(_G.CycleCount),                                          inline=false},
-            {name="Running Time",  value=getRunningTime(),                                                  inline=false},
-            {name="Session Time",  value=SessionStart and formatDuration(os.time()-SessionStart) or "—",   inline=false},
-            {name="Session /Hour", value="RP. "..formatShort(getSessionIPH()),                             inline=false},
-            {name="Est /Hour",     value="RP. "..formatShort(getIncomePerHour()),                          inline=false},
-            {name="FPS",           value=string.format("%.0f fps", getFPS()),                              inline=false},
+        author = {name="Projectsion Webhook", icon_url=getAvatar()},
+        title  = "Cycle Completed",
+        color  = 0xFFFFFF,
+        fields = {
+            {name="Username",      value=lp.Name,                                                         inline=false},
+            {name="Cycle Income",  value=formatRP(income),                                                inline=false},
+            {name="Current Money", value=formatRP(getCleanMoney()).." (Est)",                             inline=false},
+            {name="Total Earning", value=formatRP(_G.TotalEarning).." (Est)",                            inline=false},
+            {name="Cycle Count",   value=tostring(_G.CycleCount),                                        inline=false},
+            {name="Running Time",  value=getRunningTime(),                                                inline=false},
+            {name="Session Time",  value=SessionStart and formatDuration(os.time()-SessionStart) or "—", inline=false},
+            {name="Session /Hour", value="RP. "..formatShort(getSessionIPH()),                           inline=false},
+            {name="Est /Hour",     value="RP. "..formatShort(getIncomePerHour()),                        inline=false},
+            {name="FPS",           value=string.format("%.0f fps", getFPS()),                            inline=false},
         },
         image  = {url="https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg"},
         footer = {text="Made by .projectsion | "..os.date("%m/%d/%Y %I:%M %p")},
@@ -385,7 +387,7 @@ local function sendWebhook(income)
                 Url     = _G.WebhookURL,
                 Method  = "POST",
                 Headers = {["Content-Type"]="application/json"},
-                Body    = HttpService:JSONEncode({username="Projectsion Reports", embeds={embed}})
+                Body    = HttpService:JSONEncode({username="Projectsion Reports", embeds={embed}}),
             })
         end)
     end
@@ -428,7 +430,6 @@ local function updateCycleLabels(earned, destName)
 end
 
 -- ─── ROLL UNTIL TARGET ───────────────────────────────────────────────────────
--- spam starter langsung tanpa task.wait blocking
 local function rollUntilTarget(remote, etc, hrp)
     local waypointFolder = etc and etc:FindFirstChild("Waypoint")
     if not waypointFolder then return false end
@@ -441,19 +442,15 @@ local function rollUntilTarget(remote, etc, hrp)
             DelayLabel:Set({Title="Status:", Content="Rolling Job (Attempt "..attempt..")..."})
         end
 
-        -- reset job dulu
         if remote then remote:FireServer("Unemployed") end
 
-        -- tunggu waypoint lama ilang (max 2s, non-blocking)
         local clearStart = os.clock()
         while waypointFolder:FindFirstChild("Waypoint") and (os.clock()-clearStart) < 2 do
             RunService.Heartbeat:Wait()
         end
 
-        -- fire job baru
         if remote then remote:FireServer("Truck") end
 
-        -- spam starter tanpa task.wait — fire langsung berkali-kali sampai waypoint muncul
         local starter = etc:FindFirstChild("Job")
             and etc.Job:FindFirstChild("Truck")
             and etc.Job.Truck:FindFirstChild("Starter")
@@ -465,15 +462,12 @@ local function rollUntilTarget(remote, etc, hrp)
             if wpConn then wpConn:Disconnect() end
         end)
 
-        -- spam fire proximityprompt setiap heartbeat sampai dapat waypoint (max 3s)
         local spamStart = os.clock()
         while not gotWaypoint and (os.clock()-spamStart) < 3 do
             if starter and hrp then
                 hrp.CFrame = uprightCF(starter:GetPivot(), 3)
                 local prompt = starter:FindFirstChild("Prompt")
-                if prompt then
-                    fireproximityprompt(prompt)
-                end
+                if prompt then fireproximityprompt(prompt) end
             end
             RunService.Heartbeat:Wait()
         end
@@ -484,7 +478,6 @@ local function rollUntilTarget(remote, etc, hrp)
         end
 
         if gotWaypoint then
-            -- kasih 1 frame buat stabilize
             RunService.Heartbeat:Wait()
             local wp = waypointFolder:FindFirstChild("Waypoint") or gotWaypoint
             if isTargetDestination(wp) then
@@ -505,8 +498,8 @@ end
 
 -- ─── AUTOFARM ────────────────────────────────────────────────────────────────
 local function runAutofarm()
-    StartMoney      = getCleanMoney()
-    SessionStart    = os.time()
+    StartMoney        = getCleanMoney()
+    SessionStart      = os.time()
     SessionMoneyStart = StartMoney
 
     repeat
@@ -529,10 +522,8 @@ local function runAutofarm()
         hrp.CFrame = uprightCF(spawnerPart.CFrame, 3)
         RunService.Heartbeat:Wait()
         task.wait(0.4)
-
-task.wait(0.4)
-fireproximityprompt(spawnerPart:WaitForChild("Prompt"))
-task.wait(2.4) 
+        task.wait(0.4)
+        fireproximityprompt(spawnerPart:WaitForChild("Prompt"))
 
         local myTruck = getMyTruck()
 
@@ -549,18 +540,25 @@ task.wait(2.4)
                 if not waypoint then task.wait(0.5); continue end
 
                 if isTargetDestination(waypoint) then
-                    local targetCFrame      = waypoint:IsA("Model") and waypoint:GetPivot() or waypoint.CFrame
-                    local currentDestName   = getWaypointName(waypoint)
-                    cycleMoneySnapshot      = getCleanMoney()
-                    EarnedMoney             = cycleMoneySnapshot - StartMoney
-                    NextTeleportIn          = TP_TWEEN_DURATION
+                    local targetCFrame    = waypoint:IsA("Model") and waypoint:GetPivot() or waypoint.CFrame
+                    local currentDestName = getWaypointName(waypoint)
+
+                    -- float random per cycle — 35.00 to 45.00, ga bisa di-profile
+                    local tweenDuration = randomTweenDuration()
+
+                    cycleMoneySnapshot = getCleanMoney()
+                    EarnedMoney        = cycleMoneySnapshot - StartMoney
+                    NextTeleportIn     = math.ceil(tweenDuration)
 
                     if DelayLabel then
-                        DelayLabel:Set({Title="Teleporting to "..currentDestName..":", Content="Starting tween..."})
+                        DelayLabel:Set({
+                            Title   = "Teleporting to "..currentDestName..":",
+                            Content = string.format("Starting — %.2fs", tweenDuration),
+                        })
                     end
 
-                    -- tween jalan dari sekarang, countdown realtime, nyampe bareng
-                    tweenTruckToDestination(myTruck, targetCFrame, TP_TWEEN_DURATION, function(remaining)
+                    -- tween smooth Sine InOut, countdown parallel di heartbeat
+                    tweenTruckToDestination(myTruck, targetCFrame, tweenDuration, function(remaining)
                         if DelayLabel then
                             DelayLabel:Set({
                                 Title   = "Teleporting → "..currentDestName,
@@ -574,7 +572,6 @@ task.wait(2.4)
                     _G.TotalTeleportCount = _G.TotalTeleportCount + 1
                     logDestinationComplete()
 
-                    -- tunggu waypoint berganti (max 2s)
                     local oldWaypointPos = targetCFrame.Position
                     local timeout = 0
                     repeat
@@ -609,8 +606,7 @@ task.wait(2.4)
                         cycleMoneySnapshot = getCleanMoney()
                         lastDestName       = getWaypointName(nextWaypoint)
                         EarnedMoney        = cycleMoneySnapshot - StartMoney
-                        NextTeleportIn     = TP_TWEEN_DURATION
-
+                        NextTeleportIn     = 0  -- next iteration generates fresh random duration
                     else
                         if remote then remote:FireServer("Unemployed") end
                         if DelayLabel then
@@ -647,7 +643,7 @@ end
 local Window = Rayfield:CreateWindow({
     Name             = "Car Driving Indonesia | By .projectsion",
     LoadingTitle     = "Projectsion Loading...",
-    LoadingSubtitle  = "Version 3.6 (realtime tween teleport)",
+    LoadingSubtitle  = "Version 3.7 (random tween 35–45s, anti-pattern)",
     ConfigurationSaving = {Enabled=false},
     Discord          = {Enabled=false},
     KeySystem        = false,
@@ -731,10 +727,10 @@ ProxTab:CreateButton({
 local WebhookTab = Window:CreateTab("Webhook", "webhook")
 WebhookTab:CreateSection("Webhook Farm")
 WebhookTab:CreateInput({
-    Name                    = "Webhook Link",
-    PlaceholderText         = "Enter link webhook",
+    Name                     = "Webhook Link",
+    PlaceholderText          = "Enter link webhook",
     RemoveTextAfterFocusLost = false,
-    Callback                = function(t) _G.WebhookURL = t end,
+    Callback                 = function(t) _G.WebhookURL = t end,
 })
 WebhookTab:CreateToggle({
     Name         = "Enable Webhook",
@@ -808,7 +804,7 @@ task.spawn(function()
         task.wait(1)
         if _G.Autofarm and DelayLabel and NextTeleportIn > 0 then
             DelayLabel:Set({
-                Title = "Next Teleport In:",
+                Title   = "Next Teleport In:",
                 Content = string.format("%d sec  |  %.0f fps", NextTeleportIn, getFPS()),
             })
         end
