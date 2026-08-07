@@ -227,37 +227,37 @@ task.spawn(function()
 end)
 local function getFPS() return _currentFPS end
 
--- ─── FULL DEJP TELEPORT METHOD PORTED TO CDID ───────────────────────────────
+-- ─── NO-GRAVITY-TOUCH TELEPORT METHOD ───────────────────────────────────────
 local function tweenTruckToDestination(truck, targetCF, duration, onTick)
     if not truck or not truck.Parent then return end
-
-    workspace.Gravity = 0
 
     local primaryPart = truck.PrimaryPart 
         or (truck:FindFirstChild("Body") and truck.Body:FindFirstChild("#Weight")) 
         or truck:FindFirstChild("DriveSeat") 
         or truck:FindFirstChildWhichIsA("BasePart")
 
-    -- Fungsi v191 murni dari DEJP
-    local function v191(targetCFrame, dur)
+    local function freezeVelocity()
+        for _, part in ipairs(truck:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.AssemblyLinearVelocity = Vector3.zero
+                part.AssemblyAngularVelocity = Vector3.zero
+            end
+        end
+    end
+
+    local function moveStep(targetCFrame, dur)
         if dur <= 0 then
             truck:PivotTo(targetCFrame)
-            if primaryPart then
-                primaryPart.Velocity = Vector3.zero
-                primaryPart.RotVelocity = Vector3.zero
-            end
+            freezeVelocity()
         else
             local tweenInfo = TweenInfo.new(dur, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, 0, false, 0)
-            local _CFrameValue2 = Instance.new("CFrameValue")
-            _CFrameValue2.Value = truck:GetPivot()
+            local _CFrameValue = Instance.new("CFrameValue")
+            _CFrameValue.Value = truck:GetPivot()
 
-            local conn = _CFrameValue2.Changed:Connect(function()
+            local conn = _CFrameValue.Changed:Connect(function()
                 if truck and truck.Parent then
-                    truck:PivotTo(_CFrameValue2.Value)
-                    if primaryPart then
-                        primaryPart.Velocity = Vector3.zero
-                        primaryPart.RotVelocity = Vector3.zero
-                    end
+                    truck:PivotTo(_CFrameValue.Value)
+                    freezeVelocity()
                 end
             end)
 
@@ -273,30 +273,29 @@ local function tweenTruckToDestination(truck, targetCF, duration, onTick)
                 if onTick then onTick(remaining) end
             end)
 
-            local v190 = TweenService:Create(_CFrameValue2, tweenInfo, {Value = targetCFrame})
-            v190:Play()
-            v190.Completed:Wait()
+            local tween = TweenService:Create(_CFrameValue, tweenInfo, {Value = targetCFrame})
+            tween:Play()
+            tween.Completed:Wait()
 
             pcall(function() conn:Disconnect() end)
             pcall(function() hbConn:Disconnect() end)
-            pcall(function() _CFrameValue2:Destroy() end)
+            pcall(function() _CFrameValue:Destroy() end)
             truck:PivotTo(targetCFrame)
+            freezeVelocity()
         end
     end
 
-    -- ALUR TELEPORT DEJP:
-    -- 1. Lift up 1000 studs (Instant)
-    v191(truck:GetPivot() + Vector3.new(0, 1000, 0), 0)
+    -- ALUR BARU (TANPA UBAH GRAVITY):
+    -- 1. Melayang halus ke atas (Y + 800)
+    moveStep(truck:GetPivot() + Vector3.new(0, 800, 0), 1)
     task.wait(0.2)
 
-    -- 2. Move to destination sky 1000 studs (Instant)
-    v191(targetCF + Vector3.new(0, 1000, 0), 0)
+    -- 2. Teleport instan di udara ke atas destinasi
+    moveStep(targetCF + Vector3.new(0, 800, 0), 0)
     task.wait(0.2)
 
-    -- 3. Slow drop down to target waypoint over duration (35-45s)
-    v191(targetCF, duration)
-
-    workspace.Gravity = 196.2
+    -- 3. Turun perlahan ke destinasi (sesuai durasi 35-45s)
+    moveStep(targetCF, duration)
 end
 
 local function logDestinationComplete()
@@ -565,15 +564,15 @@ local function runAutofarm()
                     if DelayLabel then
                         DelayLabel:Set({
                             Title   = "Teleporting to "..currentDestName..":",
-                            Content = string.format("Starting DEJP Teleport Method — %.2fs", tweenDuration),
+                            Content = string.format("Flying / Dropping — %.2fs", tweenDuration),
                         })
                     end
 
-                    -- Executing DEJP Teleport method
+                    -- Eksekusi Teleport tanpa otak-atik Gravity
                     tweenTruckToDestination(myTruck, targetCFrame, tweenDuration, function(remaining)
                         if DelayLabel then
                             DelayLabel:Set({
-                                Title   = "DEJP Drop → "..currentDestName,
+                                Title   = "Dropping → "..currentDestName,
                                 Content = string.format("%d sec remaining  |  %.0f fps", math.ceil(remaining), getFPS()),
                             })
                         end
@@ -636,8 +635,6 @@ local function runAutofarm()
                 end
             end
 
-            workspace.Gravity = 196.2
-
             if DelayLabel then
                 DelayLabel:Set({Title="Status:", Content="Clearing old truck & job..."})
             end
@@ -648,7 +645,6 @@ local function runAutofarm()
             task.wait(0.8)
         end
 
-        workspace.Gravity = 196.2
         task.wait(0.3)
         continue
     until not _G.Autofarm
@@ -658,7 +654,7 @@ end
 local Window = Rayfield:CreateWindow({
     Name             = "Car Driving Indonesia | By .projectsion",
     LoadingTitle     = "Projectsion Loading...",
-    LoadingSubtitle  = "Version 4.0 (Full DEJP Teleport Method Integration)",
+    LoadingSubtitle  = "Version 4.1 (No Gravity Touch Safe Mode)",
     ConfigurationSaving = {Enabled=false},
     Discord          = {Enabled=false},
     KeySystem        = false,
@@ -676,8 +672,6 @@ FarmTab:CreateToggle({
             SessionStart      = os.time()
             SessionMoneyStart = getCleanMoney()
             task.spawn(runAutofarm)
-        else
-            workspace.Gravity = 196.2
         end
     end,
 })
