@@ -1,8 +1,37 @@
 warn("sebelum loadstring")
-local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/X5Dermaster/RayField-Loader/refs/heads/main/rayfieldloader.lua'))()
+
+local function loadRayfield()
+    local sources = {
+        'https://raw.githubusercontent.com/X5Dermaster/RayField-Loader/refs/heads/main/rayfieldloader.lua',
+       'https://sirius.menu/rayfield', 
+    }
+    for _, url in ipairs(sources) do
+        local httpOk, src = pcall(game.HttpGet, game, url)
+        if not httpOk or type(src) ~= "string" or #src < 64 then
+            warn("HttpGet failed:", url, src)
+            continue
+        end
+        local fn, err = loadstring(src)
+        if not fn then
+            warn("loadstring compile error from", url, "->", err)
+            continue
+        end
+        local runOk, result = pcall(fn)
+        if not runOk then
+            warn("Rayfield runtime error from", url, "->", result)
+            continue
+        end
+        warn("Rayfield loaded OK from:", url)
+        return result
+    end
+    error("[Projectsion] All Rayfield sources failed — check executor HttpGet permissions or network")
+end
+
+local Rayfield = loadRayfield()
 warn("sesudah loadstring")
-warn("kalau ini atau yang bawah hasilnya tables berarti berhasil rayfieldnya", Rayfield)
+warn("kalau ini atau yang bawah hasilnya table berarti berhasil rayfieldnya", Rayfield)
 warn(Rayfield)
+
 local DelayLabel, TeleportLabel, DestMinLabel, Dest5MinLabel
 local IncomeHourLabel, EarnedLabel, CurrentLabel, FpsLabel
 local SessionTimeLabel, SessionEarnedLabel, SessionIPHLabel
@@ -63,7 +92,7 @@ local destinationTimestamps = {}
 local activePlatforms = {}
 local mapDeleted = false
 local lastDestEarned = 0
-local lastDestName = "Ã¢â‚¬â€"
+local lastDestName = "—"
 local cycleMoneySnapshot = 0
 
 warn("berhasil lewatin global 2")
@@ -146,7 +175,7 @@ end
 
 local function selfKick(player)
     local tag = isStaff(player) and "STAFF" or "PLAYER"
-    lp:Kick(tag .. " DETECTED (" .. player.Name .. ") Ã¢â‚¬â€ player/staff join kacung semua tu staff co")
+    lp:Kick(tag .. " DETECTED (" .. player.Name .. ")")
 end
 
 Players.PlayerAdded:Connect(function(player)
@@ -375,18 +404,18 @@ local function sendWebhook(income)
         title = "Cycle Completed",
         color = 0xFFFFFF,
         fields = {
-            { name = "Username",      value = lp.Name,                                                          inline = false },
-            { name = "Cycle Income",  value = formatRP(income),                                                 inline = false },
-            { name = "Current Money", value = formatRP(getCleanMoney()) .. " (Est)",                            inline = false },
-            { name = "Total Earning", value = formatRP(_G.TotalEarning) .. " (Est)",                           inline = false },
-            { name = "Cycle Count",   value = tostring(_G.CycleCount),                                         inline = false },
-            { name = "Running Time",  value = getRunningTime(),                                                 inline = false },
-            { name = "Session Time",  value = SessionStart and formatDuration(os.time() - SessionStart) or "Ã¢â‚¬â€", inline = false },
-            { name = "Session /Hour", value = "RP. " .. formatShort(getSessionIPH()),                          inline = false },
-            { name = "Est /Hour",     value = "RP. " .. formatShort(getIncomePerHour()),                       inline = false },
-            { name = "FPS",           value = string.format("%.0f fps", getFPS()),                             inline = false },
+            { name = "Username",      value = lp.Name,                                                             inline = false },
+            { name = "Cycle Income",  value = formatRP(income),                                                    inline = false },
+            { name = "Current Money", value = formatRP(getCleanMoney()) .. " (Est)",                               inline = false },
+            { name = "Total Earning", value = formatRP(_G.TotalEarning) .. " (Est)",                              inline = false },
+            { name = "Cycle Count",   value = tostring(_G.CycleCount),                                            inline = false },
+            { name = "Running Time",  value = getRunningTime(),                                                    inline = false },
+            { name = "Session Time",  value = SessionStart and formatDuration(os.time() - SessionStart) or "—",   inline = false },
+            { name = "Session /Hour", value = "RP. " .. formatShort(getSessionIPH()),                             inline = false },
+            { name = "Est /Hour",     value = "RP. " .. formatShort(getIncomePerHour()),                          inline = false },
+            { name = "FPS",           value = string.format("%.0f fps", getFPS()),                                inline = false },
         },
-        image = { url = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&" },
+        image = { url = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg" },
         footer = { text = "Made by .projectsion | " .. os.date("%m/%d/%Y %I:%M %p") },
     }
     if http_request then
@@ -430,16 +459,10 @@ local function updateCycleLabels(earned, destName)
     lastDestEarned = earned
     lastDestName = destName
     if CycleEarnedLabel then
-        CycleEarnedLabel:Set({
-            Title = "Cycle Earned:",
-            Content = "RP. " .. formatNominal(earned)
-        })
+        CycleEarnedLabel:Set({ Title = "Cycle Earned:", Content = "RP. " .. formatNominal(earned) })
     end
     if LastDestLabel then
-        LastDestLabel:Set({
-            Title = "Last Destination:",
-            Content = destName .. "  Ã¢â€ â€™  RP. " .. formatNominal(earned)
-        })
+        LastDestLabel:Set({ Title = "Last Destination:", Content = destName .. "  →  RP. " .. formatNominal(earned) })
     end
 end
 
@@ -513,7 +536,6 @@ local function rollUntilTarget(remote, etc, hrp)
     return false
 end
 
--- Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ AUTOFARM (repeat-until, goto continue pattern) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 local function runAutofarm()
     StartMoney = getCleanMoney()
     SessionStart = os.time()
@@ -630,7 +652,7 @@ local function runAutofarm()
                             end
 
                             if DelayLabel then
-                                DelayLabel:Set({ Title = "Status:", Content = "Next dest ready Ã¢â‚¬â€ skipping reset!" })
+                                DelayLabel:Set({ Title = "Status:", Content = "Next dest ready — skipping reset!" })
                             end
 
                             cycleMoneySnapshot = getCleanMoney()
@@ -640,7 +662,6 @@ local function runAutofarm()
 
                         else
                             if remote then remote:FireServer("Unemployed") end
-
                             if DelayLabel then
                                 DelayLabel:Set({ Title = "Status:", Content = "Waiting payment..." })
                             end
@@ -673,7 +694,6 @@ local function runAutofarm()
         ::continue::
     until not _G.Autofarm
 end
--- Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ END AUTOFARM Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 local Window = Rayfield:CreateWindow({
     Name = "Car Driving Indonesia | By .projectsion",
@@ -708,23 +728,23 @@ FarmTab:CreateToggle({
 
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 StatsTab:CreateSection("Cycle")
-CycleEarnedLabel = StatsTab:CreateParagraph({ Title = "Cycle Earned:",    Content = "RP. 0" })
-LastDestLabel    = StatsTab:CreateParagraph({ Title = "Last Destination:", Content = "Ã¢â‚¬â€" })
+CycleEarnedLabel = StatsTab:CreateParagraph({ Title = "Cycle Earned:",     Content = "RP. 0" })
+LastDestLabel    = StatsTab:CreateParagraph({ Title = "Last Destination:",  Content = "—" })
 
 StatsTab:CreateSection("Session")
-SessionTimeLabel   = StatsTab:CreateParagraph({ Title = "Session Time:",   Content = "Ã¢â‚¬â€" })
+SessionTimeLabel   = StatsTab:CreateParagraph({ Title = "Session Time:",   Content = "—" })
 SessionEarnedLabel = StatsTab:CreateParagraph({ Title = "Session Earned:", Content = "RP. 0" })
 SessionIPHLabel    = StatsTab:CreateParagraph({ Title = "Session / Hour:", Content = "RP. 0/h" })
 
 StatsTab:CreateSection("Overall")
-DelayLabel      = StatsTab:CreateParagraph({ Title = "Status / Next TP:",          Content = "Waiting Job..." })
-TeleportLabel   = StatsTab:CreateParagraph({ Title = "Total Teleport Done:",        Content = "0 Times" })
-DestMinLabel    = StatsTab:CreateParagraph({ Title = "Destinations (Last 1 Min):",  Content = "0" })
-Dest5MinLabel   = StatsTab:CreateParagraph({ Title = "Destinations (Last 5 Mins):", Content = "0" })
-IncomeHourLabel = StatsTab:CreateParagraph({ Title = "Est. Income / Hour:",         Content = "RP. 0/h" })
-EarnedLabel     = StatsTab:CreateParagraph({ Title = "Total Earned:",               Content = "RP. 0" })
-CurrentLabel    = StatsTab:CreateParagraph({ Title = "Current Money:",              Content = "RP. 0" })
-FpsLabel        = StatsTab:CreateParagraph({ Title = "Current FPS:",                Content = "-- fps" })
+DelayLabel      = StatsTab:CreateParagraph({ Title = "Status / Next TP:",           Content = "Waiting Job..." })
+TeleportLabel   = StatsTab:CreateParagraph({ Title = "Total Teleport Done:",         Content = "0 Times" })
+DestMinLabel    = StatsTab:CreateParagraph({ Title = "Destinations (Last 1 Min):",   Content = "0" })
+Dest5MinLabel   = StatsTab:CreateParagraph({ Title = "Destinations (Last 5 Mins):",  Content = "0" })
+IncomeHourLabel = StatsTab:CreateParagraph({ Title = "Est. Income / Hour:",          Content = "RP. 0/h" })
+EarnedLabel     = StatsTab:CreateParagraph({ Title = "Total Earned:",                Content = "RP. 0" })
+CurrentLabel    = StatsTab:CreateParagraph({ Title = "Current Money:",               Content = "RP. 0" })
+FpsLabel        = StatsTab:CreateParagraph({ Title = "Current FPS:",                 Content = "-- fps" })
 
 local ProxTab = Window:CreateTab("Misc", "bot")
 ProxTab:CreateSection("Open NPC")
@@ -833,17 +853,17 @@ task.spawn(function()
         end
         if not _G.Autofarm then continue end
         EarnedMoney = current - StartMoney
-        TeleportLabel:Set({ Title = "Total Teleport Done:",        Content = _G.TotalTeleportCount .. " Times" })
-        DestMinLabel:Set({ Title = "Destinations (Last 1 Min):",   Content = getDestinationsInWindow(60) .. " (Chance of Double!)" })
-        Dest5MinLabel:Set({ Title = "Destinations (Last 5 Mins):", Content = tostring(getDestinationsInWindow(300)) })
-        IncomeHourLabel:Set({ Title = "Est. Income / Hour:",       Content = "RP. " .. formatShort(getIncomePerHour()) })
-        EarnedLabel:Set({ Title = "Total Earned:",                 Content = "RP. " .. formatNominal(EarnedMoney) })
-        CurrentLabel:Set({ Title = "Current Money:",               Content = "RP. " .. formatNominal(current) })
+        TeleportLabel:Set({ Title = "Total Teleport Done:",         Content = _G.TotalTeleportCount .. " Times" })
+        DestMinLabel:Set({ Title = "Destinations (Last 1 Min):",    Content = getDestinationsInWindow(60) .. " (Chance of Double!)" })
+        Dest5MinLabel:Set({ Title = "Destinations (Last 5 Mins):",  Content = tostring(getDestinationsInWindow(300)) })
+        IncomeHourLabel:Set({ Title = "Est. Income / Hour:",        Content = "RP. " .. formatShort(getIncomePerHour()) })
+        EarnedLabel:Set({ Title = "Total Earned:",                  Content = "RP. " .. formatNominal(EarnedMoney) })
+        CurrentLabel:Set({ Title = "Current Money:",                Content = "RP. " .. formatNominal(current) })
         FpsLabel:Set({
             Title = "Current FPS:",
             Content = string.format("%.0f fps  %s", fps,
-                fps < 30 and "Ã¢Å¡  lag Ã¢â‚¬â€ tp slowed" or
-                fps < 50 and "~ mild lag" or "Ã¢Å“â€œ smooth"),
+                fps < 30 and "⚡  lag — tp slowed" or
+                fps < 50 and "~ mild lag" or "✓ smooth"),
         })
     end
 end)
