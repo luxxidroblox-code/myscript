@@ -27,7 +27,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace         = game:GetService("Workspace")
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
-local TweenService      = game:GetService("TweenService")
 local lp                = Players.LocalPlayer
 
 _G.Autofarm           = false
@@ -227,75 +226,77 @@ task.spawn(function()
 end)
 local function getFPS() return _currentFPS end
 
--- ─── NO-GRAVITY-TOUCH TELEPORT METHOD ───────────────────────────────────────
+-- ─── METODE TELEPORT (SKY HOLD & SMOOTH DROP - NO GRAVITY TOUCH) ───────────
 local function tweenTruckToDestination(truck, targetCF, duration, onTick)
     if not truck or not truck.Parent then return end
 
-    local primaryPart = truck.PrimaryPart 
-        or (truck:FindFirstChild("Body") and truck.Body:FindFirstChild("#Weight")) 
-        or truck:FindFirstChild("DriveSeat") 
-        or truck:FindFirstChildWhichIsA("BasePart")
+    local descentTime = math.min(10, duration * 0.3) -- 10 detik terakhir turun perlahan
+    local skyWaitTime = math.max(0, duration - descentTime)
+
+    local targetLandingCF = uprightCF(targetCF, 2)
+    local skyCF           = uprightCF(CFrame.new(targetCF.Position.X, targetCF.Position.Y + 800, targetCF.Position.Z), 0)
 
     local function freezeVelocity()
+        if not truck or not truck.Parent then return end
         for _, part in ipairs(truck:GetDescendants()) do
             if part:IsA("BasePart") then
-                part.AssemblyLinearVelocity = Vector3.zero
+                part.AssemblyLinearVelocity  = Vector3.zero
                 part.AssemblyAngularVelocity = Vector3.zero
             end
         end
     end
 
-    local function moveStep(targetCFrame, dur)
-        if dur <= 0 then
-            truck:PivotTo(targetCFrame)
-            freezeVelocity()
-        else
-            local tweenInfo = TweenInfo.new(dur, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, 0, false, 0)
-            local _CFrameValue = Instance.new("CFrameValue")
-            _CFrameValue.Value = truck:GetPivot()
+    -- 1. Naik & Tahan di Atas Langit Destinasi
+    truck:PivotTo(skyCF)
+    freezeVelocity()
 
-            local conn = _CFrameValue.Changed:Connect(function()
-                if truck and truck.Parent then
-                    truck:PivotTo(_CFrameValue.Value)
-                    freezeVelocity()
-                end
-            end)
+    local elapsed = 0
+    local skyConn = RunService.Heartbeat:Connect(function(dt)
+        if not _G.Autofarm or not truck or not truck.Parent then return end
+        elapsed = elapsed + dt
+        truck:PivotTo(skyCF)
+        freezeVelocity()
 
-            local elapsed = 0
-            local hbConn = RunService.Heartbeat:Connect(function(dt)
-                if not _G.Autofarm or not truck or not truck.Parent then
-                    hbConn:Disconnect()
-                    return
-                end
-                elapsed = elapsed + dt
-                local remaining = math.max(0, dur - elapsed)
-                NextTeleportIn = math.ceil(remaining)
-                if onTick then onTick(remaining) end
-            end)
+        local remaining = math.max(0, duration - elapsed)
+        NextTeleportIn  = math.ceil(remaining)
+        if onTick then onTick(remaining, "sky") end
+    end)
 
-            local tween = TweenService:Create(_CFrameValue, tweenInfo, {Value = targetCFrame})
-            tween:Play()
-            tween.Completed:Wait()
-
-            pcall(function() conn:Disconnect() end)
-            pcall(function() hbConn:Disconnect() end)
-            pcall(function() _CFrameValue:Destroy() end)
-            truck:PivotTo(targetCFrame)
-            freezeVelocity()
-        end
+    while elapsed < skyWaitTime and _G.Autofarm and truck and truck.Parent do
+        RunService.Heartbeat:Wait()
     end
 
-    -- ALUR BARU (TANPA UBAH GRAVITY):
-    -- 1. Melayang halus ke atas (Y + 800)
-    moveStep(truck:GetPivot() + Vector3.new(0, 800, 0), 1)
-    task.wait(0.2)
+    pcall(function() skyConn:Disconnect() end)
 
-    -- 2. Teleport instan di udara ke atas destinasi
-    moveStep(targetCF + Vector3.new(0, 800, 0), 0)
-    task.wait(0.2)
+    if not _G.Autofarm or not truck or not truck.Parent then return end
 
-    -- 3. Turun perlahan ke destinasi (sesuai durasi 35-45s)
-    moveStep(targetCF, duration)
+    -- 2. Turun Perlahan (Smooth Descent) ke Destinasi
+    local descentElapsed = 0
+    local descentConn = RunService.Heartbeat:Connect(function(dt)
+        if not _G.Autofarm or not truck or not truck.Parent then return end
+        descentElapsed = descentElapsed + dt
+        local alpha = math.clamp(descentElapsed / descentTime, 0, 1)
+
+        local currentCF = skyCF:Lerp(targetLandingCF, alpha)
+        truck:PivotTo(currentCF)
+        freezeVelocity()
+
+        local remaining = math.max(0, duration - (skyWaitTime + descentElapsed))
+        NextTeleportIn  = math.ceil(remaining)
+        if onTick then onTick(remaining, "dropping") end
+    end)
+
+    while descentElapsed < descentTime and _G.Autofarm and truck and truck.Parent do
+        RunService.Heartbeat:Wait()
+    end
+
+    pcall(function() descentConn:Disconnect() end)
+
+    -- 3. Sampai di Platform / Destinasi
+    if truck and truck.Parent then
+        truck:PivotTo(targetLandingCF)
+        freezeVelocity()
+    end
 end
 
 local function logDestinationComplete()
@@ -507,7 +508,7 @@ local function rollUntilTarget(remote, etc, hrp)
     return false
 end
 
--- ─── AUTOFARM ────────────────────────────────────────────────────────────────
+-- ─── AUTOFARM MAIN LOOP ──────────────────────────────────────────────────────
 local function runAutofarm()
     StartMoney        = getCleanMoney()
     SessionStart      = os.time()
@@ -561,18 +562,12 @@ local function runAutofarm()
                     EarnedMoney        = cycleMoneySnapshot - StartMoney
                     NextTeleportIn     = math.ceil(tweenDuration)
 
-                    if DelayLabel then
-                        DelayLabel:Set({
-                            Title   = "Teleporting to "..currentDestName..":",
-                            Content = string.format("Flying / Dropping — %.2fs", tweenDuration),
-                        })
-                    end
-
-                    -- Eksekusi Teleport tanpa otak-atik Gravity
-                    tweenTruckToDestination(myTruck, targetCFrame, tweenDuration, function(remaining)
+                    -- Eksekusi Teleport Tanpa Ubah/Matiin Gravity
+                    tweenTruckToDestination(myTruck, targetCFrame, tweenDuration, function(remaining, mode)
                         if DelayLabel then
+                            local stateTxt = mode == "sky" and "Floating in Sky" or "Dropping down"
                             DelayLabel:Set({
-                                Title   = "Dropping → "..currentDestName,
+                                Title   = stateTxt .. " → " .. currentDestName,
                                 Content = string.format("%d sec remaining  |  %.0f fps", math.ceil(remaining), getFPS()),
                             })
                         end
@@ -583,26 +578,28 @@ local function runAutofarm()
                     _G.TotalTeleportCount = _G.TotalTeleportCount + 1
                     logDestinationComplete()
 
+                    -- Tunggu Waypoint Kebaca
                     local oldWaypointPos = targetCFrame.Position
                     local timeout = 0
                     repeat
-                        task.wait(0.3)
-                        timeout = timeout + 0.3
+                        task.wait(0.2)
+                        timeout = timeout + 0.2
                         local wCheck = waypointFolder:FindFirstChild("Waypoint")
                         if not wCheck or (wCheck:GetPivot().Position - oldWaypointPos).Magnitude > 10 then
                             break
                         end
-                    until timeout >= 2
+                    until timeout >= 2.5
 
-                    task.wait(0.35)
+                    task.wait(0.3)
 
                     local nextWaypoint = waypointFolder:FindFirstChild("Waypoint")
 
+                    -- Cek Destinasi Berikutnya (Double Job / Next Waypoint)
                     if nextWaypoint and isTargetDestination(nextWaypoint) then
                         if DelayLabel then
-                            DelayLabel:Set({Title="Status:", Content="Payment + next dest ready..."})
+                            DelayLabel:Set({Title="Status:", Content="Moving to next destination..."})
                         end
-                        task.wait(1.5)
+                        task.wait(1)
 
                         local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
                         updateCycleLabels(earned, currentDestName)
@@ -621,7 +618,7 @@ local function runAutofarm()
                     else
                         if remote then remote:FireServer("Unemployed") end
                         if DelayLabel then
-                            DelayLabel:Set({Title="Status:", Content="Waiting payment..."})
+                            DelayLabel:Set({Title="Status:", Content="Job finished, waiting payment..."})
                         end
                         task.wait(1.5)
 
@@ -636,7 +633,7 @@ local function runAutofarm()
             end
 
             if DelayLabel then
-                DelayLabel:Set({Title="Status:", Content="Clearing old truck & job..."})
+                DelayLabel:Set({Title="Status:", Content="Clearing old truck..."})
             end
 
             local humanoid = char:FindFirstChildOfClass("Humanoid")
@@ -654,7 +651,7 @@ end
 local Window = Rayfield:CreateWindow({
     Name             = "Car Driving Indonesia | By .projectsion",
     LoadingTitle     = "Projectsion Loading...",
-    LoadingSubtitle  = "Version 4.1 (No Gravity Touch Safe Mode)",
+    LoadingSubtitle  = "Version 4.2 (Sky-Hold & Smooth Drop)",
     ConfigurationSaving = {Enabled=false},
     Discord          = {Enabled=false},
     KeySystem        = false,
