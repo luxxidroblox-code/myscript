@@ -29,6 +29,7 @@ Frame.Position = UDim2.new(-0.25, 0, -0.25, 0)
 Frame.BorderSizePixel = 0
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -68,6 +69,9 @@ local mapDeleted = false
 local lastDestEarned = 0
 local lastDestName = "—"
 local cycleMoneySnapshot = 0
+
+-- slider-controlled teleport duration (default 21s, matches DEJP)
+_G.TeleportTime = _G.TeleportTime or 21
 
 warn("berhasil lewatin global 2")
 
@@ -243,31 +247,67 @@ task.spawn(function()
 end)
 local function getFPS() return _currentFPS end
 
--- ═══ PATCHED: steppedTruckTeleport — fast linear tween 0.15–0.3s ═══
+-- ═══ DEJP-method truck teleport — TweenService CFrameValue ═══
 local function steppedTruckTeleport(truck, targetCF)
     if not truck or not truck.Parent then return end
-    local origin = truck:GetPivot()
-    local distance = (targetCF.Position - origin.Position).Magnitude
-    local duration = math.clamp(distance * 0.003, 0.15, 0.3)
-    local elapsed = 0
-    local done = false
-    local conn
-    conn = RunService.Heartbeat:Connect(function(dt)
-        if not truck or not truck.Parent or not _G.Autofarm then
-            conn:Disconnect()
-            done = true
-            return
+
+    local primary = truck.PrimaryPart
+    if not primary then return end
+
+    -- reset velocity before tween
+    local function resetVelocity()
+        for _, part in ipairs(truck:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.AssemblyLinearVelocity = Vector3.zero
+                part.AssemblyAngularVelocity = Vector3.zero
+            end
         end
-        elapsed = elapsed + math.min(dt, 0.1)
-        local alpha = math.min(elapsed / duration, 1)
-        truck:PivotTo(origin:Lerp(targetCF, alpha))
-        if alpha >= 1 then
-            conn:Disconnect()
-            truck:PivotTo(targetCF)
-            done = true
+    end
+
+    local duration = _G.TeleportTime or 21
+
+    -- lift above terrain, drop to target — same arc as DEJP
+    local liftCF = targetCF + Vector3.new(0, 1000, 0)
+
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut)
+    local cfValue = Instance.new("CFrameValue")
+    cfValue.Value = truck:GetPivot()
+
+    local conn = cfValue.Changed:Connect(function()
+        if truck and truck.Parent then
+            truck:PivotTo(cfValue.Value)
+            resetVelocity()
         end
     end)
-    while not done do task.wait() end
+
+    -- phase 1: lift instantly
+    Workspace.Gravity = 0
+    resetVelocity()
+    truck:PivotTo(liftCF)
+    resetVelocity()
+    cfValue.Value = liftCF
+
+    -- phase 2: tween down to target
+    local tween = TweenService:Create(cfValue, tweenInfo, { Value = targetCF })
+
+    -- update countdown display
+    NextTeleportIn = duration
+    task.spawn(function()
+        while NextTeleportIn > 0 and _G.Autofarm do
+            task.wait(1)
+            NextTeleportIn = math.max(0, NextTeleportIn - 1)
+        end
+    end)
+
+    tween:Play()
+    tween.Completed:Wait()
+
+    conn:Disconnect()
+    cfValue:Destroy()
+
+    Workspace.Gravity = 196.2
+    resetVelocity()
+    truck:PivotTo(targetCF)
 end
 
 local function logDestinationComplete()
@@ -418,7 +458,7 @@ local function updateCycleLabels(earned, destName)
     end
 end
 
--- ═══ PATCHED: rollUntilTarget — no task.wait, heartbeat spin loops ═══
+-- ═══ rollUntilTarget — heartbeat spin, no task.wait ═══
 local function rollUntilTarget(remote, etc, hrp)
     local waypointFolder = etc and etc:FindFirstChild("Waypoint")
     if not waypointFolder then return false end
@@ -431,10 +471,8 @@ local function rollUntilTarget(remote, etc, hrp)
             DelayLabel:Set({ Title = "Status:", Content = "Rolling Job (Attempt " .. attempt .. ")..." })
         end
 
-        -- fire unemployed instantly
         if remote then remote:FireServer("Unemployed") end
 
-        -- tight spin waiting for old waypoint to clear
         local clearTimeout = 0
         while waypointFolder:FindFirstChild("Waypoint") and clearTimeout < 30 do
             RunService.Heartbeat:Wait()
@@ -450,10 +488,8 @@ local function rollUntilTarget(remote, etc, hrp)
             conn:Disconnect()
         end)
 
-        -- fire Truck instantly
         if remote then remote:FireServer("Truck") end
 
-        -- spam starter 3x rapid-fire, no wait before
         local starter = etc:FindFirstChild("Job")
             and etc.Job:FindFirstChild("Truck")
             and etc.Job.Truck:FindFirstChild("Starter")
@@ -469,7 +505,6 @@ local function rollUntilTarget(remote, etc, hrp)
             end
         end
 
-        -- tight spin waiting for waypoint
         local wpTimeout = 0
         while not wpDone and wpTimeout < 40 do
             RunService.Heartbeat:Wait()
@@ -548,97 +583,72 @@ local function runAutofarm()
                     local primary = myTruck.PrimaryPart
                     local currentDestName = getWaypointName(waypoint)
 
-                    if primary then
-                        local dir = targetCFrame.Position - primary.Position
-                        if dir.Magnitude > 5 then
-                            primary.AssemblyLinearVelocity = dir.Unit * 70
-                        end
-                        primary.AssemblyAngularVelocity = Vector3.zero
-                    end
-
                     cycleMoneySnapshot = getCleanMoney()
                     EarnedMoney = cycleMoneySnapshot - StartMoney
-                    NextTeleportIn = 42.9
 
+                    if DelayLabel then
+                        DelayLabel:Set({
+                            Title = "Status:",
+                            Content = string.format("Teleporting... (%.0f fps)", getFPS())
+                        })
+                    end
+
+                    -- DEJP tween method — blocks until tween completes
+                    steppedTruckTeleport(myTruck, targetCFrame)
+                    _G.TotalTeleportCount = _G.TotalTeleportCount + 1
+                    logDestinationComplete()
+
+                    local oldWaypointPos = targetCFrame.Position
+                    local timeout = 0
                     repeat
-                        task.wait(1)
-                        NextTeleportIn = NextTeleportIn - 1
-                        if NextTeleportIn <= 25 and myTruck and primary then
-                            primary.AssemblyLinearVelocity = Vector3.new(0, 0.05, 0)
+                        task.wait(0.5)
+                        timeout = timeout + 0.5
+                        local wCheck = waypointFolder:FindFirstChild("Waypoint")
+                        if not wCheck or (wCheck:GetPivot().Position - oldWaypointPos).Magnitude > 10 then
+                            break
                         end
-                    until NextTeleportIn <= 0 or not _G.Autofarm
+                    until timeout >= 2
 
-                    if _G.Autofarm and myTruck and myTruck.Parent then
-                        local oldWaypointPos = targetCFrame.Position
+                    task.wait(0.35)
 
-                        if primary then
-                            primary.AssemblyLinearVelocity = Vector3.zero
-                            primary.AssemblyAngularVelocity = Vector3.zero
+                    local nextWaypoint = waypointFolder:FindFirstChild("Waypoint")
+
+                    if nextWaypoint and isTargetDestination(nextWaypoint) then
+                        if DelayLabel then
+                            DelayLabel:Set({ Title = "Status:", Content = "Payment + next dest ready..." })
+                        end
+                        task.wait(1.5)
+
+                        local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
+                        updateCycleLabels(earned, currentDestName)
+
+                        if _G.DeleteMap then
+                            local npos = nextWaypoint:IsA("Model")
+                                and nextWaypoint:GetPivot().Position
+                                or nextWaypoint.Position
+                            buildPlatform(npos, 400, 400, 25)
                         end
 
                         if DelayLabel then
-                            DelayLabel:Set({
-                                Title = "Status:",
-                                Content = string.format("Teleporting... (%.0f fps)", getFPS())
-                            })
+                            DelayLabel:Set({ Title = "Status:", Content = "Next dest ready — skipping reset!" })
                         end
 
-                        steppedTruckTeleport(myTruck, targetCFrame)
-                        _G.TotalTeleportCount = _G.TotalTeleportCount + 1
-                        logDestinationComplete()
+                        cycleMoneySnapshot = getCleanMoney()
+                        lastDestName = getWaypointName(nextWaypoint)
+                        EarnedMoney = cycleMoneySnapshot - StartMoney
 
-                        local timeout = 0
-                        repeat
-                            task.wait(0.5)
-                            timeout = timeout + 0.5
-                            local wCheck = waypointFolder:FindFirstChild("Waypoint")
-                            if not wCheck or (wCheck:GetPivot().Position - oldWaypointPos).Magnitude > 10 then
-                                break
-                            end
-                        until timeout >= 2
+                    else
+                        if remote then remote:FireServer("Unemployed") end
 
-                        task.wait(0.35)
-
-                        local nextWaypoint = waypointFolder:FindFirstChild("Waypoint")
-
-                        if nextWaypoint and isTargetDestination(nextWaypoint) then
-                            if DelayLabel then
-                                DelayLabel:Set({ Title = "Status:", Content = "Payment + next dest ready..." })
-                            end
-                            task.wait(1.5)
-
-                            local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
-                            updateCycleLabels(earned, currentDestName)
-
-                            if _G.DeleteMap then
-                                local npos = nextWaypoint:IsA("Model")
-                                    and nextWaypoint:GetPivot().Position
-                                    or nextWaypoint.Position
-                                buildPlatform(npos, 400, 400, 25)
-                            end
-
-                            if DelayLabel then
-                                DelayLabel:Set({ Title = "Status:", Content = "Next dest ready — skipping reset!" })
-                            end
-
-                            cycleMoneySnapshot = getCleanMoney()
-                            lastDestName = getWaypointName(nextWaypoint)
-                            EarnedMoney = cycleMoneySnapshot - StartMoney
-                            NextTeleportIn = 42.9
-
-                        else
-                            if remote then remote:FireServer("Unemployed") end
-
-                            if DelayLabel then
-                                DelayLabel:Set({ Title = "Status:", Content = "Waiting payment..." })
-                            end
-                            task.wait(1.5)
-
-                            local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
-                            updateCycleLabels(earned, currentDestName)
-
-                            break
+                        if DelayLabel then
+                            DelayLabel:Set({ Title = "Status:", Content = "Waiting payment..." })
                         end
+                        task.wait(1.5)
+
+                        local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
+                        updateCycleLabels(earned, currentDestName)
+
+                        break
                     end
                 else
                     break
@@ -666,7 +676,7 @@ end
 local Window = Rayfield:CreateWindow({
     Name = "Car Driving Indonesia | By .projectsion",
     LoadingTitle = "Projectsion Loading...",
-    LoadingSubtitle = "Version 3.5 (speed patch — fast tween + no-wait roll)",
+    LoadingSubtitle = "Version 3.5 (DEJP tween method)",
     ConfigurationSaving = { Enabled = false },
     Discord = { Enabled = false },
     KeySystem = false,
@@ -686,6 +696,14 @@ FarmTab:CreateToggle({
             task.spawn(runAutofarm)
         end
     end,
+})
+FarmTab:CreateSlider({
+    Name = "Teleport Duration",
+    Range = { 5, 60 },
+    Increment = 1,
+    CurrentValue = 21,
+    Suffix = " sec",
+    Callback = function(v) _G.TeleportTime = v end,
 })
 FarmTab:CreateToggle({
     Name = "Enable Black Screen Layout",
