@@ -524,6 +524,7 @@ local function runAutofarm()
         task.wait(0.4)
         task.wait(0.4)
         fireproximityprompt(spawnerPart:WaitForChild("Prompt"))
+        task.wait(3)
 
         local myTruck = getMyTruck()
 
