@@ -528,8 +528,13 @@ local function runAutofarm()
 
         hrp.CFrame = uprightCF(spawnerPart.CFrame, 3)
         RunService.Heartbeat:Wait()
-        fireproximityprompt(spawnerPart:WaitForChild("Prompt"))
-        task.wait(2.5)
+        task.wait(0.4)
+
+fireproximityprompt(spawnerPart:WaitForChild("Prompt"))
+task.wait(0.4)
+fireproximityprompt(spawnerPart:WaitForChild("Prompt"))
+task.wait(0.4)
+fireproximityprompt(spawnerPart:WaitForChild("Prompt"))
 
         local myTruck = getMyTruck()
 
