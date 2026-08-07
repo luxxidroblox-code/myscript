@@ -39,7 +39,6 @@ _G.CycleCount         = _G.CycleCount or 0
 _G.TotalEarning       = _G.TotalEarning or 0
 _G.TotalTeleportCount = _G.TotalTeleportCount or 0
 
--- random float 35.00–45.00 per cycle — anti-cheat can't fingerprint a fixed interval
 local TP_MIN = 35
 local TP_MAX = 45
 
@@ -65,7 +64,6 @@ local cycleMoneySnapshot    = 0
 
 -- ─── UTILS ───────────────────────────────────────────────────────────────────
 
--- float biar interval ga bisa di-profile (e.g. 37.43s, 41.08s, 39.76s)
 local function randomTweenDuration()
     return TP_MIN + math.random() * (TP_MAX - TP_MIN)
 end
@@ -229,68 +227,76 @@ task.spawn(function()
 end)
 local function getFPS() return _currentFPS end
 
--- ─── TWEEN TELEPORT ──────────────────────────────────────────────────────────
--- Logic baru: teleport langsung ke atas destinasi (800 studs)
--- Lalu turun pelan-pelan (mengikuti durasi random 35-45s) lewat CFrame & Heartbeat
+-- ─── FULL DEJP TELEPORT METHOD PORTED TO CDID ───────────────────────────────
 local function tweenTruckToDestination(truck, targetCF, duration, onTick)
     if not truck or not truck.Parent then return end
 
-    local elapsed = 0
-    local conn
+    workspace.Gravity = 0
 
-    -- Teleport ke titik di atas destinasi (Y + 800)
-    local DropHeight = 800
-    local startCF = targetCF + Vector3.new(0, DropHeight, 0)
-    truck:PivotTo(startCF)
+    local primaryPart = truck.PrimaryPart 
+        or (truck:FindFirstChild("Body") and truck.Body:FindFirstChild("#Weight")) 
+        or truck:FindFirstChild("DriveSeat") 
+        or truck:FindFirstChildWhichIsA("BasePart")
 
-    local cfVal   = Instance.new("CFrameValue")
-    cfVal.Value   = startCF
-
-    cfVal.Changed:Connect(function(v)
-        if truck and truck.Parent then
-            truck:PivotTo(v)
-            local pp = truck.PrimaryPart
-            if pp then
-                pp.AssemblyLinearVelocity  = Vector3.zero
-                pp.AssemblyAngularVelocity = Vector3.zero
+    -- Fungsi v191 murni dari DEJP
+    local function v191(targetCFrame, dur)
+        if dur <= 0 then
+            truck:PivotTo(targetCFrame)
+            if primaryPart then
+                primaryPart.Velocity = Vector3.zero
+                primaryPart.RotVelocity = Vector3.zero
             end
-        end
-    end)
+        else
+            local tweenInfo = TweenInfo.new(dur, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, 0, false, 0)
+            local _CFrameValue2 = Instance.new("CFrameValue")
+            _CFrameValue2.Value = truck:GetPivot()
 
-    -- Tween turun ke target perlahan menggunakan Easing Linear
-    local tweenInfo = TweenInfo.new(
-        duration,
-        Enum.EasingStyle.Linear,
-        Enum.EasingDirection.InOut,
-        0, false, 0
-    )
-    local tween = TweenService:Create(cfVal, tweenInfo, {Value = targetCF})
-    tween:Play()
+            local conn = _CFrameValue2.Changed:Connect(function()
+                if truck and truck.Parent then
+                    truck:PivotTo(_CFrameValue2.Value)
+                    if primaryPart then
+                        primaryPart.Velocity = Vector3.zero
+                        primaryPart.RotVelocity = Vector3.zero
+                    end
+                end
+            end)
 
-    -- Heartbeat paralel buat update HUD dan zero out velocity
-    conn = RunService.Heartbeat:Connect(function(dt)
-        if not _G.Autofarm or not truck or not truck.Parent then
-            tween:Cancel()
-            conn:Disconnect()
-            cfVal:Destroy()
-            return
-        end
-        elapsed = elapsed + dt
-        local remaining = math.max(0, duration - elapsed)
-        NextTeleportIn  = math.ceil(remaining)
-        if onTick then onTick(remaining) end
-        
-        if elapsed >= duration then
-            conn:Disconnect()
-            cfVal:Destroy()
-            truck:PivotTo(targetCF)
-        end
-    end)
+            local elapsed = 0
+            local hbConn = RunService.Heartbeat:Connect(function(dt)
+                if not _G.Autofarm or not truck or not truck.Parent then
+                    hbConn:Disconnect()
+                    return
+                end
+                elapsed = elapsed + dt
+                local remaining = math.max(0, dur - elapsed)
+                NextTeleportIn = math.ceil(remaining)
+                if onTick then onTick(remaining) end
+            end)
 
-    tween.Completed:Wait()
-    pcall(function() conn:Disconnect() end)
-    pcall(function() cfVal:Destroy() end)
-    truck:PivotTo(targetCF)
+            local v190 = TweenService:Create(_CFrameValue2, tweenInfo, {Value = targetCFrame})
+            v190:Play()
+            v190.Completed:Wait()
+
+            pcall(function() conn:Disconnect() end)
+            pcall(function() hbConn:Disconnect() end)
+            pcall(function() _CFrameValue2:Destroy() end)
+            truck:PivotTo(targetCFrame)
+        end
+    end
+
+    -- ALUR TELEPORT DEJP:
+    -- 1. Lift up 1000 studs (Instant)
+    v191(truck:GetPivot() + Vector3.new(0, 1000, 0), 0)
+    task.wait(0.2)
+
+    -- 2. Move to destination sky 1000 studs (Instant)
+    v191(targetCF + Vector3.new(0, 1000, 0), 0)
+    task.wait(0.2)
+
+    -- 3. Slow drop down to target waypoint over duration (35-45s)
+    v191(targetCF, duration)
+
+    workspace.Gravity = 196.2
 end
 
 local function logDestinationComplete()
@@ -550,7 +556,6 @@ local function runAutofarm()
                     local targetCFrame    = waypoint:IsA("Model") and waypoint:GetPivot() or waypoint.CFrame
                     local currentDestName = getWaypointName(waypoint)
 
-                    -- float random per cycle — 35.00 to 45.00, ga bisa di-profile
                     local tweenDuration = randomTweenDuration()
 
                     cycleMoneySnapshot = getCleanMoney()
@@ -560,15 +565,15 @@ local function runAutofarm()
                     if DelayLabel then
                         DelayLabel:Set({
                             Title   = "Teleporting to "..currentDestName..":",
-                            Content = string.format("Starting — %.2fs", tweenDuration),
+                            Content = string.format("Starting DEJP Teleport Method — %.2fs", tweenDuration),
                         })
                     end
 
-                    -- tween vertikal dari atas ke bawah bareng heartbeat countdown
+                    -- Executing DEJP Teleport method
                     tweenTruckToDestination(myTruck, targetCFrame, tweenDuration, function(remaining)
                         if DelayLabel then
                             DelayLabel:Set({
-                                Title   = "Dropping → "..currentDestName,
+                                Title   = "DEJP Drop → "..currentDestName,
                                 Content = string.format("%d sec remaining  |  %.0f fps", math.ceil(remaining), getFPS()),
                             })
                         end
@@ -613,7 +618,7 @@ local function runAutofarm()
                         cycleMoneySnapshot = getCleanMoney()
                         lastDestName       = getWaypointName(nextWaypoint)
                         EarnedMoney        = cycleMoneySnapshot - StartMoney
-                        NextTeleportIn     = 0  -- next iteration generates fresh random duration
+                        NextTeleportIn     = 0
                     else
                         if remote then remote:FireServer("Unemployed") end
                         if DelayLabel then
@@ -631,6 +636,8 @@ local function runAutofarm()
                 end
             end
 
+            workspace.Gravity = 196.2
+
             if DelayLabel then
                 DelayLabel:Set({Title="Status:", Content="Clearing old truck & job..."})
             end
@@ -641,6 +648,7 @@ local function runAutofarm()
             task.wait(0.8)
         end
 
+        workspace.Gravity = 196.2
         task.wait(0.3)
         continue
     until not _G.Autofarm
@@ -650,7 +658,7 @@ end
 local Window = Rayfield:CreateWindow({
     Name             = "Car Driving Indonesia | By .projectsion",
     LoadingTitle     = "Projectsion Loading...",
-    LoadingSubtitle  = "Version 3.8 (Vertical Drop Tween)",
+    LoadingSubtitle  = "Version 4.0 (Full DEJP Teleport Method Integration)",
     ConfigurationSaving = {Enabled=false},
     Discord          = {Enabled=false},
     KeySystem        = false,
@@ -668,6 +676,8 @@ FarmTab:CreateToggle({
             SessionStart      = os.time()
             SessionMoneyStart = getCleanMoney()
             task.spawn(runAutofarm)
+        else
+            workspace.Gravity = 196.2
         end
     end,
 })
