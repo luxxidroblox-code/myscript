@@ -530,9 +530,6 @@ local function runAutofarm()
         RunService.Heartbeat:Wait()
         task.wait(0.4)
 
-fireproximityprompt(spawnerPart:WaitForChild("Prompt"))
-task.wait(0.4)
-fireproximityprompt(spawnerPart:WaitForChild("Prompt"))
 task.wait(0.4)
 fireproximityprompt(spawnerPart:WaitForChild("Prompt"))
 
