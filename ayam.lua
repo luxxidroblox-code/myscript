@@ -1,37 +1,11 @@
 warn("sebelum loadstring")
-
-local function loadRayfield()
-    local sources = {
-        'https://raw.githubusercontent.com/X5Dermaster/RayField-Loader/refs/heads/main/rayfieldloader.lua',
-       'https://sirius.menu/rayfield', 
-    }
-    for _, url in ipairs(sources) do
-        local httpOk, src = pcall(game.HttpGet, game, url)
-        if not httpOk or type(src) ~= "string" or #src < 64 then
-            warn("HttpGet failed:", url, src)
-            continue
-        end
-        local fn, err = loadstring(src)
-        if not fn then
-            warn("loadstring compile error from", url, "->", err)
-            continue
-        end
-        local runOk, result = pcall(fn)
-        if not runOk then
-            warn("Rayfield runtime error from", url, "->", result)
-            continue
-        end
-        warn("Rayfield loaded OK from:", url)
-        return result
-    end
-    error("[Projectsion] All Rayfield sources failed — check executor HttpGet permissions or network")
-end
-
-local Rayfield = loadRayfield()
+local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/X5Dermaster/RayField-Loader/refs/heads/main/rayfieldloader.lua'))()
 warn("sesudah loadstring")
-warn("kalau ini atau yang bawah hasilnya table berarti berhasil rayfieldnya", Rayfield)
-warn(Rayfield)
-
+if Rayfield then
+    warn("kalau ini muncul 1 berarti berhasil rayfieldnya")
+else
+    warn("kalau ini muncul 2 berarti ga berhasil rayfieldnya")
+end
 local DelayLabel, TeleportLabel, DestMinLabel, Dest5MinLabel
 local IncomeHourLabel, EarnedLabel, CurrentLabel, FpsLabel
 local SessionTimeLabel, SessionEarnedLabel, SessionIPHLabel
@@ -175,7 +149,7 @@ end
 
 local function selfKick(player)
     local tag = isStaff(player) and "STAFF" or "PLAYER"
-    lp:Kick(tag .. " DETECTED (" .. player.Name .. ")")
+    lp:Kick(tag .. " DETECTED (" .. player.Name .. ") — player/staff join kacung semua tu staff co")
 end
 
 Players.PlayerAdded:Connect(function(player)
@@ -269,11 +243,12 @@ task.spawn(function()
 end)
 local function getFPS() return _currentFPS end
 
+-- ═══ PATCHED: steppedTruckTeleport — fast linear tween 0.15–0.3s ═══
 local function steppedTruckTeleport(truck, targetCF)
     if not truck or not truck.Parent then return end
     local origin = truck:GetPivot()
     local distance = (targetCF.Position - origin.Position).Magnitude
-    local duration = math.clamp(distance * 0.009, 0.8, 3.5)
+    local duration = math.clamp(distance * 0.003, 0.15, 0.3)
     local elapsed = 0
     local done = false
     local conn
@@ -283,16 +258,9 @@ local function steppedTruckTeleport(truck, targetCF)
             done = true
             return
         end
-        local fpsScale = _currentFPS >= 50 and 1 or _currentFPS >= 30 and 0.75 or 0.5
-        elapsed = elapsed + math.min(dt, 0.1) * fpsScale
+        elapsed = elapsed + math.min(dt, 0.1)
         local alpha = math.min(elapsed / duration, 1)
-        local eased
-        if alpha < 0.5 then
-            eased = 16 * alpha ^ 5
-        else
-            eased = 1 - (-2 * alpha + 2) ^ 5 / 2
-        end
-        truck:PivotTo(origin:Lerp(targetCF, eased))
+        truck:PivotTo(origin:Lerp(targetCF, alpha))
         if alpha >= 1 then
             conn:Disconnect()
             truck:PivotTo(targetCF)
@@ -352,22 +320,6 @@ end)
 
 local SelectedNPC, SelectedDealer, SelectedPlayer = "", "", ""
 
-local Dealer_Paths = {
-    ["Toyota"]    = workspace.Etc.Dealership.Toyota.Prompt,
-    ["Suzuki"]    = workspace.Etc.Dealership.Suzuki.Prompt,
-    ["Premium"]   = workspace.Etc.Dealership.Premium.Prompt,
-    ["Nissan"]    = workspace.Etc.Dealership.Nissan.Prompt,
-    ["Mercedes"]  = workspace.Etc.Dealership.MercedesBenz.Prompt,
-    ["Komersial"] = workspace.Etc.Dealership.Komersial.Prompt,
-    ["KIA"]       = workspace.Etc.Dealership.KIA.Prompt,
-    ["Hyundai"]   = workspace.Etc.Dealership.Hyundai.Prompt,
-    ["Honda"]     = workspace.Etc.Dealership.Honda.Prompt,
-    ["Daihatsu"]  = workspace.Etc.Dealership.Daihatsu.Prompt,
-    ["Chery"]     = workspace.Etc.Dealership.Chery.Prompt,
-    ["Bandung"]   = workspace.Etc.Dealership.Bandung.Prompt,
-    ["Dealer 77"] = workspace.Etc.Dealership["77"].Prompt,
-}
-
 local NPC_Paths = {
     ["Npc job select"]       = workspace.Etc.Job.Selection.Model.Prompt,
     ["Npc upgrade slot Npc"] = workspace.Etc.Upgrade.Upgrade.Prompt,
@@ -404,18 +356,18 @@ local function sendWebhook(income)
         title = "Cycle Completed",
         color = 0xFFFFFF,
         fields = {
-            { name = "Username",      value = lp.Name,                                                             inline = false },
-            { name = "Cycle Income",  value = formatRP(income),                                                    inline = false },
-            { name = "Current Money", value = formatRP(getCleanMoney()) .. " (Est)",                               inline = false },
-            { name = "Total Earning", value = formatRP(_G.TotalEarning) .. " (Est)",                              inline = false },
-            { name = "Cycle Count",   value = tostring(_G.CycleCount),                                            inline = false },
-            { name = "Running Time",  value = getRunningTime(),                                                    inline = false },
-            { name = "Session Time",  value = SessionStart and formatDuration(os.time() - SessionStart) or "—",   inline = false },
-            { name = "Session /Hour", value = "RP. " .. formatShort(getSessionIPH()),                             inline = false },
-            { name = "Est /Hour",     value = "RP. " .. formatShort(getIncomePerHour()),                          inline = false },
-            { name = "FPS",           value = string.format("%.0f fps", getFPS()),                                inline = false },
+            { name = "Username",      value = lp.Name,                                                           inline = false },
+            { name = "Cycle Income",  value = formatRP(income),                                                  inline = false },
+            { name = "Current Money", value = formatRP(getCleanMoney()) .. " (Est)",                             inline = false },
+            { name = "Total Earning", value = formatRP(_G.TotalEarning) .. " (Est)",                            inline = false },
+            { name = "Cycle Count",   value = tostring(_G.CycleCount),                                          inline = false },
+            { name = "Running Time",  value = getRunningTime(),                                                  inline = false },
+            { name = "Session Time",  value = SessionStart and formatDuration(os.time() - SessionStart) or "—", inline = false },
+            { name = "Session /Hour", value = "RP. " .. formatShort(getSessionIPH()),                           inline = false },
+            { name = "Est /Hour",     value = "RP. " .. formatShort(getIncomePerHour()),                        inline = false },
+            { name = "FPS",           value = string.format("%.0f fps", getFPS()),                              inline = false },
         },
-        image = { url = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg" },
+        image = { url = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&" },
         footer = { text = "Made by .projectsion | " .. os.date("%m/%d/%Y %I:%M %p") },
     }
     if http_request then
@@ -466,6 +418,7 @@ local function updateCycleLabels(earned, destName)
     end
 end
 
+-- ═══ PATCHED: rollUntilTarget — no task.wait, heartbeat spin loops ═══
 local function rollUntilTarget(remote, etc, hrp)
     local waypointFolder = etc and etc:FindFirstChild("Waypoint")
     if not waypointFolder then return false end
@@ -478,11 +431,14 @@ local function rollUntilTarget(remote, etc, hrp)
             DelayLabel:Set({ Title = "Status:", Content = "Rolling Job (Attempt " .. attempt .. ")..." })
         end
 
+        -- fire unemployed instantly
         if remote then remote:FireServer("Unemployed") end
+
+        -- tight spin waiting for old waypoint to clear
         local clearTimeout = 0
-        while waypointFolder:FindFirstChild("Waypoint") and clearTimeout < 2 do
-            task.wait(0.1)
-            clearTimeout = clearTimeout + 0.1
+        while waypointFolder:FindFirstChild("Waypoint") and clearTimeout < 30 do
+            RunService.Heartbeat:Wait()
+            clearTimeout = clearTimeout + 1
         end
 
         local gotWaypoint = nil
@@ -494,22 +450,30 @@ local function rollUntilTarget(remote, etc, hrp)
             conn:Disconnect()
         end)
 
+        -- fire Truck instantly
         if remote then remote:FireServer("Truck") end
 
+        -- spam starter 3x rapid-fire, no wait before
         local starter = etc:FindFirstChild("Job")
             and etc.Job:FindFirstChild("Truck")
             and etc.Job.Truck:FindFirstChild("Starter")
         if starter and hrp then
             hrp.CFrame = uprightCF(starter:GetPivot(), 3)
-            task.wait(0.1)
             local prompt = starter:FindFirstChild("Prompt")
-            if prompt then fireproximityprompt(prompt) end
+            if prompt then
+                fireproximityprompt(prompt)
+                RunService.Heartbeat:Wait()
+                fireproximityprompt(prompt)
+                RunService.Heartbeat:Wait()
+                fireproximityprompt(prompt)
+            end
         end
 
+        -- tight spin waiting for waypoint
         local wpTimeout = 0
-        while not wpDone and wpTimeout < 2 do
-            task.wait(0.05)
-            wpTimeout = wpTimeout + 0.05
+        while not wpDone and wpTimeout < 40 do
+            RunService.Heartbeat:Wait()
+            wpTimeout = wpTimeout + 1
         end
         pcall(function() conn:Disconnect() end)
 
@@ -518,7 +482,8 @@ local function rollUntilTarget(remote, etc, hrp)
         end
 
         if gotWaypoint then
-            task.wait(0.35)
+            RunService.Heartbeat:Wait()
+            RunService.Heartbeat:Wait()
             local wp = waypointFolder:FindFirstChild("Waypoint") or gotWaypoint
             if isTargetDestination(wp) then
                 lastDestName = getWaypointName(wp)
@@ -530,12 +495,13 @@ local function rollUntilTarget(remote, etc, hrp)
             end
         end
 
-        task.wait(0.05)
+        RunService.Heartbeat:Wait()
     end
 
     return false
 end
 
+-- ═══ AUTOFARM ═══════════════════════════════════════════════════════════
 local function runAutofarm()
     StartMoney = getCleanMoney()
     SessionStart = os.time()
@@ -552,7 +518,7 @@ local function runAutofarm()
             and network.RemoteEvents:FindFirstChild("Job")
 
         local dapetRuteBagus = rollUntilTarget(remote, etc, hrp)
-        if not dapetRuteBagus or not _G.Autofarm then goto continue end
+        if not dapetRuteBagus or not _G.Autofarm then continue end
 
         local spawnerPart = Workspace
             :WaitForChild("Etc"):WaitForChild("Job")
@@ -662,6 +628,7 @@ local function runAutofarm()
 
                         else
                             if remote then remote:FireServer("Unemployed") end
+
                             if DelayLabel then
                                 DelayLabel:Set({ Title = "Status:", Content = "Waiting payment..." })
                             end
@@ -691,14 +658,15 @@ local function runAutofarm()
 
         task.wait(0.3)
 
-        ::continue::
+        continue
     until not _G.Autofarm
 end
+-- ═══ END AUTOFARM ════════════════════════════════════════════════════════
 
 local Window = Rayfield:CreateWindow({
     Name = "Car Driving Indonesia | By .projectsion",
     LoadingTitle = "Projectsion Loading...",
-    LoadingSubtitle = "Version 3.5 (smart unemployed + cycle earning)",
+    LoadingSubtitle = "Version 3.5 (speed patch — fast tween + no-wait roll)",
     ConfigurationSaving = { Enabled = false },
     Discord = { Enabled = false },
     KeySystem = false,
@@ -728,8 +696,8 @@ FarmTab:CreateToggle({
 
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 StatsTab:CreateSection("Cycle")
-CycleEarnedLabel = StatsTab:CreateParagraph({ Title = "Cycle Earned:",     Content = "RP. 0" })
-LastDestLabel    = StatsTab:CreateParagraph({ Title = "Last Destination:",  Content = "—" })
+CycleEarnedLabel = StatsTab:CreateParagraph({ Title = "Cycle Earned:",    Content = "RP. 0" })
+LastDestLabel    = StatsTab:CreateParagraph({ Title = "Last Destination:", Content = "—" })
 
 StatsTab:CreateSection("Session")
 SessionTimeLabel   = StatsTab:CreateParagraph({ Title = "Session Time:",   Content = "—" })
@@ -737,14 +705,14 @@ SessionEarnedLabel = StatsTab:CreateParagraph({ Title = "Session Earned:", Conte
 SessionIPHLabel    = StatsTab:CreateParagraph({ Title = "Session / Hour:", Content = "RP. 0/h" })
 
 StatsTab:CreateSection("Overall")
-DelayLabel      = StatsTab:CreateParagraph({ Title = "Status / Next TP:",           Content = "Waiting Job..." })
-TeleportLabel   = StatsTab:CreateParagraph({ Title = "Total Teleport Done:",         Content = "0 Times" })
-DestMinLabel    = StatsTab:CreateParagraph({ Title = "Destinations (Last 1 Min):",   Content = "0" })
-Dest5MinLabel   = StatsTab:CreateParagraph({ Title = "Destinations (Last 5 Mins):",  Content = "0" })
-IncomeHourLabel = StatsTab:CreateParagraph({ Title = "Est. Income / Hour:",          Content = "RP. 0/h" })
-EarnedLabel     = StatsTab:CreateParagraph({ Title = "Total Earned:",                Content = "RP. 0" })
-CurrentLabel    = StatsTab:CreateParagraph({ Title = "Current Money:",               Content = "RP. 0" })
-FpsLabel        = StatsTab:CreateParagraph({ Title = "Current FPS:",                 Content = "-- fps" })
+DelayLabel      = StatsTab:CreateParagraph({ Title = "Status / Next TP:",          Content = "Waiting Job..." })
+TeleportLabel   = StatsTab:CreateParagraph({ Title = "Total Teleport Done:",        Content = "0 Times" })
+DestMinLabel    = StatsTab:CreateParagraph({ Title = "Destinations (Last 1 Min):",  Content = "0" })
+Dest5MinLabel   = StatsTab:CreateParagraph({ Title = "Destinations (Last 5 Mins):", Content = "0" })
+IncomeHourLabel = StatsTab:CreateParagraph({ Title = "Est. Income / Hour:",         Content = "RP. 0/h" })
+EarnedLabel     = StatsTab:CreateParagraph({ Title = "Total Earned:",               Content = "RP. 0" })
+CurrentLabel    = StatsTab:CreateParagraph({ Title = "Current Money:",              Content = "RP. 0" })
+FpsLabel        = StatsTab:CreateParagraph({ Title = "Current FPS:",                Content = "-- fps" })
 
 local ProxTab = Window:CreateTab("Misc", "bot")
 ProxTab:CreateSection("Open NPC")
@@ -769,13 +737,6 @@ ProxTab:CreateDropdown({
     CurrentOption = { "" },
     MultipleOptions = false,
     Callback = function(v) SelectedDealer = v[1] end,
-})
-ProxTab:CreateButton({
-    Name = "Open Dealer UI",
-    Callback = function()
-        local t = Dealer_Paths[SelectedDealer]
-        if t then fireproximityprompt(t) end
-    end,
 })
 ProxTab:CreateSection("Map / Performance")
 ProxTab:CreateToggle({
@@ -853,17 +814,17 @@ task.spawn(function()
         end
         if not _G.Autofarm then continue end
         EarnedMoney = current - StartMoney
-        TeleportLabel:Set({ Title = "Total Teleport Done:",         Content = _G.TotalTeleportCount .. " Times" })
-        DestMinLabel:Set({ Title = "Destinations (Last 1 Min):",    Content = getDestinationsInWindow(60) .. " (Chance of Double!)" })
-        Dest5MinLabel:Set({ Title = "Destinations (Last 5 Mins):",  Content = tostring(getDestinationsInWindow(300)) })
-        IncomeHourLabel:Set({ Title = "Est. Income / Hour:",        Content = "RP. " .. formatShort(getIncomePerHour()) })
-        EarnedLabel:Set({ Title = "Total Earned:",                  Content = "RP. " .. formatNominal(EarnedMoney) })
-        CurrentLabel:Set({ Title = "Current Money:",                Content = "RP. " .. formatNominal(current) })
+        TeleportLabel:Set({ Title = "Total Teleport Done:",        Content = _G.TotalTeleportCount .. " Times" })
+        DestMinLabel:Set({ Title = "Destinations (Last 1 Min):",   Content = getDestinationsInWindow(60) .. " (Chance of Double!)" })
+        Dest5MinLabel:Set({ Title = "Destinations (Last 5 Mins):", Content = tostring(getDestinationsInWindow(300)) })
+        IncomeHourLabel:Set({ Title = "Est. Income / Hour:",       Content = "RP. " .. formatShort(getIncomePerHour()) })
+        EarnedLabel:Set({ Title = "Total Earned:",                 Content = "RP. " .. formatNominal(EarnedMoney) })
+        CurrentLabel:Set({ Title = "Current Money:",               Content = "RP. " .. formatNominal(current) })
         FpsLabel:Set({
             Title = "Current FPS:",
             Content = string.format("%.0f fps  %s", fps,
-                fps < 30 and "⚡  lag — tp slowed" or
-                fps < 50 and "~ mild lag" or "✓ smooth"),
+                fps < 30 and "⚠  lag — tp slowed" or
+                fps < 50 and "~ mild lag" or "✔ smooth"),
         })
     end
 end)
