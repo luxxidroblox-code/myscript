@@ -39,7 +39,6 @@ _G.CycleCount         = _G.CycleCount or 0
 _G.TotalEarning       = _G.TotalEarning or 0
 _G.TotalTeleportCount = _G.TotalTeleportCount or 0
 
--- [UPDATED] Range waktu teleport jadi 35 - 39 detik sesuai video
 local TP_MIN = 35
 local TP_MAX = 39
 
@@ -228,63 +227,108 @@ task.spawn(function()
 end)
 local function getFPS() return _currentFPS end
 
--- ─── METODE TELEPORT (FULL SKY HOLD + INSTANT DROP) ───────────
+-- ─── TELEPORT METHOD: SKY DRIFT + VELOCITY SPOOF + CUBIC DROP ────────────────
+--
+-- Detection vectors this closes:
+--   [1] Static position flag  — truck drifts laterally at real drive speed, never parked
+--   [2] Velocity/pos mismatch — AssemblyLinearVelocity set to match drift direction × speed
+--   [3] Single-frame delta    — cubic ease-out descent over 0.8s, no position spike
+--   [4] Pattern timing        — randomTweenDuration() already handles this from last build
+--
+-- Phase 1: Sky hold at Y+1500 with horizontal lerp toward target + sine Y jitter
+-- Phase 2: Cubic ease-out drop over 0.8s onto landing CFrame
+--
 local function tweenTruckToDestination(truck, targetCF, duration, onTick)
     if not truck or not truck.Parent then return end
 
     local targetLandingCF = uprightCF(targetCF, 2.5)
-    -- Tarik setinggi 3000 stud biar aman nunggu di awan kayak di video
-    local skyCF           = uprightCF(CFrame.new(targetCF.Position.X, targetCF.Position.Y + 3000, targetCF.Position.Z), 0)
+    local originPos       = truck:GetPivot().Position
+    local targetPos       = targetCF.Position
 
-    local function freezeVelocity()
+    -- Flat travel vector — used for lateral drift and yaw alignment
+    local travelFlat  = Vector3.new(targetPos.X - originPos.X, 0, targetPos.Z - originPos.Z)
+    local travelDist  = travelFlat.Magnitude
+    local travelNorm  = travelDist > 0.5 and travelFlat.Unit or Vector3.new(1, 0, 0)
+    -- Cover full horizontal distance in exactly `duration` seconds — matches real drive speed
+    local driftSpeed  = travelDist / duration
+    local travelYaw   = math.atan2(travelNorm.X, travelNorm.Z)
+
+    -- Y+1500: above map geometry, below 3000 (less anomalous to a bounds check)
+    local skyBaseY = targetPos.Y + 1500
+
+    -- Fake velocity: all BaseParts in truck get matching AssemblyLinearVelocity
+    -- Client-owned physics — server reads this as legitimate movement delta
+    local function applyVelocity(moving)
         if not truck or not truck.Parent then return end
+        local vel = moving
+            and Vector3.new(travelNorm.X * driftSpeed, 0, travelNorm.Z * driftSpeed)
+            or Vector3.zero
         for _, part in ipairs(truck:GetDescendants()) do
             if part:IsA("BasePart") then
-                part.AssemblyLinearVelocity  = Vector3.zero
+                part.AssemblyLinearVelocity  = vel
                 part.AssemblyAngularVelocity = Vector3.zero
             end
         end
     end
 
-    -- 1. Tahan Posisi di Atas Langit (Full Hold, tanpa Lerp/Smooth Descent)
+    -- ── Phase 1: Sky drift ──────────────────────────────────────────────────
+    -- Truck lerps XZ toward target at driftSpeed, holds at skyBaseY + sine jitter
+    -- Two non-harmonic sine frequencies = irregular bump pattern, not a fixed oscillation
     local elapsed = 0
     local skyConn = RunService.Heartbeat:Connect(function(dt)
         if not _G.Autofarm or not truck or not truck.Parent then return end
         elapsed = elapsed + dt
-        
+
+        local cx     = originPos.X + travelNorm.X * driftSpeed * elapsed
+        local cz     = originPos.Z + travelNorm.Z * driftSpeed * elapsed
+        local jitter = math.sin(elapsed * 6.7) * 0.25 + math.sin(elapsed * 14.3) * 0.12
+        local skyCF  = CFrame.new(cx, skyBaseY + jitter, cz) * CFrame.Angles(0, travelYaw, 0)
+
         truck:PivotTo(skyCF)
-        freezeVelocity()
+        applyVelocity(true)
 
         local remaining = math.max(0, duration - elapsed)
         NextTeleportIn  = math.ceil(remaining)
         if onTick then onTick(remaining, "sky") end
     end)
 
-    -- Tunggu sampai durasi full habis
     while elapsed < duration and _G.Autofarm and truck and truck.Parent do
         RunService.Heartbeat:Wait()
     end
-
     pcall(function() skyConn:Disconnect() end)
 
     if not _G.Autofarm or not truck or not truck.Parent then return end
 
-    -- 2. INSTANT Drop ke Waypoint
-    local dropEnd = os.clock() + 2 -- Tahan di bawah selama 2 detik biar duit masuk
+    -- ── Phase 2: Cubic ease-out descent over 0.8s ──────────────────────────
+    -- Position delta per frame stays within normal movement range — no spike
+    local dropDuration = 0.8
+    local dropElapsed  = 0
+    local preDropPos   = truck:GetPivot().Position
+
     local dropConn = RunService.Heartbeat:Connect(function(dt)
         if not _G.Autofarm or not truck or not truck.Parent then return end
-        
-        truck:PivotTo(targetLandingCF)
-        freezeVelocity()
-        
+        dropElapsed = dropElapsed + dt
+        local t     = math.clamp(dropElapsed / dropDuration, 0, 1)
+        local eased = 1 - (1 - t)^3  -- cubic ease-out: fast entry, soft land
+        local pos   = Vector3.new(
+            preDropPos.X + (targetLandingCF.Position.X - preDropPos.X) * eased,
+            preDropPos.Y + (targetLandingCF.Position.Y - preDropPos.Y) * eased,
+            preDropPos.Z + (targetLandingCF.Position.Z - preDropPos.Z) * eased
+        )
+        truck:PivotTo(CFrame.new(pos) * CFrame.Angles(0, travelYaw, 0))
+        applyVelocity(false)
         if onTick then onTick(0, "dropping") end
     end)
 
-    while os.clock() < dropEnd and _G.Autofarm and truck and truck.Parent do
+    while dropElapsed < dropDuration and _G.Autofarm and truck and truck.Parent do
         RunService.Heartbeat:Wait()
     end
-    
     pcall(function() dropConn:Disconnect() end)
+
+    if truck and truck.Parent then
+        truck:PivotTo(targetLandingCF)
+        applyVelocity(false)
+    end
 end
 
 local function logDestinationComplete()
@@ -525,15 +569,15 @@ local function runAutofarm()
             :WaitForChild("Truck"):WaitForChild("Spawner"):WaitForChild("Part")
 
         local spawnerCF = uprightCF(spawnerPart.CFrame, 3)
-        hrp.Anchored = true 
-        
+        hrp.Anchored = true
+
         local tweenInfo = TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
         local charTween = TweenService:Create(hrp, tweenInfo, {CFrame = spawnerCF})
         charTween:Play()
-        charTween.Completed:Wait() 
-        
+        charTween.Completed:Wait()
+
         hrp.Anchored = false
-        
+
         RunService.Heartbeat:Wait()
         task.wait(0.4)
         task.wait(0.4)
@@ -546,8 +590,6 @@ local function runAutofarm()
             hrp.CFrame = uprightCF(myTruck.DriveSeat.CFrame, 1)
             task.wait(0.2)
             fireproximityprompt(myTruck.DriveSeat:WaitForChild("PromptDriveSeat"))
-            
-            -- [ADDED] Tunggu ekstra dikit biar player beneran kerender duduk sebelum ditarik ke atas
             task.wait(1.5)
 
             while _G.Autofarm do
@@ -560,14 +602,13 @@ local function runAutofarm()
                 if isTargetDestination(waypoint) then
                     local targetCFrame    = waypoint:IsA("Model") and waypoint:GetPivot() or waypoint.CFrame
                     local currentDestName = getWaypointName(waypoint)
+                    local tweenDuration   = randomTweenDuration()
 
-                    local tweenDuration = randomTweenDuration()
-                    
                     Rayfield:Notify({
-                        Title = "Auto Farm",
-                        Content = string.format("Found best time to teleport %.1f second.", tweenDuration),
+                        Title   = "Auto Farm",
+                        Content = string.format("Route locked — %.1fs window.", tweenDuration),
                         Duration = 5,
-                        Image = 4483362458,
+                        Image    = 4483362458,
                     })
 
                     cycleMoneySnapshot = getCleanMoney()
@@ -576,10 +617,10 @@ local function runAutofarm()
 
                     tweenTruckToDestination(myTruck, targetCFrame, tweenDuration, function(remaining, mode)
                         if DelayLabel then
-                            local stateTxt = mode == "sky" and "Waiting in Sky" or "Instant Drop (Claim)"
+                            local stateTxt = mode == "sky" and "Sky Drift →" or "Descending →"
                             DelayLabel:Set({
-                                Title   = stateTxt .. " → " .. currentDestName,
-                                Content = string.format("%d sec remaining  |  %.0f fps", math.ceil(remaining), getFPS()),
+                                Title   = stateTxt .. " " .. currentDestName,
+                                Content = string.format("%d sec  |  %.0f fps", math.ceil(remaining), getFPS()),
                             })
                         end
                     end)
@@ -660,7 +701,7 @@ end
 local Window = Rayfield:CreateWindow({
     Name             = "Car Driving Indonesia | By .projectsion",
     LoadingTitle     = "Projectsion Loading...",
-    LoadingSubtitle  = "Version 4.5 (Instant Drop Bypass)",
+    LoadingSubtitle  = "Version 5.0 (Sky Drift + Velocity Spoof + Cubic Drop)",
     ConfigurationSaving = {Enabled=false},
     Discord          = {Enabled=false},
     KeySystem        = false,
