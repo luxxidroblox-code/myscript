@@ -27,7 +27,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace         = game:GetService("Workspace")
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
-local TweenService      = game:GetService("TweenService") -- [ADDED] TweenService untuk smooth TP
+local TweenService      = game:GetService("TweenService")
 local lp                = Players.LocalPlayer
 
 _G.Autofarm           = false
@@ -39,7 +39,8 @@ _G.CycleCount         = _G.CycleCount or 0
 _G.TotalEarning       = _G.TotalEarning or 0
 _G.TotalTeleportCount = _G.TotalTeleportCount or 0
 
-local TP_MIN = 35
+-- [UPDATED] Range waktu teleport jadi 39 - 45 detik
+local TP_MIN = 39
 local TP_MAX = 45
 
 local MoneyPath = lp.PlayerGui
@@ -231,11 +232,10 @@ local function getFPS() return _currentFPS end
 local function tweenTruckToDestination(truck, targetCF, duration, onTick)
     if not truck or not truck.Parent then return end
 
-    -- [UPDATED] Descent time dibikin proporsional lebih lama (40% dari durasi) biar makin smooth
     local descentTime = math.min(15, duration * 0.4) 
     local skyWaitTime = math.max(0, duration - descentTime)
 
-    local targetLandingCF = uprightCF(targetCF, 2.5) -- Sedikit dinaikin biar roda nggak tembus platform
+    local targetLandingCF = uprightCF(targetCF, 2.5)
     local skyCF           = uprightCF(CFrame.new(targetCF.Position.X, targetCF.Position.Y + 800, targetCF.Position.Z), 0)
 
     local function freezeVelocity()
@@ -275,7 +275,6 @@ local function tweenTruckToDestination(truck, targetCF, duration, onTick)
     -- 2. Turun Perlahan (Smooth Descent) ke Destinasi
     local descentElapsed = 0
     
-    -- [UPDATED] Fungsi Easing Out Cubic: Makin ke bawah makin pelan jatohnya
     local function easeOutCubic(x)
         return 1 - math.pow(1 - x, 3)
     end
@@ -285,7 +284,7 @@ local function tweenTruckToDestination(truck, targetCF, duration, onTick)
         descentElapsed = descentElapsed + dt
         
         local linearAlpha = math.clamp(descentElapsed / descentTime, 0, 1)
-        local alpha = easeOutCubic(linearAlpha) -- Terapin smoothing
+        local alpha = easeOutCubic(linearAlpha) 
 
         local currentCF = skyCF:Lerp(targetLandingCF, alpha)
         truck:PivotTo(currentCF)
@@ -302,9 +301,9 @@ local function tweenTruckToDestination(truck, targetCF, duration, onTick)
 
     pcall(function() descentConn:Disconnect() end)
 
-    -- 3. [UPDATED] Sampai di Platform - Tahan Posisi Bawah Biar Gak Langsung Lepas Gravity (Biar sampe napak mulus)
+    -- 3. Sampai di Platform - Tahan Posisi Bawah Biar Gak Langsung Lepas Gravity
     if truck and truck.Parent then
-        local holdEnd = os.clock() + 1.5 -- Tahan 1.5 detik
+        local holdEnd = os.clock() + 1.5 
         while os.clock() < holdEnd and _G.Autofarm and truck and truck.Parent do
             truck:PivotTo(targetLandingCF)
             freezeVelocity()
@@ -541,7 +540,6 @@ local function runAutofarm()
         local dapetRute = rollUntilTarget(remote, etc, hrp)
         if not dapetRute or not _G.Autofarm then continue end
 
-        -- [UPDATED] Jeda dulu setelah dapet rute job (Jangan langsung teleport)
         if DelayLabel then
             DelayLabel:Set({Title="Status:", Content="Job found! Moving to spawner..."})
         end
@@ -551,14 +549,13 @@ local function runAutofarm()
             :WaitForChild("Etc"):WaitForChild("Job")
             :WaitForChild("Truck"):WaitForChild("Spawner"):WaitForChild("Part")
 
-        -- [UPDATED] Ganti dari teleport instant jadi Tween CFrame mulus ke Spawner
         local spawnerCF = uprightCF(spawnerPart.CFrame, 3)
-        hrp.Anchored = true -- Anchor bentar biar animasinya nggak nabrak map
+        hrp.Anchored = true 
         
         local tweenInfo = TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
         local charTween = TweenService:Create(hrp, tweenInfo, {CFrame = spawnerCF})
         charTween:Play()
-        charTween.Completed:Wait() -- Tunggu sampe karakternya sampe titik spawner
+        charTween.Completed:Wait() 
         
         hrp.Anchored = false
         
@@ -587,12 +584,19 @@ local function runAutofarm()
                     local currentDestName = getWaypointName(waypoint)
 
                     local tweenDuration = randomTweenDuration()
+                    
+                    -- [ADDED] Notifikasi Rayfield pas dapet waktu sebelum teleport
+                    Rayfield:Notify({
+                        Title = "Auto Farm",
+                        Content = string.format("Found best time to teleport %.1f second.", tweenDuration),
+                        Duration = 5,
+                        Image = 4483362458, -- Pakai icon info standar
+                    })
 
                     cycleMoneySnapshot = getCleanMoney()
                     EarnedMoney        = cycleMoneySnapshot - StartMoney
                     NextTeleportIn     = math.ceil(tweenDuration)
 
-                    -- Eksekusi Teleport Tanpa Ubah/Matiin Gravity (Udah diupdate makin smooth)
                     tweenTruckToDestination(myTruck, targetCFrame, tweenDuration, function(remaining, mode)
                         if DelayLabel then
                             local stateTxt = mode == "sky" and "Floating in Sky" or "Smooth Dropping"
@@ -608,7 +612,6 @@ local function runAutofarm()
                     _G.TotalTeleportCount = _G.TotalTeleportCount + 1
                     logDestinationComplete()
 
-                    -- Tunggu Waypoint Kebaca
                     local oldWaypointPos = targetCFrame.Position
                     local timeout = 0
                     repeat
@@ -624,7 +627,6 @@ local function runAutofarm()
 
                     local nextWaypoint = waypointFolder:FindFirstChild("Waypoint")
 
-                    -- Cek Destinasi Berikutnya (Double Job / Next Waypoint)
                     if nextWaypoint and isTargetDestination(nextWaypoint) then
                         if DelayLabel then
                             DelayLabel:Set({Title="Status:", Content="Moving to next destination..."})
@@ -681,7 +683,7 @@ end
 local Window = Rayfield:CreateWindow({
     Name             = "Car Driving Indonesia | By .projectsion",
     LoadingTitle     = "Projectsion Loading...",
-    LoadingSubtitle  = "Version 4.3 (Tween Spawner & Smooth Drop)",
+    LoadingSubtitle  = "Version 4.4 (Custom TP Time & Notif)",
     ConfigurationSaving = {Enabled=false},
     Discord          = {Enabled=false},
     KeySystem        = false,
