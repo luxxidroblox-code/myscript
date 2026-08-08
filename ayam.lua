@@ -39,9 +39,9 @@ _G.CycleCount         = _G.CycleCount or 0
 _G.TotalEarning       = _G.TotalEarning or 0
 _G.TotalTeleportCount = _G.TotalTeleportCount or 0
 
--- [UPDATED] Range waktu teleport jadi 39 - 45 detik
-local TP_MIN = 39
-local TP_MAX = 45
+-- [UPDATED] Range waktu teleport jadi 35 - 39 detik sesuai video
+local TP_MIN = 35
+local TP_MAX = 39
 
 local MoneyPath = lp.PlayerGui
     :WaitForChild("Main"):WaitForChild("Container"):WaitForChild("Hub")
@@ -228,15 +228,13 @@ task.spawn(function()
 end)
 local function getFPS() return _currentFPS end
 
--- ─── METODE TELEPORT (SKY HOLD & EXTREME SMOOTH DROP) ───────────
+-- ─── METODE TELEPORT (FULL SKY HOLD + INSTANT DROP) ───────────
 local function tweenTruckToDestination(truck, targetCF, duration, onTick)
     if not truck or not truck.Parent then return end
 
-    local descentTime = math.min(15, duration * 0.4) 
-    local skyWaitTime = math.max(0, duration - descentTime)
-
     local targetLandingCF = uprightCF(targetCF, 2.5)
-    local skyCF           = uprightCF(CFrame.new(targetCF.Position.X, targetCF.Position.Y + 800, targetCF.Position.Z), 0)
+    -- Tarik setinggi 3000 stud biar aman nunggu di awan kayak di video
+    local skyCF           = uprightCF(CFrame.new(targetCF.Position.X, targetCF.Position.Y + 3000, targetCF.Position.Z), 0)
 
     local function freezeVelocity()
         if not truck or not truck.Parent then return end
@@ -248,14 +246,12 @@ local function tweenTruckToDestination(truck, targetCF, duration, onTick)
         end
     end
 
-    -- 1. Naik & Tahan di Atas Langit Destinasi
-    truck:PivotTo(skyCF)
-    freezeVelocity()
-
+    -- 1. Tahan Posisi di Atas Langit (Full Hold, tanpa Lerp/Smooth Descent)
     local elapsed = 0
     local skyConn = RunService.Heartbeat:Connect(function(dt)
         if not _G.Autofarm or not truck or not truck.Parent then return end
         elapsed = elapsed + dt
+        
         truck:PivotTo(skyCF)
         freezeVelocity()
 
@@ -264,7 +260,8 @@ local function tweenTruckToDestination(truck, targetCF, duration, onTick)
         if onTick then onTick(remaining, "sky") end
     end)
 
-    while elapsed < skyWaitTime and _G.Autofarm and truck and truck.Parent do
+    -- Tunggu sampai durasi full habis
+    while elapsed < duration and _G.Autofarm and truck and truck.Parent do
         RunService.Heartbeat:Wait()
     end
 
@@ -272,44 +269,22 @@ local function tweenTruckToDestination(truck, targetCF, duration, onTick)
 
     if not _G.Autofarm or not truck or not truck.Parent then return end
 
-    -- 2. Turun Perlahan (Smooth Descent) ke Destinasi
-    local descentElapsed = 0
-    
-    local function easeOutCubic(x)
-        return 1 - math.pow(1 - x, 3)
-    end
-
-    local descentConn = RunService.Heartbeat:Connect(function(dt)
+    -- 2. INSTANT Drop ke Waypoint
+    local dropEnd = os.clock() + 2 -- Tahan di bawah selama 2 detik biar duit masuk
+    local dropConn = RunService.Heartbeat:Connect(function(dt)
         if not _G.Autofarm or not truck or not truck.Parent then return end
-        descentElapsed = descentElapsed + dt
         
-        local linearAlpha = math.clamp(descentElapsed / descentTime, 0, 1)
-        local alpha = easeOutCubic(linearAlpha) 
-
-        local currentCF = skyCF:Lerp(targetLandingCF, alpha)
-        truck:PivotTo(currentCF)
+        truck:PivotTo(targetLandingCF)
         freezeVelocity()
-
-        local remaining = math.max(0, duration - (skyWaitTime + descentElapsed))
-        NextTeleportIn  = math.ceil(remaining)
-        if onTick then onTick(remaining, "dropping") end
+        
+        if onTick then onTick(0, "dropping") end
     end)
 
-    while descentElapsed < descentTime and _G.Autofarm and truck and truck.Parent do
+    while os.clock() < dropEnd and _G.Autofarm and truck and truck.Parent do
         RunService.Heartbeat:Wait()
     end
-
-    pcall(function() descentConn:Disconnect() end)
-
-    -- 3. Sampai di Platform - Tahan Posisi Bawah Biar Gak Langsung Lepas Gravity
-    if truck and truck.Parent then
-        local holdEnd = os.clock() + 1.5 
-        while os.clock() < holdEnd and _G.Autofarm and truck and truck.Parent do
-            truck:PivotTo(targetLandingCF)
-            freezeVelocity()
-            RunService.Heartbeat:Wait()
-        end
-    end
+    
+    pcall(function() dropConn:Disconnect() end)
 end
 
 local function logDestinationComplete()
@@ -569,8 +544,11 @@ local function runAutofarm()
 
         if myTruck then
             hrp.CFrame = uprightCF(myTruck.DriveSeat.CFrame, 1)
-            RunService.Heartbeat:Wait()
+            task.wait(0.2)
             fireproximityprompt(myTruck.DriveSeat:WaitForChild("PromptDriveSeat"))
+            
+            -- [ADDED] Tunggu ekstra dikit biar player beneran kerender duduk sebelum ditarik ke atas
+            task.wait(1.5)
 
             while _G.Autofarm do
                 if not myTruck or not myTruck.Parent then break end
@@ -585,12 +563,11 @@ local function runAutofarm()
 
                     local tweenDuration = randomTweenDuration()
                     
-                    -- [ADDED] Notifikasi Rayfield pas dapet waktu sebelum teleport
                     Rayfield:Notify({
                         Title = "Auto Farm",
                         Content = string.format("Found best time to teleport %.1f second.", tweenDuration),
                         Duration = 5,
-                        Image = 4483362458, -- Pakai icon info standar
+                        Image = 4483362458,
                     })
 
                     cycleMoneySnapshot = getCleanMoney()
@@ -599,7 +576,7 @@ local function runAutofarm()
 
                     tweenTruckToDestination(myTruck, targetCFrame, tweenDuration, function(remaining, mode)
                         if DelayLabel then
-                            local stateTxt = mode == "sky" and "Floating in Sky" or "Smooth Dropping"
+                            local stateTxt = mode == "sky" and "Waiting in Sky" or "Instant Drop (Claim)"
                             DelayLabel:Set({
                                 Title   = stateTxt .. " → " .. currentDestName,
                                 Content = string.format("%d sec remaining  |  %.0f fps", math.ceil(remaining), getFPS()),
@@ -683,7 +660,7 @@ end
 local Window = Rayfield:CreateWindow({
     Name             = "Car Driving Indonesia | By .projectsion",
     LoadingTitle     = "Projectsion Loading...",
-    LoadingSubtitle  = "Version 4.4 (Custom TP Time & Notif)",
+    LoadingSubtitle  = "Version 4.5 (Instant Drop Bypass)",
     ConfigurationSaving = {Enabled=false},
     Discord          = {Enabled=false},
     KeySystem        = false,
