@@ -243,12 +243,11 @@ task.spawn(function()
 end)
 local function getFPS() return _currentFPS end
 
--- FUNGSI TURUN & TUNGGU DUIT BARU
-local function descendAndWait(vehicle, waypoint, duration, moneySnapshot)
+-- FUNGSI TURUN FULL KE PLATFORM & TUNGGU DUIT
+local function descendAndWait(vehicle, targetCFrame, duration, moneySnapshot)
     local primary = vehicle.PrimaryPart
     if not primary then return end
     
-    local targetCFrame = waypoint:IsA("Model") and waypoint:GetPivot() or waypoint.CFrame
     local startCFrame = targetCFrame + Vector3.new(0, 1000, 0)
     
     vehicle:PivotTo(startCFrame)
@@ -264,11 +263,8 @@ local function descendAndWait(vehicle, waypoint, duration, moneySnapshot)
             return
         end
         
-        -- Kalau waypoint hilang (berarti trigger nyentuh duluan sebelum full turun)
-        if not waypoint or not waypoint.Parent then
-            reached = true
-            return
-        end
+        -- Tidak ada pengecekan waypoint hilang di sini.
+        -- Truck akan terus lanjut turun sampai mentok ke targetCFrame (platform)
         
         elapsed = elapsed + dt
         local alpha = math.clamp(elapsed / duration, 0, 1)
@@ -289,13 +285,13 @@ local function descendAndWait(vehicle, waypoint, duration, moneySnapshot)
     if DelayLabel then DelayLabel:Set({ Title = "Status:", Content = "Waiting payment..." }) end
     
     local waitStart = tick()
-    -- JANGAN lepas gravity, nunggu sampai duitnya beneran masuk (dikasih limit max 15 detik biar ga stuck)
+    -- Tahan gravity di 0 pas udah nyampe bawah (platform) sambil nunggu duit masuk
     while _G.Autofarm and vehicle.Parent and (getCleanMoney() <= moneySnapshot) and (tick() - waitStart < 15) do
         task.wait(0.1)
         pcall(function() primary.Velocity = Vector3.new(0, 0, 0) end)
     end
     
-    -- Duit udah nambah, baru lepas gravity
+    -- Duit udah masuk, baru lepas gravity
     workspace.Gravity = 196.2
     pcall(function() primary.Velocity = Vector3.new(0, 0, 0) end)
 end
@@ -600,8 +596,11 @@ local function runAutofarm()
                         if myTruck.PrimaryPart then myTruck.PrimaryPart:SetNetworkOwner(lp) end
                     end)
                     
-                    -- Panggil fungsi descendAndWait yang baru
-                    descendAndWait(myTruck, waypoint, descentTime, cycleMoneySnapshot)
+                    -- Extract CFrame sebelum turun (jaga-jaga waypoint dihancurkan game di tengah jalan)
+                    local targetCFrame = waypoint:IsA("Model") and waypoint:GetPivot() or waypoint.CFrame
+                    
+                    -- Panggil fungsi descendAndWait dengan targetCFrame
+                    descendAndWait(myTruck, targetCFrame, descentTime, cycleMoneySnapshot)
 
                     if _G.Autofarm and myTruck and myTruck.Parent then
                         _G.TotalTeleportCount = _G.TotalTeleportCount + 1
@@ -610,7 +609,7 @@ local function runAutofarm()
                         local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
                         updateCycleLabels(earned, currentDestName)
 
-                        -- LANGSUNG LOOP RESET JOB (tanpa ngecek nextWaypoint lagi)
+                        -- LANGSUNG LOOP RESET JOB
                         if remote then remote:FireServer("Unemployed") end
                         break 
                     end
@@ -639,7 +638,7 @@ end
 local Window = Rayfield:CreateWindow({
     Name = "Car Driving Indonesia | By .projectsion",
     LoadingTitle = "Projectsion Loading...",
-    LoadingSubtitle = "Version 3.6 (Instant Loop + Gravity Hold)",
+    LoadingSubtitle = "Version 3.7 (Full Descent + Hold Gravity)",
     ConfigurationSaving = { Enabled = false },
     Discord = { Enabled = false },
     KeySystem = false,
