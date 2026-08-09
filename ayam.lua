@@ -125,6 +125,22 @@ local function rebuildPlatforms()
         and etc.Job.Truck:FindFirstChild("Spawner")
         and etc.Job.Truck.Spawner:FindFirstChild("Part")
     if spawnerPart then buildPlatform(spawnerPart.Position - Vector3.new(0, 6, 0), 1000, 1000) end
+
+    -- spawn platform
+    local spawnLocation = Workspace:FindFirstChild("SpawnLocation")
+    if spawnLocation then
+        buildPlatform(spawnLocation.Position, 200, 200, 4)
+    else
+        -- fallback: scan Lives folder for player spawn model
+        local livesFolder = Workspace:FindFirstChild("Lives")
+        if livesFolder then
+            local charModel = livesFolder:FindFirstChild(lp.Name)
+            if charModel then
+                local hrp = charModel:FindFirstChild("HumanoidRootPart")
+                if hrp then buildPlatform(hrp.Position, 200, 200, 4) end
+            end
+        end
+    end
 end
 
 local function deleteMap()
@@ -266,7 +282,6 @@ local function steppedTruckTeleport(truck, targetCF)
             return
         end
 
-        -- hammer network ownership every heartbeat tick
         pcall(function() setsimulationradius(math.huge, math.huge) end)
         pcall(function()
             if truck.PrimaryPart then
@@ -500,6 +515,10 @@ local function runAutofarm()
     SessionStart = os.time()
     SessionMoneyStart = StartMoney
 
+    -- auto-enable delete map when autofarm starts
+    _G.DeleteMap = true
+    deleteMap()
+
     repeat
         local char = lp.Character or lp.CharacterAdded:Wait()
         local hrp = char:WaitForChild("HumanoidRootPart")
@@ -621,12 +640,10 @@ local function runAutofarm()
                             local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
                             updateCycleLabels(earned, currentDestName)
 
-                            if _G.DeleteMap then
-                                local npos = nextWaypoint:IsA("Model")
-                                    and nextWaypoint:GetPivot().Position
-                                    or nextWaypoint.Position
-                                buildPlatform(npos, 400, 400, 25)
-                            end
+                            buildPlatform(
+                                nextWaypoint:IsA("Model") and nextWaypoint:GetPivot().Position or nextWaypoint.Position,
+                                400, 400, 25
+                            )
 
                             if DelayLabel then
                                 DelayLabel:Set({ Title = "Status:", Content = "Next dest ready — skipping reset!" })
@@ -671,6 +688,10 @@ local function runAutofarm()
 
         continue
     until not _G.Autofarm
+
+    -- cleanup on stop
+    _G.DeleteMap = false
+    clearPlatforms()
 end
 
 local Window = Rayfield:CreateWindow({
@@ -749,15 +770,6 @@ ProxTab:CreateDropdown({
     Callback = function(v) SelectedDealer = v[1] end,
 })
 ProxTab:CreateSection("Map / Performance")
-ProxTab:CreateToggle({
-    Name = "Delete Map (Low Lag Mode)",
-    Info = "Hapus map + terrain, otomatis buat platform di semua destinasi",
-    CurrentValue = false,
-    Callback = function(v)
-        _G.DeleteMap = v
-        if v then deleteMap() else clearPlatforms() end
-    end,
-})
 ProxTab:CreateButton({
     Name = "Rebuild Destination Platforms",
     Callback = function()
