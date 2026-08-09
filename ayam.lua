@@ -726,7 +726,7 @@ Dest5MinLabel   = StatsTab:CreateParagraph({ Title = "Destinations (Last 5 Mins)
 IncomeHourLabel = StatsTab:CreateParagraph({ Title = "Est. Income / Hour:",         Content = "RP. 0/h" })
 EarnedLabel     = StatsTab:CreateParagraph({ Title = "Total Earned:",               Content = "RP. 0" })
 CurrentLabel    = StatsTab:CreateParagraph({ Title = "Current Money:",              Content = "RP. 0" })
-FpsLabel        = StatsTab:CreateParagraph({ Title = "Current FPS:",                Content = "
+FpsLabel        = StatsTab:CreateParagraph({ Title = "Current FPS:",                Content = "-- fps" })
 
 local ProxTab = Window:CreateTab("Misc", "bot")
 ProxTab:CreateSection("Open NPC")
