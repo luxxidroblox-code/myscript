@@ -248,7 +248,7 @@ local function steppedTruckTeleport(truck, targetCF)
     local origin = truck:GetPivot()
     
     -- DIUBAH: Durasi tween dipaksa fix 4 detik.
-    local duration = 4.5
+    local duration = 5
     local elapsed = 0
     local done = false
 
@@ -256,7 +256,7 @@ local function steppedTruckTeleport(truck, targetCF)
     if DelayLabel then
         DelayLabel:Set({
             Title = "Status / Next TP:",
-            Content = string.format("Teleporting 4s (%.0f fps)", getFPS())
+            Content = string.format("Teleporting... %.0f fps)", getFPS())
         })
     end
 
