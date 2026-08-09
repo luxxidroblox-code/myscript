@@ -98,37 +98,51 @@ local function buildPlatform(position, sizeX, sizeZ, yOffset)
 end
 
 local function clearPlatforms()
-    for _, p in ipairs(activePlatforms) do
-        if p and p.Parent then p:Destroy() end
+    if activePlatforms then
+        for i = 1, #activePlatforms do
+            local p = activePlatforms[i]
+            pcall(function()
+                if p and p.Parent then p:Destroy() end
+            end)
+        end
     end
     activePlatforms = {}
 end
 
 local function rebuildPlatforms()
-    clearPlatforms()
-    local p = Instance.new("Part")
-    p.Name = "FarmPlatform"
-    p.Size = Vector3.new(4000000, 8, 4000000)
-    p.CFrame = CFrame.new(0, -4, 0)
-    p.Anchored = true
-    p.CanCollide = true
-    p.CastShadow = false
-    p.Material = Enum.Material.SmoothPlastic
-    p.BrickColor = BrickColor.new("Dark grey")
-    p.Parent = Workspace
-    table.insert(activePlatforms, p)
+    pcall(clearPlatforms)
+    local success, p = pcall(function() return Instance.new("Part") end)
+    if success and p then
+        p.Name = "FarmPlatform"
+        p.Size = Vector3.new(4000000, 8, 4000000)
+        p.CFrame = CFrame.new(0, -4, 0)
+        p.Anchored = true
+        p.CanCollide = true
+        p.CastShadow = false
+        p.Material = Enum.Material.SmoothPlastic
+        p.BrickColor = BrickColor.new("Dark grey")
+        p.Parent = Workspace
+        activePlatforms[#activePlatforms + 1] = p
+    end
 end
 
 local function deleteMap()
     mapDeleted = true
-    rebuildPlatforms()
+    pcall(rebuildPlatforms)
+    
     local map = Workspace:FindFirstChild("Map")
     if map then
-        for _, child in ipairs(map:GetChildren()) do
-            pcall(function() child:Destroy() end)
+        local children = map:GetChildren()
+        for i = 1, #children do
+            pcall(function() children[i]:Destroy() end)
         end
     end
-    pcall(function() Workspace.Terrain:Clear() end)
+    
+    pcall(function()
+        if Workspace.Terrain and typeof(Workspace.Terrain.Clear) == "function" then
+            Workspace.Terrain:Clear()
+        end
+    end)
 end
 
 local STAFF_GROUP_ID = 10884667
