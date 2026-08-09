@@ -488,7 +488,7 @@ local function runAutofarm()
                     cycleMoneySnapshot = getCleanMoney()
                     EarnedMoney = cycleMoneySnapshot - StartMoney
                     
-                    local descentTime = 42.9
+                    local descentTime = 43
                     NextTeleportIn = descentTime
 
                     if DelayLabel then
