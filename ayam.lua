@@ -248,7 +248,7 @@ local function steppedTruckTeleport(truck, targetCF)
     local origin = truck:GetPivot()
     
     -- DIUBAH: Durasi tween dipaksa fix 4 detik.
-    local duration = 4 
+    local duration = 4.5
     local elapsed = 0
     local done = false
 
