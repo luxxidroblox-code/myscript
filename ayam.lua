@@ -261,17 +261,6 @@ local function tweenTeleport(vehicle, p_target, p_duration)
     cfValue:Destroy()
 end
 
-local function arcTeleport(vehicle, destination, travelTime)
-    if not vehicle or not vehicle.Parent then return end
-    local lift  = vehicle:GetPrimaryPartCFrame() + Vector3.new(0, 1000, 0)
-    local above = destination + Vector3.new(0, 1000, 0)
-    workspace.Gravity = 0
-    tweenTeleport(vehicle, lift,  0)
-    tweenTeleport(vehicle, above, 0)
-    tweenTeleport(vehicle, destination, travelTime)
-    workspace.Gravity = 196.2
-end
-
 local function logDestinationComplete()
     table.insert(destinationTimestamps, os.time())
 end
@@ -575,8 +564,19 @@ local function runAutofarm()
 
                     cycleMoneySnapshot = getCleanMoney()
                     EarnedMoney = cycleMoneySnapshot - StartMoney
+
+                    pcall(function() setsimulationradius(math.huge, math.huge) end)
+                    pcall(function()
+                        if myTruck.PrimaryPart then myTruck.PrimaryPart:SetNetworkOwner(lp) end
+                    end)
+
+                    local above = targetCFrame + Vector3.new(0, 1000, 0)
+                    workspace.Gravity = 0
+                    tweenTeleport(myTruck, myTruck:GetPrimaryPartCFrame() + Vector3.new(0, 1000, 0), 0)
+                    tweenTeleport(myTruck, above, 0)
+                    workspace.Gravity = 196.2
+
                     NextTeleportIn = 42.9
-                    local descentTime = NextTeleportIn
 
                     repeat
                         task.wait(1)
@@ -589,15 +589,13 @@ local function runAutofarm()
                         if DelayLabel then
                             DelayLabel:Set({
                                 Title = "Status:",
-                                Content = string.format("Teleporting... (%.0f fps)", getFPS())
+                                Content = string.format("Descending... (%.0f fps)", getFPS())
                             })
                         end
 
-                        pcall(function() setsimulationradius(math.huge, math.huge) end)
-                        pcall(function()
-                            if myTruck.PrimaryPart then myTruck.PrimaryPart:SetNetworkOwner(lp) end
-                        end)
-                        arcTeleport(myTruck, targetCFrame, descentTime)
+                        workspace.Gravity = 0
+                        tweenTeleport(myTruck, targetCFrame, 3)
+                        workspace.Gravity = 196.2
                         _G.TotalTeleportCount = _G.TotalTeleportCount + 1
                         logDestinationComplete()
 
