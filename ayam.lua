@@ -461,12 +461,15 @@ local function rollUntilTarget(remote, etc, hrp)
 
         if remote then remote:FireServer("Truck") end
 
+        local unemployedRemote = game:GetService("ReplicatedStorage"):FindFirstChild("unemployed", true)
+            or game:GetService("ReplicatedStorage"):FindFirstChild("Unemployed", true)
+        if unemployedRemote then pcall(function() unemployedRemote:FireServer("Unemployed") end) end
+
         local starter = etc:FindFirstChild("Job")
             and etc.Job:FindFirstChild("Truck")
             and etc.Job.Truck:FindFirstChild("Starter")
         if starter and hrp then
             hrp.CFrame = uprightCF(starter:GetPivot(), 3)
-            task.wait(0.1)
             local prompt = starter:FindFirstChild("Prompt")
             if prompt then fireproximityprompt(prompt) end
         end
@@ -601,11 +604,11 @@ local function runAutofarm()
                         if DelayLabel then
                             DelayLabel:Set({
                                 Title = "Status:",
-                                Content = string.format("Descending... (%.0f fps)", getFPS())
+                                Content = string.format("Teleporting... 4s (%.0f fps)", getFPS())
                             })
                         end
 
-                        tweenTeleport(myTruck, targetCFrame, 3)
+                        tweenTeleport(myTruck, targetCFrame, 4)
                         _G.TotalTeleportCount = _G.TotalTeleportCount + 1
                         logDestinationComplete()
 
