@@ -79,14 +79,12 @@ local function uprightCF(cf, yOffset)
     return CFrame.new(pos) * CFrame.Angles(0, yaw, 0)
 end
 
-local function buildPlatform(position, sizeX, sizeZ, yOffset)
-    sizeX = sizeX or 350
-    sizeZ = sizeZ or 350
-    yOffset = yOffset or 4
+local function rebuildPlatforms()
+    clearPlatforms()
     local p = Instance.new("Part")
     p.Name = "FarmPlatform"
-    p.Size = Vector3.new(sizeX, 8, sizeZ)
-    p.CFrame = CFrame.new(position.X, position.Y - yOffset, position.Z)
+    p.Size = Vector3.new(4000000, 8, 4000000)
+    p.CFrame = CFrame.new(0, -4, 0)
     p.Anchored = true
     p.CanCollide = true
     p.CastShadow = false
@@ -94,7 +92,6 @@ local function buildPlatform(position, sizeX, sizeZ, yOffset)
     p.BrickColor = BrickColor.new("Dark grey")
     p.Parent = Workspace
     table.insert(activePlatforms, p)
-    return p
 end
 
 local function clearPlatforms()
