@@ -246,10 +246,20 @@ local function getFPS() return _currentFPS end
 local function steppedTruckTeleport(truck, targetCF)
     if not truck or not truck.Parent then return end
     local origin = truck:GetPivot()
-    local distance = (targetCF.Position - origin.Position).Magnitude
-    local duration = math.clamp(distance * 0.009, 0.8, 3.5)
+    
+    -- DIUBAH: Durasi tween dipaksa fix 4 detik.
+    local duration = 4 
     local elapsed = 0
     local done = false
+
+    -- Update UI untuk menampilkan durasi tween 4 detik ke arah destinasi
+    if DelayLabel then
+        DelayLabel:Set({
+            Title = "Status / Next TP:",
+            Content = string.format("Teleporting 4s (%.0f fps)", getFPS())
+        })
+    end
+
     local conn
     conn = RunService.Heartbeat:Connect(function(dt)
         if not truck or not truck.Parent or not _G.Autofarm then
@@ -407,7 +417,6 @@ local function isTargetDestination(waypoint)
         local tl = gui:FindFirstChildOfClass("TextLabel")
         if tl then wpLabel = tl.Text:lower() end
     end
-    -- HANYA SURABAYA DAN SIDOARJO (Malang dan Cargo dihapus)
     for _, t in pairs({ "sidoarjo", "surabaya" }) do
         if wpName:find(t) or wpLabel:find(t) then return true end
     end
@@ -443,14 +452,11 @@ local function rollUntilTarget(remote, etc, hrp)
             DelayLabel:Set({ Title = "Status:", Content = "Rolling Job (Attempt " .. attempt .. ")..." })
         end
 
-        -- LOGIC BARU: Fire Unemployed
         if remote then remote:FireServer("Unemployed") end
         task.wait(0.3)
         
-        -- LOGIC BARU: Get in Truck Job instant
         if remote then remote:FireServer("Truck") end
 
-        -- LOGIC BARU: Spam Starter
         local starter = etc:FindFirstChild("Job")
             and etc.Job:FindFirstChild("Truck")
             and etc.Job.Truck:FindFirstChild("Starter")
@@ -461,14 +467,13 @@ local function rollUntilTarget(remote, etc, hrp)
             local prompt = starter:FindFirstChild("Prompt")
             if prompt then 
                 fireproximityprompt(prompt) 
-                task.wait(0.1) -- Sedikit jeda untuk spam
+                task.wait(0.1) 
                 fireproximityprompt(prompt)
             end
         end
 
         task.wait(0.3)
 
-        -- Cek Destinasi
         local wp = waypointFolder:FindFirstChild("Waypoint")
         if wp and isTargetDestination(wp) then
             lastDestName = getWaypointName(wp)
@@ -509,7 +514,6 @@ local function runAutofarm()
         hrp.CFrame = uprightCF(spawnerPart.CFrame, 3)
         task.wait(0.4)
 
-        -- PRE-MOUNT: spawner prompt
         pcall(function() setsimulationradius(math.huge, math.huge) end)
         pcall(function()
             local ownable = spawnerPart:FindFirstAncestorOfClass("Model")
@@ -527,7 +531,6 @@ local function runAutofarm()
             hrp.CFrame = uprightCF(myTruck.DriveSeat.CFrame, 1)
             task.wait(0.2)
 
-            -- PRE-MOUNT: DriveSeat prompt
             pcall(function() setsimulationradius(math.huge, math.huge) end)
             pcall(function()
                 if myTruck.PrimaryPart then
@@ -537,7 +540,6 @@ local function runAutofarm()
 
             fireproximityprompt(myTruck.DriveSeat:WaitForChild("PromptDriveSeat"))
 
-            -- POST-MOUNT: confirm ownership setelah naik
             task.wait(0.3)
             pcall(function() setsimulationradius(math.huge, math.huge) end)
             pcall(function()
@@ -568,12 +570,12 @@ local function runAutofarm()
 
                     cycleMoneySnapshot = getCleanMoney()
                     EarnedMoney = cycleMoneySnapshot - StartMoney
-                    NextTeleportIn = 43
+                    NextTeleportIn = 43 -- DIKEMBALIKAN KE 43 DETIK UNTUK DELAY AWAL
 
                     repeat
                         task.wait(1)
                         NextTeleportIn = NextTeleportIn - 1
-                        if NextTeleportIn <= 25 and myTruck and primary then
+                        if NextTeleportIn <= 2 and myTruck and primary then
                             primary.AssemblyLinearVelocity = Vector3.new(0, 0.05, 0)
                         end
                     until NextTeleportIn <= 0 or not _G.Autofarm
@@ -584,13 +586,6 @@ local function runAutofarm()
                         if primary then
                             primary.AssemblyLinearVelocity = Vector3.zero
                             primary.AssemblyAngularVelocity = Vector3.zero
-                        end
-
-                        if DelayLabel then
-                            DelayLabel:Set({
-                                Title = "Status:",
-                                Content = string.format("Teleporting... (%.0f fps)", getFPS())
-                            })
                         end
 
                         steppedTruckTeleport(myTruck, targetCFrame)
@@ -615,7 +610,7 @@ local function runAutofarm()
                             if DelayLabel then
                                 DelayLabel:Set({ Title = "Status:", Content = "Payment + next dest ready..." })
                             end
-                            task.wait(0.3) -- Dipercepat dari 1.5
+                            task.wait(0.3) 
 
                             local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
                             updateCycleLabels(earned, currentDestName)
@@ -634,7 +629,7 @@ local function runAutofarm()
                             cycleMoneySnapshot = getCleanMoney()
                             lastDestName = getWaypointName(nextWaypoint)
                             EarnedMoney = cycleMoneySnapshot - StartMoney
-                            NextTeleportIn = 43
+                            NextTeleportIn = 43 -- DIKEMBALIKAN KE 43 DETIK
 
                         else
                             if remote then remote:FireServer("Unemployed") end
@@ -642,7 +637,7 @@ local function runAutofarm()
                             if DelayLabel then
                                 DelayLabel:Set({ Title = "Status:", Content = "Waiting payment..." })
                             end
-                            task.wait(0.3) -- Dipercepat dari 1.5
+                            task.wait(0.3) 
 
                             local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
                             updateCycleLabels(earned, currentDestName)
@@ -676,7 +671,7 @@ end
 local Window = Rayfield:CreateWindow({
     Name = "Car Driving Indonesia | By .projectsion",
     LoadingTitle = "Projectsion Loading...",
-    LoadingSubtitle = "Version 3.6 (Fast Reroll + Only SBY/SDA)",
+    LoadingSubtitle = "Version 3.7 (Tween 4s)",
     ConfigurationSaving = { Enabled = false },
     Discord = { Enabled = false },
     KeySystem = false,
@@ -685,7 +680,7 @@ local Window = Rayfield:CreateWindow({
 local FarmTab = Window:CreateTab("Autofarm", "truck")
 FarmTab:CreateSection("Autofarm Truck")
 FarmTab:CreateToggle({
-    Name = "On Autofarm Truck",
+    Name = "On Autofarm Truck (yes)",
     Info = "Filter HANYA Surabaya / Sidoarjo",
     CurrentValue = false,
     Callback = function(v)
@@ -842,10 +837,11 @@ end)
 task.spawn(function()
     while true do
         task.wait(1)
+        -- UI Menunggu / Cooldown (DelayLabel)
         if _G.Autofarm and DelayLabel and NextTeleportIn > 0 then
             DelayLabel:Set({
-                Title = "Next Teleport In:",
-                Content = string.format("%d sec  |  %.0f fps", NextTeleportIn, getFPS()),
+                Title = "Status / Next TP:",
+                Content = string.format("Waiting Payment: %ds", NextTeleportIn),
             })
         end
     end
