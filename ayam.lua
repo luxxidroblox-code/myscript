@@ -247,10 +247,12 @@ local function steppedTruckTeleport(truck, targetCF)
     if not truck or not truck.Parent then return end
     local origin = truck:GetPivot()
 
+    -- DIUBAH: Durasi tween dipaksa fix 4 detik.
     local duration = 5
     local elapsed = 0
     local done = false
 
+    -- Update UI untuk menampilkan durasi tween 4 detik ke arah destinasi
     if DelayLabel then
         DelayLabel:Set({
             Title = "Status / Next TP:",
@@ -265,15 +267,6 @@ local function steppedTruckTeleport(truck, targetCF)
             done = true
             return
         end
-
-        -- hammer network ownership every heartbeat tick
-        pcall(function() setsimulationradius(math.huge, math.huge) end)
-        pcall(function()
-            if truck.PrimaryPart then
-                truck.PrimaryPart:SetNetworkOwner(lp)
-            end
-        end)
-
         local fpsScale = _currentFPS >= 50 and 1 or _currentFPS >= 30 and 0.75 or 0.5
         elapsed = elapsed + math.min(dt, 0.1) * fpsScale
         local alpha = math.min(elapsed / duration, 1)
@@ -472,9 +465,9 @@ local function rollUntilTarget(remote, etc, hrp)
             hrp.CFrame = uprightCF(starter:GetPivot(), 3)
             task.wait(0.1)
             local prompt = starter:FindFirstChild("Prompt")
-            if prompt then
-                fireproximityprompt(prompt)
-                task.wait(0.1)
+            if prompt then 
+                fireproximityprompt(prompt) 
+                task.wait(0.1) 
                 fireproximityprompt(prompt)
             end
         end
@@ -495,6 +488,7 @@ local function rollUntilTarget(remote, etc, hrp)
     return false
 end
 
+-- ▬▬▬ AUTOFARM (repeat-until, goto continue pattern) ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 local function runAutofarm()
     StartMoney = getCleanMoney()
     SessionStart = os.time()
@@ -576,7 +570,7 @@ local function runAutofarm()
 
                     cycleMoneySnapshot = getCleanMoney()
                     EarnedMoney = cycleMoneySnapshot - StartMoney
-                    NextTeleportIn = 43
+                    NextTeleportIn = 43 -- DIKEMBALIKAN KE 43 DETIK UNTUK DELAY AWAL
 
                     repeat
                         task.wait(1)
@@ -616,7 +610,7 @@ local function runAutofarm()
                             if DelayLabel then
                                 DelayLabel:Set({ Title = "Status:", Content = "Payment + next dest ready..." })
                             end
-                            task.wait(0.3)
+                            task.wait(0.3) 
 
                             local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
                             updateCycleLabels(earned, currentDestName)
@@ -635,7 +629,7 @@ local function runAutofarm()
                             cycleMoneySnapshot = getCleanMoney()
                             lastDestName = getWaypointName(nextWaypoint)
                             EarnedMoney = cycleMoneySnapshot - StartMoney
-                            NextTeleportIn = 43
+                            NextTeleportIn = 43 -- DIKEMBALIKAN KE 43 DETIK
 
                         else
                             if remote then remote:FireServer("Unemployed") end
@@ -643,7 +637,7 @@ local function runAutofarm()
                             if DelayLabel then
                                 DelayLabel:Set({ Title = "Status:", Content = "Waiting payment..." })
                             end
-                            task.wait(0.3)
+                            task.wait(0.3) 
 
                             local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
                             updateCycleLabels(earned, currentDestName)
@@ -672,11 +666,12 @@ local function runAutofarm()
         continue
     until not _G.Autofarm
 end
+-- ▬▬▬ END AUTOFARM ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 
 local Window = Rayfield:CreateWindow({
     Name = "Car Driving Indonesia | By .projectsion",
     LoadingTitle = "Projectsion Loading...",
-    LoadingSubtitle = "Projectsion Hub",
+    LoadingSubtitle = "CDID autofarm",
     ConfigurationSaving = { Enabled = false },
     Discord = { Enabled = false },
     KeySystem = false,
@@ -842,10 +837,11 @@ end)
 task.spawn(function()
     while true do
         task.wait(1)
+        -- UI Menunggu / Cooldown (DelayLabel)
         if _G.Autofarm and DelayLabel and NextTeleportIn > 0 then
             DelayLabel:Set({
-                Title = "Status / Next TP:",
-                Content = string.format("Waiting Payment: %ds", NextTeleportIn),
+                Title = "Status:",
+                Content = string.format("Teleport in: %ds", NextTeleportIn),
             })
         end
     end
