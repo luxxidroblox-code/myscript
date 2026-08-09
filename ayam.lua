@@ -79,6 +79,31 @@ local function uprightCF(cf, yOffset)
     return CFrame.new(pos) * CFrame.Angles(0, yaw, 0)
 end
 
+local function buildPlatform(position, sizeX, sizeZ, yOffset)
+    sizeX = sizeX or 350
+    sizeZ = sizeZ or 350
+    yOffset = yOffset or 4
+    local p = Instance.new("Part")
+    p.Name = "FarmPlatform"
+    p.Size = Vector3.new(sizeX, 8, sizeZ)
+    p.CFrame = CFrame.new(position.X, position.Y - yOffset, position.Z)
+    p.Anchored = true
+    p.CanCollide = true
+    p.CastShadow = false
+    p.Material = Enum.Material.SmoothPlastic
+    p.BrickColor = BrickColor.new("Dark grey")
+    p.Parent = Workspace
+    table.insert(activePlatforms, p)
+    return p
+end
+
+local function clearPlatforms()
+    for _, p in ipairs(activePlatforms) do
+        if p and p.Parent then p:Destroy() end
+    end
+    activePlatforms = {}
+end
+
 local function rebuildPlatforms()
     clearPlatforms()
     local p = Instance.new("Part")
@@ -92,54 +117,6 @@ local function rebuildPlatforms()
     p.BrickColor = BrickColor.new("Dark grey")
     p.Parent = Workspace
     table.insert(activePlatforms, p)
-end
-
-local function clearPlatforms()
-    for _, p in ipairs(activePlatforms) do
-        if p and p.Parent then p:Destroy() end
-    end
-    activePlatforms = {}
-end
-
-local function rebuildPlatforms()
-    clearPlatforms()
-    local etc = Workspace:FindFirstChild("Etc")
-    if not etc then return end
-
-    local waypointFolder = etc:FindFirstChild("Waypoint")
-    if waypointFolder then
-        for _, wp in ipairs(waypointFolder:GetChildren()) do
-            local pos = (wp:IsA("Model") and wp:GetPivot().Position)
-                or (wp:IsA("BasePart") and wp.Position)
-            if pos then buildPlatform(pos, 1000, 1000, 25) end
-        end
-    end
-
-    local starter = etc:FindFirstChild("Job")
-        and etc.Job:FindFirstChild("Truck")
-        and etc.Job.Truck:FindFirstChild("Starter")
-    if starter then buildPlatform(starter:GetPivot().Position, 200, 200) end
-
-    local spawnerPart = etc:FindFirstChild("Job")
-        and etc.Job:FindFirstChild("Truck")
-        and etc.Job.Truck:FindFirstChild("Spawner")
-        and etc.Job.Truck.Spawner:FindFirstChild("Part")
-    if spawnerPart then buildPlatform(spawnerPart.Position - Vector3.new(0, 6, 0), 1000, 1000) end
-
-    -- spawn location platform
-    local spawnLocation = Workspace:FindFirstChild("SpawnLocation")
-    if spawnLocation then
-        buildPlatform(spawnLocation.Position, 200, 200, 4)
-    else
-        local livesFolder = Workspace:FindFirstChild("Lives")
-        if livesFolder then
-            local charModel = livesFolder:FindFirstChild(lp.Name)
-            if charModel then
-                local hrp = charModel:FindFirstChild("HumanoidRootPart")
-                if hrp then buildPlatform(hrp.Position, 200, 200, 4) end
-            end
-        end
-    end
 end
 
 local function deleteMap()
@@ -497,10 +474,6 @@ local function rollUntilTarget(remote, etc, hrp)
         local wp = waypointFolder:FindFirstChild("Waypoint")
         if wp and isTargetDestination(wp) then
             lastDestName = getWaypointName(wp)
-            if _G.DeleteMap then
-                local wpos = wp:IsA("Model") and wp:GetPivot().Position or wp.Position
-                buildPlatform(wpos, 400, 400, 25)
-            end
             return true
         end
     end
@@ -637,11 +610,6 @@ local function runAutofarm()
 
                             local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
                             updateCycleLabels(earned, currentDestName)
-
-                            buildPlatform(
-                                nextWaypoint:IsA("Model") and nextWaypoint:GetPivot().Position or nextWaypoint.Position,
-                                400, 400, 25
-                            )
 
                             if DelayLabel then
                                 DelayLabel:Set({ Title = "Status:", Content = "Next dest ready — skipping reset!" })
