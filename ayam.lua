@@ -114,7 +114,7 @@ local function rebuildPlatforms()
         for _, wp in ipairs(waypointFolder:GetChildren()) do
             local pos = (wp:IsA("Model") and wp:GetPivot().Position)
                 or (wp:IsA("BasePart") and wp.Position)
-            if pos then buildPlatform(pos, 400, 400, 25) end
+            if pos then buildPlatform(pos, 1000, 1000, 25) end
         end
     end
 
