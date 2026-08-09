@@ -108,6 +108,7 @@ local function rebuildPlatforms()
     clearPlatforms()
     local etc = Workspace:FindFirstChild("Etc")
     if not etc then return end
+
     local waypointFolder = etc:FindFirstChild("Waypoint")
     if waypointFolder then
         for _, wp in ipairs(waypointFolder:GetChildren()) do
@@ -116,22 +117,23 @@ local function rebuildPlatforms()
             if pos then buildPlatform(pos, 400, 400, 25) end
         end
     end
+
     local starter = etc:FindFirstChild("Job")
         and etc.Job:FindFirstChild("Truck")
         and etc.Job.Truck:FindFirstChild("Starter")
     if starter then buildPlatform(starter:GetPivot().Position, 200, 200) end
+
     local spawnerPart = etc:FindFirstChild("Job")
         and etc.Job:FindFirstChild("Truck")
         and etc.Job.Truck:FindFirstChild("Spawner")
         and etc.Job.Truck.Spawner:FindFirstChild("Part")
     if spawnerPart then buildPlatform(spawnerPart.Position - Vector3.new(0, 6, 0), 1000, 1000) end
 
-    -- spawn platform
+    -- spawn location platform
     local spawnLocation = Workspace:FindFirstChild("SpawnLocation")
     if spawnLocation then
         buildPlatform(spawnLocation.Position, 200, 200, 4)
     else
-        -- fallback: scan Lives folder for player spawn model
         local livesFolder = Workspace:FindFirstChild("Lives")
         if livesFolder then
             local charModel = livesFolder:FindFirstChild(lp.Name)
@@ -144,7 +146,6 @@ local function rebuildPlatforms()
 end
 
 local function deleteMap()
-    if mapDeleted then return end
     mapDeleted = true
     rebuildPlatforms()
     local map = Workspace:FindFirstChild("Map")
@@ -515,8 +516,8 @@ local function runAutofarm()
     SessionStart = os.time()
     SessionMoneyStart = StartMoney
 
-    -- auto-enable delete map when autofarm starts
     _G.DeleteMap = true
+    mapDeleted = false
     deleteMap()
 
     repeat
@@ -689,8 +690,8 @@ local function runAutofarm()
         continue
     until not _G.Autofarm
 
-    -- cleanup on stop
     _G.DeleteMap = false
+    mapDeleted = false
     clearPlatforms()
 end
 
