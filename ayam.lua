@@ -66,7 +66,7 @@ local destinationTimestamps = {}
 local activePlatforms = {}
 local mapDeleted = false
 local lastDestEarned = 0
-local lastDestName = "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â"
+local lastDestName = "â€”"
 local cycleMoneySnapshot = 0
 
 warn("berhasil lewatin global 2")
@@ -149,7 +149,7 @@ end
 
 local function selfKick(player)
     local tag = isStaff(player) and "STAFF" or "PLAYER"
-    lp:Kick(tag .. " DETECTED (" .. player.Name .. ") ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â player/staff join kacung semua tu staff co")
+    lp:Kick(tag .. " DETECTED (" .. player.Name .. ") â€” player/staff join kacung semua tu staff co")
 end
 
 Players.PlayerAdded:Connect(function(player)
@@ -243,22 +243,43 @@ task.spawn(function()
 end)
 local function getFPS() return _currentFPS end
 
-local TweenService = game:GetService("TweenService")
-
-local function tweenTeleport(vehicle, p_target, p_duration)
-    local primaryPart = vehicle.PrimaryPart
-    if not primaryPart then return end
-    local cfValue = Instance.new("CFrameValue")
-    cfValue.Value = vehicle:GetPrimaryPartCFrame()
-    cfValue.Changed:Connect(function()
-        vehicle:PivotTo(cfValue.Value)
-        pcall(function() primaryPart.Velocity = Vector3.new(0, 0, 0) end)
+local function slowDescent(vehicle, targetCFrame, duration)
+    local primary = vehicle.PrimaryPart
+    if not primary then return end
+    
+    local startCFrame = targetCFrame + Vector3.new(0, 1000, 0)
+    
+    vehicle:PivotTo(startCFrame)
+    pcall(function() primary.Velocity = Vector3.new(0, 0, 0) end)
+    
+    local elapsed = 0
+    workspace.Gravity = 0
+    local completed = false
+    
+    local conn = RunService.Heartbeat:Connect(function(dt)
+        if not _G.Autofarm or not vehicle.Parent then
+            completed = true
+            return
+        end
+        
+        elapsed = elapsed + dt
+        local alpha = math.clamp(elapsed / duration, 0, 1)
+        
+        vehicle:PivotTo(startCFrame:Lerp(targetCFrame, alpha))
+        pcall(function() primary.Velocity = Vector3.new(0, 0, 0) end)
+        
+        NextTeleportIn = math.max(0, duration - elapsed)
+        
+        if alpha >= 1 then
+            completed = true
+        end
     end)
-    local tweenInfo = TweenInfo.new(p_duration, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, 0, false, 0)
-    local tween = TweenService:Create(cfValue, tweenInfo, { Value = p_target })
-    tween:Play()
-    tween.Completed:Wait()
-    cfValue:Destroy()
+    
+    repeat task.wait() until completed
+    
+    if conn then conn:Disconnect() end
+    workspace.Gravity = 196.2
+    pcall(function() primary.Velocity = Vector3.new(0, 0, 0) end)
 end
 
 local function logDestinationComplete()
@@ -311,22 +332,6 @@ end)
 
 local SelectedNPC, SelectedDealer, SelectedPlayer = "", "", ""
 
---[[local Dealer_Paths = {
-    ["Toyota"]    = workspace.Etc.Dealership.Toyota.Prompt,
-    ["Suzuki"]    = workspace.Etc.Dealership.Suzuki.Prompt,
-    ["Premium"]   = workspace.Etc.Dealership.Premium.Prompt,
-    ["Nissan"]    = workspace.Etc.Dealership.Nissan.Prompt,
-    ["Mercedes"]  = workspace.Etc.Dealership.MercedesBenz.Prompt,
-    ["Komersial"] = workspace.Etc.Dealership.Komersial.Prompt,
-    ["KIA"]       = workspace.Etc.Dealership.KIA.Prompt,
-    ["Hyundai"]   = workspace.Etc.Dealership.Hyundai.Prompt,
-    ["Honda"]     = workspace.Etc.Dealership.Honda.Prompt,
-    ["Daihatsu"]  = workspace.Etc.Dealership.Daihatsu.Prompt,
-    ["Chery"]     = workspace.Etc.Dealership.Chery.Prompt,
-    ["Bandung"]   = workspace.Etc.Dealership.Bandung.Prompt,
-    ["Dealer 77"] = workspace.Etc.Dealership["77"].Prompt,
-}]]
-
 local NPC_Paths = {
     ["Npc job select"]       = workspace.Etc.Job.Selection.Model.Prompt,
     ["Npc upgrade slot Npc"] = workspace.Etc.Upgrade.Upgrade.Prompt,
@@ -369,7 +374,7 @@ local function sendWebhook(income)
             { name = "Total Earning", value = formatRP(_G.TotalEarning) .. " (Est)",                           inline = false },
             { name = "Cycle Count",   value = tostring(_G.CycleCount),                                         inline = false },
             { name = "Running Time",  value = getRunningTime(),                                                 inline = false },
-            { name = "Session Time",  value = SessionStart and formatDuration(os.time() - SessionStart) or "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â", inline = false },
+            { name = "Session Time",  value = SessionStart and formatDuration(os.time() - SessionStart) or "â€”", inline = false },
             { name = "Session /Hour", value = "RP. " .. formatShort(getSessionIPH()),                          inline = false },
             { name = "Est /Hour",     value = "RP. " .. formatShort(getIncomePerHour()),                       inline = false },
             { name = "FPS",           value = string.format("%.0f fps", getFPS()),                             inline = false },
@@ -426,7 +431,7 @@ local function updateCycleLabels(earned, destName)
     if LastDestLabel then
         LastDestLabel:Set({
             Title = "Last Destination:",
-            Content = destName .. "  ÃƒÂ¢Ã¢â‚¬ Ã¢â‚¬â„¢  RP. " .. formatNominal(earned)
+            Content = destName .. "  â†’  RP. " .. formatNominal(earned)
         })
     end
 end
@@ -564,38 +569,27 @@ local function runAutofarm()
 
                     cycleMoneySnapshot = getCleanMoney()
                     EarnedMoney = cycleMoneySnapshot - StartMoney
+                    
+                    local descentTime = 42.9
+                    NextTeleportIn = descentTime
+
+                    if DelayLabel then
+                        DelayLabel:Set({
+                            Title = "Status:",
+                            Content = string.format("Descending... (%.0f fps)", getFPS())
+                        })
+                    end
 
                     pcall(function() setsimulationradius(math.huge, math.huge) end)
                     pcall(function()
                         if myTruck.PrimaryPart then myTruck.PrimaryPart:SetNetworkOwner(lp) end
                     end)
-
-                    local above = targetCFrame + Vector3.new(0, 1000, 0)
-                    workspace.Gravity = 0
-                    tweenTeleport(myTruck, myTruck:GetPrimaryPartCFrame() + Vector3.new(0, 1000, 0), 0)
-                    tweenTeleport(myTruck, above, 0)
-                    workspace.Gravity = 196.2
-
-                    NextTeleportIn = 42.9
-
-                    repeat
-                        task.wait(1)
-                        NextTeleportIn = NextTeleportIn - 1
-                    until NextTeleportIn <= 0 or not _G.Autofarm
+                    
+                    local oldWaypointPos = targetCFrame.Position
+                    
+                    slowDescent(myTruck, targetCFrame, descentTime)
 
                     if _G.Autofarm and myTruck and myTruck.Parent then
-                        local oldWaypointPos = targetCFrame.Position
-
-                        if DelayLabel then
-                            DelayLabel:Set({
-                                Title = "Status:",
-                                Content = string.format("Descending... (%.0f fps)", getFPS())
-                            })
-                        end
-
-                        workspace.Gravity = 0
-                        tweenTeleport(myTruck, targetCFrame, 3)
-                        workspace.Gravity = 196.2
                         _G.TotalTeleportCount = _G.TotalTeleportCount + 1
                         logDestinationComplete()
 
@@ -630,14 +624,12 @@ local function runAutofarm()
                             end
 
                             if DelayLabel then
-                                DelayLabel:Set({ Title = "Status:", Content = "Next dest ready ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â skipping reset!" })
+                                DelayLabel:Set({ Title = "Status:", Content = "Next dest ready â€” skipping reset!" })
                             end
 
                             cycleMoneySnapshot = getCleanMoney()
                             lastDestName = getWaypointName(nextWaypoint)
                             EarnedMoney = cycleMoneySnapshot - StartMoney
-                            NextTeleportIn = 42.9
-
                         else
                             if remote then remote:FireServer("Unemployed") end
 
@@ -709,10 +701,10 @@ FarmTab:CreateToggle({
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 StatsTab:CreateSection("Cycle")
 CycleEarnedLabel = StatsTab:CreateParagraph({ Title = "Cycle Earned:",    Content = "RP. 0" })
-LastDestLabel    = StatsTab:CreateParagraph({ Title = "Last Destination:", Content = "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â" })
+LastDestLabel    = StatsTab:CreateParagraph({ Title = "Last Destination:", Content = "â€”" })
 
 StatsTab:CreateSection("Session")
-SessionTimeLabel   = StatsTab:CreateParagraph({ Title = "Session Time:",   Content = "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â" })
+SessionTimeLabel   = StatsTab:CreateParagraph({ Title = "Session Time:",   Content = "â€”" })
 SessionEarnedLabel = StatsTab:CreateParagraph({ Title = "Session Earned:", Content = "RP. 0" })
 SessionIPHLabel    = StatsTab:CreateParagraph({ Title = "Session / Hour:", Content = "RP. 0/h" })
 
@@ -750,13 +742,6 @@ ProxTab:CreateDropdown({
     MultipleOptions = false,
     Callback = function(v) SelectedDealer = v[1] end,
 })
---[[ProxTab:CreateButton({
-    Name = "Open Dealer UI",
-    Callback = function()
-        local t = Dealer_Paths[SelectedDealer]
-        if t then fireproximityprompt(t) end
-    end,
-})]]
 ProxTab:CreateSection("Map / Performance")
 ProxTab:CreateToggle({
     Name = "Delete Map (Low Lag Mode)",
@@ -842,8 +827,8 @@ task.spawn(function()
         FpsLabel:Set({
             Title = "Current FPS:",
             Content = string.format("%.0f fps  %s", fps,
-                fps < 30 and "ÃƒÂ¢Ã…Â¡  lag ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â tp slowed" or
-                fps < 50 and "~ mild lag" or "ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ smooth"),
+                fps < 30 and "âš  lag â€” tp slowed" or
+                fps < 50 and "~ mild lag" or "âœ“ smooth"),
         })
     end
 end)
