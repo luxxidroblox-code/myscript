@@ -34,6 +34,8 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local lp = Players.LocalPlayer
 
+warn("berhasil lewatin services")
+
 _G.Autofarm = false
 _G.AutoWebhook = false
 _G.DeleteMap = false
@@ -43,9 +45,13 @@ _G.CycleCount = _G.CycleCount or 0
 _G.TotalEarning = _G.TotalEarning or 0
 _G.TotalTeleportCount = _G.TotalTeleportCount or 0
 
+warn("berhasil lewatin global")
+
 local MoneyPath = lp.PlayerGui
     :WaitForChild("Main"):WaitForChild("Container"):WaitForChild("Hub")
     :WaitForChild("CashFrame"):WaitForChild("Frame"):WaitForChild("TextLabel")
+
+warn("berhasil lewatin moneypath")
 
 local StartMoney = 0
 local EarnedMoney = 0
@@ -62,6 +68,8 @@ local mapDeleted = false
 local lastDestEarned = 0
 local lastDestName = "—"
 local cycleMoneySnapshot = 0
+
+warn("berhasil lewatin global 2")
 
 local function uprightCF(cf, yOffset)
     yOffset = yOffset or 0
@@ -133,19 +141,23 @@ local function deleteMap()
 end
 
 local STAFF_GROUP_ID = 10884667
+
 local function isStaff(player)
     local ok, result = pcall(function() return player:IsInGroup(STAFF_GROUP_ID) end)
     return ok and result
 end
+
 local function selfKick(player)
     local tag = isStaff(player) and "STAFF" or "PLAYER"
     lp:Kick(tag .. " DETECTED (" .. player.Name .. ") — player/staff join kacung semua tu staff co")
 end
+
 Players.PlayerAdded:Connect(function(player)
     if player == lp then return end
     task.wait(0.5)
     selfKick(player)
 end)
+
 task.spawn(function()
     while true do
         task.wait(3)
@@ -195,6 +207,7 @@ end
 local function logIncome(amount)
     table.insert(incomeLog, { t = os.time(), amount = amount })
 end
+
 local function getIncomePerHour()
     local now = os.time()
     local total = 0
@@ -210,6 +223,7 @@ local function getIncomePerHour()
     if elapsed < 20 then return 0 end
     return math.floor((total / elapsed) * 3600)
 end
+
 local function getSessionIPH()
     if not SessionStart then return 0 end
     local elapsed = os.time() - SessionStart
@@ -229,63 +243,52 @@ task.spawn(function()
 end)
 local function getFPS() return _currentFPS end
 
--- FUNGSI TURUN FULL & TUNGGU PAYMENT LEBIH CEPAT
-local function descendAndWait(vehicle, targetCFrame, duration, moneySnapshot)
-    local primary = vehicle.PrimaryPart
-    if not primary then return end
-    
-    local startCFrame = targetCFrame + Vector3.new(0, 1000, 0)
-    
-    vehicle:PivotTo(startCFrame)
-    pcall(function() primary.Velocity = Vector3.new(0, 0, 0) end)
-    
+local function steppedTruckTeleport(truck, targetCF)
+    if not truck or not truck.Parent then return end
+    local origin = truck:GetPivot()
+    local distance = (targetCF.Position - origin.Position).Magnitude
+    local duration = math.clamp(distance * 0.009, 0.8, 3.5)
     local elapsed = 0
-    workspace.Gravity = 0
-    local reached = false
-    
-    local conn = RunService.Heartbeat:Connect(function(dt)
-        if not _G.Autofarm or not vehicle.Parent then
-            reached = true
+    local done = false
+    local conn
+    conn = RunService.Heartbeat:Connect(function(dt)
+        if not truck or not truck.Parent or not _G.Autofarm then
+            conn:Disconnect()
+            done = true
             return
         end
-        
-        elapsed = elapsed + dt
-        local alpha = math.clamp(elapsed / duration, 0, 1)
-        
-        vehicle:PivotTo(startCFrame:Lerp(targetCFrame, alpha))
-        pcall(function() primary.Velocity = Vector3.new(0, 0, 0) end)
-        
-        NextTeleportIn = math.max(0, duration - elapsed)
-        
-        if alpha >= 1 then reached = true end
+        local fpsScale = _currentFPS >= 50 and 1 or _currentFPS >= 30 and 0.75 or 0.5
+        elapsed = elapsed + math.min(dt, 0.1) * fpsScale
+        local alpha = math.min(elapsed / duration, 1)
+        local eased
+        if alpha < 0.5 then
+            eased = 16 * alpha ^ 5
+        else
+            eased = 1 - (-2 * alpha + 2) ^ 5 / 2
+        end
+        truck:PivotTo(origin:Lerp(targetCF, eased))
+        if alpha >= 1 then
+            conn:Disconnect()
+            truck:PivotTo(targetCF)
+            done = true
+        end
     end)
-    
-    repeat task.wait() until reached
-    if conn then conn:Disconnect() end
-    
-    if DelayLabel then DelayLabel:Set({ Title = "Status:", Content = "Waiting payment..." }) end
-    
-    local waitStart = tick()
-    -- Tahan gravity 0 nunggu payment (cekan super cepat 0.01 detik)
-    while _G.Autofarm and vehicle.Parent and (getCleanMoney() <= moneySnapshot) and (tick() - waitStart < 15) do
-        task.wait(0.01)
-        pcall(function() primary.Velocity = Vector3.new(0, 0, 0) end)
-    end
-    
-    workspace.Gravity = 196.2
-    pcall(function() primary.Velocity = Vector3.new(0, 0, 0) end)
+    while not done do task.wait() end
 end
 
 local function logDestinationComplete()
     table.insert(destinationTimestamps, os.time())
 end
+
 local function getDestinationsInWindow(seconds)
     local now = os.time()
     local count = 0
     for i = #destinationTimestamps, 1, -1 do
         if now - destinationTimestamps[i] <= seconds then
             count = count + 1
-        else table.remove(destinationTimestamps, i) end
+        else
+            table.remove(destinationTimestamps, i)
+        end
     end
     return count
 end
@@ -299,12 +302,30 @@ task.spawn(function()
         if newMoney > lastMoney then
             local delta = newMoney - lastMoney
             logIncome(delta)
+            if _G.AutoWebhook then
+                pendingIncome = pendingIncome + delta
+                if not isRunning then
+                    isRunning = true
+                    task.spawn(function()
+                        while isRunning and _G.AutoWebhook do
+                            task.wait(60)
+                            if pendingIncome > 0 and _G.WebhookURL ~= "" then
+                                pendingIncome = 0
+                            end
+                            if not _G.AutoWebhook or not _G.Autofarm then
+                                isRunning = false
+                            end
+                        end
+                    end)
+                end
+            end
         end
         lastMoney = newMoney
     end
 end)
 
 local SelectedNPC, SelectedDealer, SelectedPlayer = "", "", ""
+
 local NPC_Paths = {
     ["Npc job select"]       = workspace.Etc.Job.Selection.Model.Prompt,
     ["Npc upgrade slot Npc"] = workspace.Etc.Upgrade.Upgrade.Prompt,
@@ -326,6 +347,47 @@ task.spawn(function()
     end)
 end)
 
+local function getAvatar()
+    return "https://www.roblox.com/headshot-thumbnail/image?userId=" .. lp.UserId .. "&width=420&height=420&format=png"
+end
+
+local function sendWebhook(income)
+    if _G.WebhookURL == "" or not _G.WebhookURL:find("discord.com") then return end
+    _G.CycleCount = _G.CycleCount + 1
+    _G.TotalEarning = _G.TotalEarning + income
+    local http_request = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
+    local HttpService = game:GetService("HttpService")
+    local embed = {
+        author = { name = "Projectsion Webhook", icon_url = getAvatar() },
+        title = "Cycle Completed",
+        color = 0xFFFFFF,
+        fields = {
+            { name = "Username",      value = lp.Name,                                                          inline = false },
+            { name = "Cycle Income",  value = formatRP(income),                                                 inline = false },
+            { name = "Current Money", value = formatRP(getCleanMoney()) .. " (Est)",                            inline = false },
+            { name = "Total Earning", value = formatRP(_G.TotalEarning) .. " (Est)",                           inline = false },
+            { name = "Cycle Count",   value = tostring(_G.CycleCount),                                         inline = false },
+            { name = "Running Time",  value = getRunningTime(),                                                 inline = false },
+            { name = "Session Time",  value = SessionStart and formatDuration(os.time() - SessionStart) or "—", inline = false },
+            { name = "Session /Hour", value = "RP. " .. formatShort(getSessionIPH()),                          inline = false },
+            { name = "Est /Hour",     value = "RP. " .. formatShort(getIncomePerHour()),                       inline = false },
+            { name = "FPS",           value = string.format("%.0f fps", getFPS()),                             inline = false },
+        },
+        image = { url = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&" },
+        footer = { text = "Made by .projectsion | " .. os.date("%m/%d/%Y %I:%M %p") },
+    }
+    if http_request then
+        pcall(function()
+            http_request({
+                Url = _G.WebhookURL,
+                Method = "POST",
+                Headers = { ["Content-Type"] = "application/json" },
+                Body = HttpService:JSONEncode({ username = "Projectsion Reports", embeds = { embed } })
+            })
+        end)
+    end
+end
+
 local function getWaypointName(waypoint)
     if not waypoint then return "Unknown" end
     local gui = waypoint:FindFirstChildOfClass("BillboardGui") or waypoint:FindFirstChildOfClass("SurfaceGui")
@@ -336,7 +398,6 @@ local function getWaypointName(waypoint)
     return waypoint.Name
 end
 
--- FILTER HANYA SIDOARJO DAN SURABAYA (MALANG/CARGO DIHAPUS)
 local function isTargetDestination(waypoint)
     if not waypoint then return false end
     local wpName = waypoint.Name:lower()
@@ -346,6 +407,7 @@ local function isTargetDestination(waypoint)
         local tl = gui:FindFirstChildOfClass("TextLabel")
         if tl then wpLabel = tl.Text:lower() end
     end
+    -- HANYA SURABAYA DAN SIDOARJO (Malang dan Cargo dihapus)
     for _, t in pairs({ "sidoarjo", "surabaya" }) do
         if wpName:find(t) or wpLabel:find(t) then return true end
     end
@@ -356,14 +418,19 @@ local function updateCycleLabels(earned, destName)
     lastDestEarned = earned
     lastDestName = destName
     if CycleEarnedLabel then
-        CycleEarnedLabel:Set({ Title = "Cycle Earned:", Content = "RP. " .. formatNominal(earned) })
+        CycleEarnedLabel:Set({
+            Title = "Cycle Earned:",
+            Content = "RP. " .. formatNominal(earned)
+        })
     end
     if LastDestLabel then
-        LastDestLabel:Set({ Title = "Last Destination:", Content = destName .. "  →  RP. " .. formatNominal(earned) })
+        LastDestLabel:Set({
+            Title = "Last Destination:",
+            Content = destName .. "  →  RP. " .. formatNominal(earned)
+        })
     end
 end
 
--- SISTEM SPAM STARTER & LOOPING FIRE UNEMPLOYED JIKA BUKAN TARGET
 local function rollUntilTarget(remote, etc, hrp)
     local waypointFolder = etc and etc:FindFirstChild("Waypoint")
     if not waypointFolder then return false end
@@ -376,20 +443,14 @@ local function rollUntilTarget(remote, etc, hrp)
             DelayLabel:Set({ Title = "Status:", Content = "Rolling Job (Attempt " .. attempt .. ")..." })
         end
 
-        -- 1. Resign job lama 
+        -- LOGIC BARU: Fire Unemployed
         if remote then remote:FireServer("Unemployed") end
-        task.wait(0.1)
+        task.wait(0.3)
         
-        -- Hapus waypoint nyangkut kalau ada
-        for _, v in ipairs(waypointFolder:GetChildren()) do
-            v:Destroy()
-        end
-        
-        -- 2. Ambil Job Truck
+        -- LOGIC BARU: Get in Truck Job instant
         if remote then remote:FireServer("Truck") end
-        task.wait(0.1)
 
-        -- 3. Teleport ke Starter & Spam Pencet
+        -- LOGIC BARU: Spam Starter
         local starter = etc:FindFirstChild("Job")
             and etc.Job:FindFirstChild("Truck")
             and etc.Job.Truck:FindFirstChild("Starter")
@@ -397,45 +458,32 @@ local function rollUntilTarget(remote, etc, hrp)
         if starter and hrp then
             hrp.CFrame = uprightCF(starter:GetPivot(), 3)
             task.wait(0.1)
-            
             local prompt = starter:FindFirstChild("Prompt")
             if prompt then 
-                -- SPAM PROMPT STARTER sampai waypoint muncul
-                for i = 1, 15 do
-                    if waypointFolder:FindFirstChild("Waypoint") then break end
-                    fireproximityprompt(prompt)
-                    task.wait(0.1)
-                end
+                fireproximityprompt(prompt) 
+                task.wait(0.1) -- Sedikit jeda untuk spam
+                fireproximityprompt(prompt)
             end
         end
 
-        -- Tunggu Waypoint muncul sebentar
-        local wpTimeout = 0
-        while not waypointFolder:FindFirstChild("Waypoint") and wpTimeout < 1.5 do
-            task.wait(0.1)
-            wpTimeout = wpTimeout + 0.1
-        end
+        task.wait(0.3)
 
+        -- Cek Destinasi
         local wp = waypointFolder:FindFirstChild("Waypoint")
-        if wp then
-            task.wait(0.1) -- Loading label text sebentar
-            if isTargetDestination(wp) then
-                lastDestName = getWaypointName(wp)
-                if _G.DeleteMap then
-                    local wpos = wp:IsA("Model") and wp:GetPivot().Position or wp.Position
-                    buildPlatform(wpos, 400, 400, 25)
-                end
-                return true
-            else
-                -- BUKAN TARGET (Misal malang), langsung hancurin dan loop lagi ke atas (Fire Unemployed)
-                wp:Destroy()
+        if wp and isTargetDestination(wp) then
+            lastDestName = getWaypointName(wp)
+            if _G.DeleteMap then
+                local wpos = wp:IsA("Model") and wp:GetPivot().Position or wp.Position
+                buildPlatform(wpos, 400, 400, 25)
             end
+            return true
         end
     end
 
     return false
 end
 
+-- ▬▬▬ AUTOFARM (repeat-until, goto continue pattern) ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 local function runAutofarm()
     StartMoney = getCleanMoney()
     SessionStart = os.time()
@@ -460,7 +508,16 @@ local function runAutofarm()
 
         hrp.CFrame = uprightCF(spawnerPart.CFrame, 3)
         task.wait(0.4)
+
+        -- PRE-MOUNT: spawner prompt
         pcall(function() setsimulationradius(math.huge, math.huge) end)
+        pcall(function()
+            local ownable = spawnerPart:FindFirstAncestorOfClass("Model")
+            if ownable and ownable.PrimaryPart then
+                ownable.PrimaryPart:SetNetworkOwner(lp)
+            end
+        end)
+
         fireproximityprompt(spawnerPart:WaitForChild("Prompt"))
         task.wait(2.5)
 
@@ -469,12 +526,25 @@ local function runAutofarm()
         if myTruck then
             hrp.CFrame = uprightCF(myTruck.DriveSeat.CFrame, 1)
             task.wait(0.2)
+
+            -- PRE-MOUNT: DriveSeat prompt
             pcall(function() setsimulationradius(math.huge, math.huge) end)
             pcall(function()
-                if myTruck.PrimaryPart then myTruck.PrimaryPart:SetNetworkOwner(lp) end
+                if myTruck.PrimaryPart then
+                    myTruck.PrimaryPart:SetNetworkOwner(lp)
+                end
             end)
+
             fireproximityprompt(myTruck.DriveSeat:WaitForChild("PromptDriveSeat"))
+
+            -- POST-MOUNT: confirm ownership setelah naik
             task.wait(0.3)
+            pcall(function() setsimulationradius(math.huge, math.huge) end)
+            pcall(function()
+                if myTruck.PrimaryPart then
+                    myTruck.PrimaryPart:SetNetworkOwner(lp)
+                end
+            end)
 
             while _G.Autofarm do
                 if not myTruck or not myTruck.Parent then break end
@@ -484,32 +554,101 @@ local function runAutofarm()
                 if not waypoint then task.wait(1) continue end
 
                 if isTargetDestination(waypoint) then
+                    local targetCFrame = waypoint:IsA("Model") and waypoint:GetPivot() or waypoint.CFrame
+                    local primary = myTruck.PrimaryPart
                     local currentDestName = getWaypointName(waypoint)
-                    cycleMoneySnapshot = getCleanMoney()
-                    EarnedMoney = cycleMoneySnapshot - StartMoney
-                    
-                    local descentTime = 43
-                    NextTeleportIn = descentTime
 
-                    if DelayLabel then
-                        DelayLabel:Set({
-                            Title = "Status:",
-                            Content = string.format("Descending... (%.0f fps)", getFPS())
-                        })
+                    if primary then
+                        local dir = targetCFrame.Position - primary.Position
+                        if dir.Magnitude > 5 then
+                            primary.AssemblyLinearVelocity = dir.Unit * 70
+                        end
+                        primary.AssemblyAngularVelocity = Vector3.zero
                     end
 
-                    local targetCFrame = waypoint:IsA("Model") and waypoint:GetPivot() or waypoint.CFrame
-                    descendAndWait(myTruck, targetCFrame, descentTime, cycleMoneySnapshot)
+                    cycleMoneySnapshot = getCleanMoney()
+                    EarnedMoney = cycleMoneySnapshot - StartMoney
+                    NextTeleportIn = 43
+
+                    repeat
+                        task.wait(1)
+                        NextTeleportIn = NextTeleportIn - 1
+                        if NextTeleportIn <= 25 and myTruck and primary then
+                            primary.AssemblyLinearVelocity = Vector3.new(0, 0.05, 0)
+                        end
+                    until NextTeleportIn <= 0 or not _G.Autofarm
 
                     if _G.Autofarm and myTruck and myTruck.Parent then
+                        local oldWaypointPos = targetCFrame.Position
+
+                        if primary then
+                            primary.AssemblyLinearVelocity = Vector3.zero
+                            primary.AssemblyAngularVelocity = Vector3.zero
+                        end
+
+                        if DelayLabel then
+                            DelayLabel:Set({
+                                Title = "Status:",
+                                Content = string.format("Teleporting... (%.0f fps)", getFPS())
+                            })
+                        end
+
+                        steppedTruckTeleport(myTruck, targetCFrame)
                         _G.TotalTeleportCount = _G.TotalTeleportCount + 1
                         logDestinationComplete()
 
-                        local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
-                        updateCycleLabels(earned, currentDestName)
+                        local timeout = 0
+                        repeat
+                            task.wait(0.5)
+                            timeout = timeout + 0.5
+                            local wCheck = waypointFolder:FindFirstChild("Waypoint")
+                            if not wCheck or (wCheck:GetPivot().Position - oldWaypointPos).Magnitude > 10 then
+                                break
+                            end
+                        until timeout >= 2
 
-                        if remote then remote:FireServer("Unemployed") end
-                        break 
+                        task.wait(0.35)
+
+                        local nextWaypoint = waypointFolder:FindFirstChild("Waypoint")
+
+                        if nextWaypoint and isTargetDestination(nextWaypoint) then
+                            if DelayLabel then
+                                DelayLabel:Set({ Title = "Status:", Content = "Payment + next dest ready..." })
+                            end
+                            task.wait(0.3) -- Dipercepat dari 1.5
+
+                            local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
+                            updateCycleLabels(earned, currentDestName)
+
+                            if _G.DeleteMap then
+                                local npos = nextWaypoint:IsA("Model")
+                                    and nextWaypoint:GetPivot().Position
+                                    or nextWaypoint.Position
+                                buildPlatform(npos, 400, 400, 25)
+                            end
+
+                            if DelayLabel then
+                                DelayLabel:Set({ Title = "Status:", Content = "Next dest ready — skipping reset!" })
+                            end
+
+                            cycleMoneySnapshot = getCleanMoney()
+                            lastDestName = getWaypointName(nextWaypoint)
+                            EarnedMoney = cycleMoneySnapshot - StartMoney
+                            NextTeleportIn = 43
+
+                        else
+                            if remote then remote:FireServer("Unemployed") end
+
+                            if DelayLabel then
+                                DelayLabel:Set({ Title = "Status:", Content = "Waiting payment..." })
+                            end
+                            task.wait(0.3) -- Dipercepat dari 1.5
+
+                            local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
+                            updateCycleLabels(earned, currentDestName)
+
+                            break
+                        end
                     end
                 else
                     break
@@ -523,16 +662,21 @@ local function runAutofarm()
             local humanoid = char:FindFirstChildOfClass("Humanoid")
             if humanoid and humanoid.SeatPart then humanoid.Jump = true end
             if myTruck and myTruck.Parent then myTruck:Destroy() end
+
             task.wait(0.8)
         end
+
         task.wait(0.3)
+
+        continue
     until not _G.Autofarm
 end
+-- ▬▬▬ END AUTOFARM ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 
 local Window = Rayfield:CreateWindow({
     Name = "Car Driving Indonesia | By .projectsion",
     LoadingTitle = "Projectsion Loading...",
-    LoadingSubtitle = "Version 3.8 (Fast Spam & SBY/SDA Only)",
+    LoadingSubtitle = "Version 3.6 (Fast Reroll + Only SBY/SDA)",
     ConfigurationSaving = { Enabled = false },
     Discord = { Enabled = false },
     KeySystem = false,
@@ -541,8 +685,8 @@ local Window = Rayfield:CreateWindow({
 local FarmTab = Window:CreateTab("Autofarm", "truck")
 FarmTab:CreateSection("Autofarm Truck")
 FarmTab:CreateToggle({
-    Name = "On Autofarm Truck (yes)",
-    Info = "Filter HANYA Surabaya & Sidoarjo",
+    Name = "On Autofarm Truck",
+    Info = "Filter HANYA Surabaya / Sidoarjo",
     CurrentValue = false,
     Callback = function(v)
         _G.Autofarm = v
@@ -555,6 +699,7 @@ FarmTab:CreateToggle({
 })
 FarmTab:CreateToggle({
     Name = "Enable Black Screen Layout",
+    Info = "Hitamkan layar, UI tetap kelihatan",
     CurrentValue = false,
     Callback = function(v) BlackScreen.Enabled = v end,
 })
@@ -563,10 +708,12 @@ local StatsTab = Window:CreateTab("Stats", "trending-up")
 StatsTab:CreateSection("Cycle")
 CycleEarnedLabel = StatsTab:CreateParagraph({ Title = "Cycle Earned:",    Content = "RP. 0" })
 LastDestLabel    = StatsTab:CreateParagraph({ Title = "Last Destination:", Content = "—" })
+
 StatsTab:CreateSection("Session")
 SessionTimeLabel   = StatsTab:CreateParagraph({ Title = "Session Time:",   Content = "—" })
 SessionEarnedLabel = StatsTab:CreateParagraph({ Title = "Session Earned:", Content = "RP. 0" })
 SessionIPHLabel    = StatsTab:CreateParagraph({ Title = "Session / Hour:", Content = "RP. 0/h" })
+
 StatsTab:CreateSection("Overall")
 DelayLabel      = StatsTab:CreateParagraph({ Title = "Status / Next TP:",          Content = "Waiting Job..." })
 TeleportLabel   = StatsTab:CreateParagraph({ Title = "Total Teleport Done:",        Content = "0 Times" })
@@ -577,16 +724,77 @@ EarnedLabel     = StatsTab:CreateParagraph({ Title = "Total Earned:",           
 CurrentLabel    = StatsTab:CreateParagraph({ Title = "Current Money:",              Content = "RP. 0" })
 FpsLabel        = StatsTab:CreateParagraph({ Title = "Current FPS:",                Content = "-- fps" })
 
+local ProxTab = Window:CreateTab("Misc", "bot")
+ProxTab:CreateSection("Open NPC")
+ProxTab:CreateDropdown({
+    Name = "Select NPC",
+    Options = { "Npc upgrade slot Npc", "Npc Box Shop", "Daily quest npc" },
+    CurrentOption = { "Npc job select" },
+    MultipleOptions = false,
+    Callback = function(v) SelectedNPC = v[1] end,
+})
+ProxTab:CreateButton({
+    Name = "Open NPC UI",
+    Callback = function()
+        local t = NPC_Paths[SelectedNPC]
+        if t then fireproximityprompt(t) end
+    end,
+})
+ProxTab:CreateSection("Open Dealership")
+ProxTab:CreateDropdown({
+    Name = "Select Dealer",
+    Options = { "Toyota","Suzuki","Premium","Nissan","Mercedes","Komersial","KIA","Hyundai","Honda","Daihatsu","Chery","Bandung","Dealer 77" },
+    CurrentOption = { "" },
+    MultipleOptions = false,
+    Callback = function(v) SelectedDealer = v[1] end,
+})
+ProxTab:CreateSection("Map / Performance")
+ProxTab:CreateToggle({
+    Name = "Delete Map (Low Lag Mode)",
+    Info = "Hapus map + terrain, otomatis buat platform di semua destinasi",
+    CurrentValue = false,
+    Callback = function(v)
+        _G.DeleteMap = v
+        if v then deleteMap() else clearPlatforms() end
+    end,
+})
+ProxTab:CreateButton({
+    Name = "Rebuild Destination Platforms",
+    Callback = function()
+        if _G.DeleteMap then rebuildPlatforms() end
+    end,
+})
+
+local WebhookTab = Window:CreateTab("Webhook", "webhook")
+WebhookTab:CreateSection("Webhook Farm")
+WebhookTab:CreateInput({
+    Name = "Webhook Link",
+    PlaceholderText = "Enter link webhook",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(t) _G.WebhookURL = t end,
+})
+WebhookTab:CreateToggle({
+    Name = "Enable Webhook",
+    Info = "Ngirim tiap 1 menit",
+    CurrentValue = false,
+    Callback = function(v) _G.AutoWebhook = v end,
+})
+
 local TpTab = Window:CreateTab("Teleport", "map-pin")
 TpTab:CreateSection("Teleport Player")
 local PlayerDropdown = TpTab:CreateDropdown({
-    Name = "Select Player", Options = {}, CurrentOption = { "" }, MultipleOptions = false,
+    Name = "Select Player",
+    Options = {},
+    CurrentOption = { "" },
+    MultipleOptions = false,
     Callback = function(v) SelectedPlayer = v[1] end,
 })
 local function refreshPlayers()
     local list = {}
     for _, v in pairs(workspace.Lives:GetChildren()) do
-        if v:IsA("Model") and v.Name ~= lp.Name then table.insert(list, v.Name) end
+        if v:IsA("Model") and v.Name ~= lp.Name then
+            table.insert(list, v.Name)
+        end
     end
     PlayerDropdown:Refresh(list, { "" })
 end
@@ -624,7 +832,9 @@ task.spawn(function()
         CurrentLabel:Set({ Title = "Current Money:",               Content = "RP. " .. formatNominal(current) })
         FpsLabel:Set({
             Title = "Current FPS:",
-            Content = string.format("%.0f fps  %s", fps, fps < 30 and "⚠ lag" or "✓ smooth"),
+            Content = string.format("%.0f fps  %s", fps,
+                fps < 30 and "⚠  lag — tp slowed" or
+                fps < 50 and "~ mild lag" or "✔ smooth"),
         })
     end
 end)
