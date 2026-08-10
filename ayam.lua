@@ -71,7 +71,6 @@ local cycleMoneySnapshot = 0
 
 warn("berhasil lewatin global 2")
 
--- keyword lists for selective destruction
 local KILL_NAMES = {
     "tree", "pohon", "bush", "semak", "building", "gedung", "house", "rumah",
     "shop", "toko", "wall", "pagar", "fence", "prop", "detail", "lamp", "lampu",
@@ -93,7 +92,6 @@ local function shouldKill(obj)
     for _, k in ipairs(KEEP_NAMES) do
         if nameLow:find(k) then return false end
     end
-    -- walk up: if any ancestor name matches keep, spare it
     local ancestor = obj.Parent
     while ancestor and ancestor ~= Workspace do
         local aLow = ancestor.Name:lower()
@@ -111,23 +109,15 @@ end
 local function cleanMap()
     if mapDeleted then return end
     mapDeleted = true
-
     local map = Workspace:FindFirstChild("Map")
     if not map then return end
-
-    -- kill Prop folder wholesale — pure decoration
     local prop = map:FindFirstChild("Prop")
-    if prop then
-        pcall(function() prop:Destroy() end)
-    end
-
-    -- walk remaining map children, destroy by keyword
+    if prop then pcall(function() prop:Destroy() end) end
     for _, child in ipairs(map:GetChildren()) do
         if child.Name ~= "Prop" then
             if shouldKill(child) then
                 pcall(function() child:Destroy() end)
             else
-                -- recurse one level into model children
                 if child:IsA("Model") or child:IsA("Folder") then
                     for _, grandchild in ipairs(child:GetChildren()) do
                         if shouldKill(grandchild) then
@@ -266,7 +256,6 @@ local function getFPS() return _currentFPS end
 local function steppedTruckTeleport(truck, targetCF)
     if not truck or not truck.Parent then return end
     local origin = truck:GetPivot()
-
     local duration = 5
     local elapsed = 0
     local done = false
@@ -285,14 +274,12 @@ local function steppedTruckTeleport(truck, targetCF)
             done = true
             return
         end
-
         pcall(function() setsimulationradius(math.huge, math.huge) end)
         pcall(function()
             if truck.PrimaryPart then
                 truck.PrimaryPart:SetNetworkOwner(lp)
             end
         end)
-
         local fpsScale = _currentFPS >= 50 and 1 or _currentFPS >= 30 and 0.75 or 0.5
         elapsed = elapsed + math.min(dt, 0.1) * fpsScale
         local alpha = math.min(elapsed / duration, 1)
@@ -453,40 +440,28 @@ local function updateCycleLabels(earned, destName)
     lastDestEarned = earned
     lastDestName = destName
     if CycleEarnedLabel then
-        CycleEarnedLabel:Set({
-            Title = "Cycle Earned:",
-            Content = "RP. " .. formatNominal(earned)
-        })
+        CycleEarnedLabel:Set({ Title = "Cycle Earned:", Content = "RP. " .. formatNominal(earned) })
     end
     if LastDestLabel then
-        LastDestLabel:Set({
-            Title = "Last Destination:",
-            Content = destName .. "  →  RP. " .. formatNominal(earned)
-        })
+        LastDestLabel:Set({ Title = "Last Destination:", Content = destName .. "  →  RP. " .. formatNominal(earned) })
     end
 end
 
 local function rollUntilTarget(remote, etc, hrp)
     local waypointFolder = etc and etc:FindFirstChild("Waypoint")
     if not waypointFolder then return false end
-
     local attempt = 0
-
     while _G.Autofarm do
         attempt = attempt + 1
         if DelayLabel then
             DelayLabel:Set({ Title = "Status:", Content = "Rolling Job (Attempt " .. attempt .. ")..." })
         end
-
         if remote then remote:FireServer("Unemployed") end
         task.wait(0.3)
-
         if remote then remote:FireServer("Truck") end
-
         local starter = etc:FindFirstChild("Job")
             and etc.Job:FindFirstChild("Truck")
             and etc.Job.Truck:FindFirstChild("Starter")
-
         if starter and hrp then
             hrp.CFrame = uprightCF(starter:GetPivot(), 3)
             task.wait(0.1)
@@ -497,16 +472,13 @@ local function rollUntilTarget(remote, etc, hrp)
                 fireproximityprompt(prompt)
             end
         end
-
         task.wait(0.3)
-
         local wp = waypointFolder:FindFirstChild("Waypoint")
         if wp and isTargetDestination(wp) then
             lastDestName = getWaypointName(wp)
             return true
         end
     end
-
     return false
 end
 
@@ -558,9 +530,7 @@ local function runAutofarm()
 
             pcall(function() setsimulationradius(math.huge, math.huge) end)
             pcall(function()
-                if myTruck.PrimaryPart then
-                    myTruck.PrimaryPart:SetNetworkOwner(lp)
-                end
+                if myTruck.PrimaryPart then myTruck.PrimaryPart:SetNetworkOwner(lp) end
             end)
 
             fireproximityprompt(myTruck.DriveSeat:WaitForChild("PromptDriveSeat"))
@@ -568,9 +538,7 @@ local function runAutofarm()
             task.wait(0.3)
             pcall(function() setsimulationradius(math.huge, math.huge) end)
             pcall(function()
-                if myTruck.PrimaryPart then
-                    myTruck.PrimaryPart:SetNetworkOwner(lp)
-                end
+                if myTruck.PrimaryPart then myTruck.PrimaryPart:SetNetworkOwner(lp) end
             end)
 
             while _G.Autofarm do
@@ -629,39 +597,18 @@ local function runAutofarm()
 
                         task.wait(0.35)
 
-                        local nextWaypoint = waypointFolder:FindFirstChild("Waypoint")
+                        -- always reset after every delivery
+                        if remote then remote:FireServer("Unemployed") end
 
-                        if nextWaypoint and isTargetDestination(nextWaypoint) then
-                            if DelayLabel then
-                                DelayLabel:Set({ Title = "Status:", Content = "Payment + next dest ready..." })
-                            end
-                            task.wait(0.3)
-
-                            local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
-                            updateCycleLabels(earned, currentDestName)
-
-                            if DelayLabel then
-                                DelayLabel:Set({ Title = "Status:", Content = "Next dest ready — skipping reset!" })
-                            end
-
-                            cycleMoneySnapshot = getCleanMoney()
-                            lastDestName = getWaypointName(nextWaypoint)
-                            EarnedMoney = cycleMoneySnapshot - StartMoney
-                            NextTeleportIn = 43
-
-                        else
-                            if remote then remote:FireServer("Unemployed") end
-
-                            if DelayLabel then
-                                DelayLabel:Set({ Title = "Status:", Content = "Waiting payment..." })
-                            end
-                            task.wait(0.3)
-
-                            local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
-                            updateCycleLabels(earned, currentDestName)
-
-                            break
+                        if DelayLabel then
+                            DelayLabel:Set({ Title = "Status:", Content = "Waiting payment..." })
                         end
+                        task.wait(0.3)
+
+                        local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
+                        updateCycleLabels(earned, currentDestName)
+
+                        break
                     end
                 else
                     break
