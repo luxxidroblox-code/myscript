@@ -430,7 +430,7 @@ local function isTargetDestination(waypoint)
         local tl = gui:FindFirstChildOfClass("TextLabel")
         if tl then wpLabel = tl.Text:lower() end
     end
-    for _, t in pairs({ "sidoarjo", "surabaya" }) do
+    for _, t in pairs({ "sidoarjo", "malang" }) do
         if wpName:find(t) or wpLabel:find(t) then return true end
     end
     return false
