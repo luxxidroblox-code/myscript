@@ -1,15 +1,17 @@
 warn("sebelum loadstring")
-local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/luxxidroblox-code/myscript.lua/refs/heads/main/projectsionloader.lua'))()
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
 warn("sesudah loadstring")
 if Rayfield then
     warn("kalau ini muncul 1 berarti berhasil rayfieldnya")
 else
     warn("kalau ini muncul 2 berarti ga berhasil rayfieldnya")
 end
+
 local DelayLabel, TeleportLabel, DestMinLabel, Dest5MinLabel
 local IncomeHourLabel, EarnedLabel, CurrentLabel, FpsLabel
 local SessionTimeLabel, SessionEarnedLabel, SessionIPHLabel
 local CycleEarnedLabel, LastDestLabel
+local Window  -- declared early so status toasts work inside farm functions
 
 pcall(function()
     local p = workspace.Map.Prop:GetChildren()[1627]
@@ -66,7 +68,7 @@ local destinationTimestamps = {}
 local activePlatforms = {}
 local mapDeleted = false
 local lastDestEarned = 0
-local lastDestName = "—"
+local lastDestName = "â€”"
 local cycleMoneySnapshot = 0
 
 warn("berhasil lewatin global 2")
@@ -159,7 +161,7 @@ end
 
 local function selfKick(player)
     local tag = isStaff(player) and "STAFF" or "PLAYER"
-    lp:Kick(tag .. " DETECTED (" .. player.Name .. ") — player/staff join kacung semua tu staff co")
+    lp:Kick(tag .. " DETECTED (" .. player.Name .. ") â€” player/staff join kacung semua tu staff co")
 end
 
 Players.PlayerAdded:Connect(function(player)
@@ -260,11 +262,9 @@ local function steppedTruckTeleport(truck, targetCF)
     local elapsed = 0
     local done = false
 
-    if DelayLabel then
-        DelayLabel:Set({
-            Title = "Status / Next TP:",
-            Content = string.format("Teleporting... (%.0f fps)", getFPS())
-        })
+    -- Gen2: use Toast for transient status, stat for countdown
+    if Window then
+        Window:Toast({ title = "Teleporting", content = string.format("%.0f fps", getFPS()) })
     end
 
     local conn
@@ -391,7 +391,7 @@ local function sendWebhook(income)
             { name = "Total Earning", value = formatRP(_G.TotalEarning) .. " (Est)",                           inline = false },
             { name = "Cycle Count",   value = tostring(_G.CycleCount),                                         inline = false },
             { name = "Running Time",  value = getRunningTime(),                                                 inline = false },
-            { name = "Session Time",  value = SessionStart and formatDuration(os.time() - SessionStart) or "—", inline = false },
+            { name = "Session Time",  value = SessionStart and formatDuration(os.time() - SessionStart) or "â€”", inline = false },
             { name = "Session /Hour", value = "RP. " .. formatShort(getSessionIPH()),                          inline = false },
             { name = "Est /Hour",     value = "RP. " .. formatShort(getIncomePerHour()),                       inline = false },
             { name = "FPS",           value = string.format("%.0f fps", getFPS()),                             inline = false },
@@ -439,11 +439,12 @@ end
 local function updateCycleLabels(earned, destName)
     lastDestEarned = earned
     lastDestName = destName
-    if CycleEarnedLabel then
-        CycleEarnedLabel:Set({ Title = "Cycle Earned:", Content = "RP. " .. formatNominal(earned) })
-    end
-    if LastDestLabel then
-        LastDestLabel:Set({ Title = "Last Destination:", Content = destName .. "  →  RP. " .. formatNominal(earned) })
+    -- Gen2: CreateStat:Set() takes a raw number; prefix "RP. " handles the label
+    if CycleEarnedLabel then CycleEarnedLabel:Set(earned) end
+    -- LastDestLabel shows the earned amount; destName shown via Toast since stat is numeric-only
+    if LastDestLabel then LastDestLabel:Set(earned) end
+    if Window then
+        Window:Toast({ title = "Delivery: " .. destName, content = formatRP(earned) })
     end
 end
 
@@ -453,8 +454,9 @@ local function rollUntilTarget(remote, etc, hrp)
     local attempt = 0
     while _G.Autofarm do
         attempt = attempt + 1
-        if DelayLabel then
-            DelayLabel:Set({ Title = "Status:", Content = "Rolling Job (Attempt " .. attempt .. ")..." })
+        -- Gen2: transient status via Toast
+        if Window then
+            Window:Toast({ title = "Rolling Job", content = "Attempt " .. attempt })
         end
         if remote then remote:FireServer("Unemployed") end
         task.wait(0.3)
@@ -597,11 +599,10 @@ local function runAutofarm()
 
                         task.wait(0.35)
 
-                        -- always reset after every delivery
                         if remote then remote:FireServer("Unemployed") end
 
-                        if DelayLabel then
-                            DelayLabel:Set({ Title = "Status:", Content = "Waiting payment..." })
+                        if Window then
+                            Window:Toast({ title = "Status", content = "Waiting payment..." })
                         end
                         task.wait(0.3)
 
@@ -615,8 +616,8 @@ local function runAutofarm()
                 end
             end
 
-            if DelayLabel then
-                DelayLabel:Set({ Title = "Status:", Content = "Clearing old truck & job..." })
+            if Window then
+                Window:Toast({ title = "Status", content = "Clearing truck & job..." })
             end
 
             local humanoid = char:FindFirstChildOfClass("Humanoid")
@@ -635,22 +636,28 @@ local function runAutofarm()
     mapDeleted = false
 end
 
-local Window = Rayfield:CreateWindow({
-    Name = "Car Driving Indonesia | By .projectsion",
-    LoadingTitle = "Projectsion Loading...",
-    LoadingSubtitle = "CDID Script",
-    ConfigurationSaving = { Enabled = false },
-    Discord = { Enabled = false },
-    KeySystem = false,
+-- â”€â”€â”€ WINDOW â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Gen2: name/subtitle replace Name/LoadingTitle/LoadingSubtitle
+-- Gen2: no KeySystem, Discord, or ConfigurationSaving at window level
+Window = Rayfield:CreateWindow({
+    name     = "Car Driving Indonesia | By .projectsion",
+    subtitle = "CDID Script",
 })
 
-local FarmTab = Window:CreateTab("Autofarm", "truck")
-FarmTab:CreateSection("Autofarm Truck")
+-- â”€â”€â”€ AUTOFARM TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Gen2: CreateTab takes a props table, not positional args
+-- Gen2: icons are asset-id numbers, not icon-name strings â€” omitted here
+local FarmTab = Window:CreateTab({ name = "Autofarm" })
+
+-- Gen2: CreateSection takes { name = "..." }
+FarmTab:CreateSection({ name = "Autofarm Truck" })
+
+-- Gen2: Nameâ†’name, Infoâ†’description, CurrentValueâ†’value, Callbackâ†’callback
 FarmTab:CreateToggle({
-    Name = "On Autofarm Truck (yes)",
-    Info = "Filter HANYA Surabaya / Sidoarjo",
-    CurrentValue = false,
-    Callback = function(v)
+    name        = "On Autofarm Truck (yes)",
+    description = "Filter HANYA Surabaya / Sidoarjo",
+    value       = false,
+    callback    = function(v)
         _G.Autofarm = v
         if v then
             SessionStart = os.time()
@@ -659,90 +666,110 @@ FarmTab:CreateToggle({
         end
     end,
 })
+
 FarmTab:CreateToggle({
-    Name = "Enable Black Screen Layout",
-    Info = "Hitamkan layar, UI tetap kelihatan",
-    CurrentValue = false,
-    Callback = function(v) BlackScreen.Enabled = v end,
+    name        = "Enable Black Screen Layout",
+    description = "Hitamkan layar, UI tetap kelihatan",
+    value       = false,
+    callback    = function(v) BlackScreen.Enabled = v end,
 })
 
-local StatsTab = Window:CreateTab("Stats", "trending-up")
-StatsTab:CreateSection("Cycle")
-CycleEarnedLabel = StatsTab:CreateParagraph({ Title = "Cycle Earned:",    Content = "RP. 0" })
-LastDestLabel    = StatsTab:CreateParagraph({ Title = "Last Destination:", Content = "—" })
+-- â”€â”€â”€ STATS TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Gen2: no CreateParagraph â€” replaced with CreateStat
+-- CreateStat:Set(number) â€” prefix/suffix handle the label context
+-- Status messages (non-numeric) go through Window:Toast() in the farm logic above
+local StatsTab = Window:CreateTab({ name = "Stats" })
 
-StatsTab:CreateSection("Session")
-SessionTimeLabel   = StatsTab:CreateParagraph({ Title = "Session Time:",   Content = "—" })
-SessionEarnedLabel = StatsTab:CreateParagraph({ Title = "Session Earned:", Content = "RP. 0" })
-SessionIPHLabel    = StatsTab:CreateParagraph({ Title = "Session / Hour:", Content = "RP. 0/h" })
+StatsTab:CreateSection({ name = "Cycle" })
+CycleEarnedLabel = StatsTab:CreateStat({ name = "Cycle Earned",       prefix = "RP. ", value = 0 })
+LastDestLabel    = StatsTab:CreateStat({ name = "Last Cycle Earned",  prefix = "RP. ", value = 0 })
 
-StatsTab:CreateSection("Overall")
-DelayLabel      = StatsTab:CreateParagraph({ Title = "Status / Next TP:",          Content = "Waiting Job..." })
-TeleportLabel   = StatsTab:CreateParagraph({ Title = "Total Teleport Done:",        Content = "0 Times" })
-DestMinLabel    = StatsTab:CreateParagraph({ Title = "Destinations (Last 1 Min):",  Content = "0" })
-Dest5MinLabel   = StatsTab:CreateParagraph({ Title = "Destinations (Last 5 Mins):", Content = "0" })
-IncomeHourLabel = StatsTab:CreateParagraph({ Title = "Est. Income / Hour:",         Content = "RP. 0/h" })
-EarnedLabel     = StatsTab:CreateParagraph({ Title = "Total Earned:",               Content = "RP. 0" })
-CurrentLabel    = StatsTab:CreateParagraph({ Title = "Current Money:",              Content = "RP. 0" })
-FpsLabel        = StatsTab:CreateParagraph({ Title = "Current FPS:",                Content = "-- fps" })
+StatsTab:CreateSection({ name = "Session" })
+SessionTimeLabel   = StatsTab:CreateStat({ name = "Session Time",    suffix = " min", value = 0 })
+SessionEarnedLabel = StatsTab:CreateStat({ name = "Session Earned",  prefix = "RP. ", value = 0 })
+SessionIPHLabel    = StatsTab:CreateStat({ name = "Session / Hour",  prefix = "RP. ", suffix = "/h", value = 0 })
 
-local ProxTab = Window:CreateTab("Misc", "bot")
-ProxTab:CreateSection("Open NPC")
+StatsTab:CreateSection({ name = "Overall" })
+-- DelayLabel: countdown stat â€” stat:Set(NextTeleportIn) in the loop below
+DelayLabel      = StatsTab:CreateStat({ name = "Next TP In",               suffix = "s",            value = 0 })
+TeleportLabel   = StatsTab:CreateStat({ name = "Total Teleports",          suffix = " times",       value = 0 })
+DestMinLabel    = StatsTab:CreateStat({ name = "Dests (Last 1 Min)",                                value = 0 })
+Dest5MinLabel   = StatsTab:CreateStat({ name = "Dests (Last 5 Min)",                                value = 0 })
+IncomeHourLabel = StatsTab:CreateStat({ name = "Est. Income / Hour",       prefix = "RP. ", suffix = "/h", value = 0 })
+EarnedLabel     = StatsTab:CreateStat({ name = "Total Earned",             prefix = "RP. ",         value = 0 })
+CurrentLabel    = StatsTab:CreateStat({ name = "Current Money",            prefix = "RP. ",         value = 0 })
+FpsLabel        = StatsTab:CreateStat({ name = "FPS",                      suffix = " fps",         value = 0 })
+
+-- â”€â”€â”€ MISC TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+local ProxTab = Window:CreateTab({ name = "Misc" })
+
+ProxTab:CreateSection({ name = "Open NPC" })
+
+-- Gen2: Optionsâ†’options, CurrentOptionâ†’value (bare string), MultipleOptionsâ†’multiSelect
+-- Gen2: dropdown callback in single mode receives a plain string, not a table
 ProxTab:CreateDropdown({
-    Name = "Select NPC",
-    Options = { "Npc upgrade slot Npc", "Npc Box Shop", "Daily quest npc" },
-    CurrentOption = { "Npc job select" },
-    MultipleOptions = false,
-    Callback = function(v) SelectedNPC = v[1] end,
+    name     = "Select NPC",
+    options  = { "Npc job select", "Npc upgrade slot Npc", "Npc Box Shop", "Daily quest npc" },
+    value    = "Npc job select",
+    callback = function(v) SelectedNPC = v end,
 })
+
 ProxTab:CreateButton({
-    Name = "Open NPC UI",
-    Callback = function()
+    name     = "Open NPC UI",
+    callback = function()
         local t = NPC_Paths[SelectedNPC]
         if t then fireproximityprompt(t) end
     end,
 })
-ProxTab:CreateSection("Open Dealership")
+
+ProxTab:CreateSection({ name = "Open Dealership" })
+
 ProxTab:CreateDropdown({
-    Name = "Select Dealer",
-    Options = { "Toyota","Suzuki","Premium","Nissan","Mercedes","Komersial","KIA","Hyundai","Honda","Daihatsu","Chery","Bandung","Dealer 77" },
-    CurrentOption = { "" },
-    MultipleOptions = false,
-    Callback = function(v) SelectedDealer = v[1] end,
+    name     = "Select Dealer",
+    options  = { "Toyota","Suzuki","Premium","Nissan","Mercedes","Komersial","KIA","Hyundai","Honda","Daihatsu","Chery","Bandung","Dealer 77" },
+    callback = function(v) SelectedDealer = v end,
 })
-ProxTab:CreateSection("Map / Performance")
+
+ProxTab:CreateSection({ name = "Map / Performance" })
+
 ProxTab:CreateButton({
-    Name = "Re-run Map Clean",
-    Callback = function()
+    name     = "Re-run Map Clean",
+    callback = function()
         mapDeleted = false
         cleanMap()
     end,
 })
 
-local WebhookTab = Window:CreateTab("Webhook", "webhook")
-WebhookTab:CreateSection("Webhook Farm")
+-- â”€â”€â”€ WEBHOOK TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+local WebhookTab = Window:CreateTab({ name = "Webhook" })
+
+WebhookTab:CreateSection({ name = "Webhook Farm" })
+
+-- Gen2: PlaceholderTextâ†’placeholder, RemoveTextAfterFocusLost dropped (Gen2 default)
 WebhookTab:CreateInput({
-    Name = "Webhook Link",
-    PlaceholderText = "Enter link webhook",
-    RemoveTextAfterFocusLost = false,
-    Callback = function(t) _G.WebhookURL = t end,
-})
-WebhookTab:CreateToggle({
-    Name = "Enable Webhook",
-    Info = "Ngirim tiap 1 menit",
-    CurrentValue = false,
-    Callback = function(v) _G.AutoWebhook = v end,
+    name        = "Webhook Link",
+    placeholder = "Enter link webhook",
+    callback    = function(t) _G.WebhookURL = t end,
 })
 
-local TpTab = Window:CreateTab("Teleport", "map-pin")
-TpTab:CreateSection("Teleport Player")
-local PlayerDropdown = TpTab:CreateDropdown({
-    Name = "Select Player",
-    Options = {},
-    CurrentOption = { "" },
-    MultipleOptions = false,
-    Callback = function(v) SelectedPlayer = v[1] end,
+WebhookTab:CreateToggle({
+    name        = "Enable Webhook",
+    description = "Ngirim tiap 1 menit",
+    value       = false,
+    callback    = function(v) _G.AutoWebhook = v end,
 })
+
+-- â”€â”€â”€ TELEPORT TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+local TpTab = Window:CreateTab({ name = "Teleport" })
+
+TpTab:CreateSection({ name = "Teleport Player" })
+
+local PlayerDropdown = TpTab:CreateDropdown({
+    name     = "Select Player",
+    options  = {},
+    callback = function(v) SelectedPlayer = v end,
+})
+
 local function refreshPlayers()
     local list = {}
     for _, v in pairs(workspace.Lives:GetChildren()) do
@@ -750,57 +777,58 @@ local function refreshPlayers()
             table.insert(list, v.Name)
         end
     end
-    PlayerDropdown:Refresh(list, { "" })
+    -- Gen2: Refresh(options) â€” second arg (current selection reset) removed
+    PlayerDropdown:Refresh(list)
 end
-TpTab:CreateButton({ Name = "Refresh Player List", Callback = refreshPlayers })
+
+TpTab:CreateButton({ name = "Refresh Player List", callback = refreshPlayers })
+
 TpTab:CreateButton({
-    Name = "Teleport to Player",
-    Callback = function()
+    name     = "Teleport to Player",
+    callback = function()
         local t = workspace.Lives:FindFirstChild(SelectedPlayer)
         if t then lp.Character:PivotTo(t:GetPivot()) end
     end,
 })
+
 task.spawn(refreshPlayers)
 
+-- â”€â”€â”€ STATS UPDATE LOOP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Gen2: all stat:Set() calls take raw numbers â€” prefix/suffix handle display context
 task.spawn(function()
     while true do
         task.wait(1.5)
         local current = getCleanMoney()
         local fps = getFPS()
+
         if SessionStart then
             local sessionEarned = math.max(0, current - SessionMoneyStart)
-            SessionTimeLabel:Set({
-                Title = "Session Time:",
-                Content = formatDuration(os.time() - SessionStart) .. (_G.Autofarm and "" or "  (paused)"),
-            })
-            SessionEarnedLabel:Set({ Title = "Session Earned:", Content = "RP. " .. formatNominal(sessionEarned) })
-            SessionIPHLabel:Set({ Title = "Session / Hour:", Content = "RP. " .. formatShort(getSessionIPH()) })
+            local sessionMinutes = math.floor((os.time() - SessionStart) / 60)
+            SessionTimeLabel:Set(sessionMinutes)
+            SessionEarnedLabel:Set(sessionEarned)
+            SessionIPHLabel:Set(getSessionIPH())
         end
+
         if not _G.Autofarm then continue end
+
         EarnedMoney = current - StartMoney
-        TeleportLabel:Set({ Title = "Total Teleport Done:",        Content = _G.TotalTeleportCount .. " Times" })
-        DestMinLabel:Set({ Title = "Destinations (Last 1 Min):",   Content = getDestinationsInWindow(60) .. " (Chance of Double!)" })
-        Dest5MinLabel:Set({ Title = "Destinations (Last 5 Mins):", Content = tostring(getDestinationsInWindow(300)) })
-        IncomeHourLabel:Set({ Title = "Est. Income / Hour:",       Content = "RP. " .. formatShort(getIncomePerHour()) })
-        EarnedLabel:Set({ Title = "Total Earned:",                 Content = "RP. " .. formatNominal(EarnedMoney) })
-        CurrentLabel:Set({ Title = "Current Money:",               Content = "RP. " .. formatNominal(current) })
-        FpsLabel:Set({
-            Title = "Current FPS:",
-            Content = string.format("%.0f fps  %s", fps,
-                fps < 30 and "⚠  lag — tp slowed" or
-                fps < 50 and "~ mild lag" or "✔ smooth"),
-        })
+        TeleportLabel:Set(_G.TotalTeleportCount)
+        DestMinLabel:Set(getDestinationsInWindow(60))
+        Dest5MinLabel:Set(getDestinationsInWindow(300))
+        IncomeHourLabel:Set(getIncomePerHour())
+        EarnedLabel:Set(EarnedMoney)
+        CurrentLabel:Set(current)
+        FpsLabel:Set(math.floor(fps))
     end
 end)
 
+-- â”€â”€â”€ COUNTDOWN LOOP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 task.spawn(function()
     while true do
         task.wait(1)
-        if _G.Autofarm and DelayLabel and NextTeleportIn > 0 then
-            DelayLabel:Set({
-                Title = "Status / Next TP:",
-                Content = string.format("Teleport In: %ds", NextTeleportIn),
-            })
+        -- Gen2: stat:Set(number) â€” DelayLabel shows raw countdown seconds
+        if _G.Autofarm and NextTeleportIn > 0 then
+            DelayLabel:Set(NextTeleportIn)
         end
     end
 end)
