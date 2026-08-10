@@ -1,5 +1,5 @@
 warn("sebelum loadstring")
-local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/X5Dermaster/RayField-Loader/refs/heads/main/rayfieldloader.lua'))()
+local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/luxxidroblox-code/myscript.lua/refs/heads/main/projectsionloader.lua'))()
 warn("sesudah loadstring")
 if Rayfield then
     warn("kalau ini muncul 1 berarti berhasil rayfieldnya")
