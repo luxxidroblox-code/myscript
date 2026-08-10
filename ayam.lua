@@ -71,6 +71,75 @@ local cycleMoneySnapshot = 0
 
 warn("berhasil lewatin global 2")
 
+-- keyword lists for selective destruction
+local KILL_NAMES = {
+    "tree", "pohon", "bush", "semak", "building", "gedung", "house", "rumah",
+    "shop", "toko", "wall", "pagar", "fence", "prop", "detail", "lamp", "lampu",
+    "sign", "signage", "billboard", "papan", "trash", "sampah", "rock", "batu",
+    "grass", "rumput", "flower", "bunga", "car", "kendaraan", "vehicle",
+    "decoration", "dekorasi", "obstacle", "barrier",
+}
+
+local KEEP_NAMES = {
+    "road", "jalan", "asphalt", "aspal", "floor", "lantai", "ground", "tanah",
+    "platform", "spawner", "starter", "spawn", "base", "baseplate",
+    "waypoint", "checkpoint", "trigger", "invisible", "collision",
+    "truck", "depot", "terminal", "garage",
+}
+
+local function shouldKill(obj)
+    if not obj:IsA("BasePart") and not obj:IsA("Model") then return false end
+    local nameLow = obj.Name:lower()
+    for _, k in ipairs(KEEP_NAMES) do
+        if nameLow:find(k) then return false end
+    end
+    -- walk up: if any ancestor name matches keep, spare it
+    local ancestor = obj.Parent
+    while ancestor and ancestor ~= Workspace do
+        local aLow = ancestor.Name:lower()
+        for _, k in ipairs(KEEP_NAMES) do
+            if aLow:find(k) then return false end
+        end
+        ancestor = ancestor.Parent
+    end
+    for _, k in ipairs(KILL_NAMES) do
+        if nameLow:find(k) then return true end
+    end
+    return false
+end
+
+local function cleanMap()
+    if mapDeleted then return end
+    mapDeleted = true
+
+    local map = Workspace:FindFirstChild("Map")
+    if not map then return end
+
+    -- kill Prop folder wholesale — pure decoration
+    local prop = map:FindFirstChild("Prop")
+    if prop then
+        pcall(function() prop:Destroy() end)
+    end
+
+    -- walk remaining map children, destroy by keyword
+    for _, child in ipairs(map:GetChildren()) do
+        if child.Name ~= "Prop" then
+            if shouldKill(child) then
+                pcall(function() child:Destroy() end)
+            else
+                -- recurse one level into model children
+                if child:IsA("Model") or child:IsA("Folder") then
+                    for _, grandchild in ipairs(child:GetChildren()) do
+                        if shouldKill(grandchild) then
+                            pcall(function() grandchild:Destroy() end)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 local function uprightCF(cf, yOffset)
     yOffset = yOffset or 0
     local pos = cf.Position + Vector3.new(0, yOffset, 0)
@@ -79,70 +148,16 @@ local function uprightCF(cf, yOffset)
     return CFrame.new(pos) * CFrame.Angles(0, yaw, 0)
 end
 
-local function buildPlatform(position, sizeX, sizeZ, yOffset)
-    sizeX = sizeX or 350
-    sizeZ = sizeZ or 350
-    yOffset = yOffset or 4
-    local p = Instance.new("Part")
-    p.Name = "FarmPlatform"
-    p.Size = Vector3.new(sizeX, 8, sizeZ)
-    p.CFrame = CFrame.new(position.X, position.Y - yOffset, position.Z)
-    p.Anchored = true
-    p.CanCollide = true
-    p.CastShadow = false
-    p.Material = Enum.Material.SmoothPlastic
-    p.BrickColor = BrickColor.new("Dark grey")
-    p.Parent = Workspace
-    table.insert(activePlatforms, p)
-    return p
-end
-
 local function clearPlatforms()
-    if activePlatforms then
-        for i = 1, #activePlatforms do
-            local p = activePlatforms[i]
-            pcall(function()
-                if p and p.Parent then p:Destroy() end
-            end)
-        end
+    for _, p in ipairs(activePlatforms) do
+        if p and p.Parent then p:Destroy() end
     end
     activePlatforms = {}
 end
 
-local function rebuildPlatforms()
-    pcall(clearPlatforms)
-    local success, p = pcall(function() return Instance.new("Part") end)
-    if success and p then
-        p.Name = "FarmPlatform"
-        p.Size = Vector3.new(4000000, 8, 4000000)
-        p.CFrame = CFrame.new(0, -4, 0)
-        p.Anchored = true
-        p.CanCollide = true
-        p.CastShadow = false
-        p.Material = Enum.Material.SmoothPlastic
-        p.BrickColor = BrickColor.new("Dark grey")
-        p.Parent = Workspace
-        activePlatforms[#activePlatforms + 1] = p
-    end
-end
-
 local function deleteMap()
-    mapDeleted = true
-    pcall(rebuildPlatforms)
-    
-    local map = Workspace:FindFirstChild("Map")
-    if map then
-        local children = map:GetChildren()
-        for i = 1, #children do
-            pcall(function() children[i]:Destroy() end)
-        end
-    end
-    
-    pcall(function()
-        if Workspace.Terrain and typeof(Workspace.Terrain.Clear) == "function" then
-            Workspace.Terrain:Clear()
-        end
-    end)
+    mapDeleted = false
+    cleanMap()
 end
 
 local STAFF_GROUP_ID = 10884667
@@ -671,7 +686,6 @@ local function runAutofarm()
 
     _G.DeleteMap = false
     mapDeleted = false
-    clearPlatforms()
 end
 
 local Window = Rayfield:CreateWindow({
@@ -751,9 +765,10 @@ ProxTab:CreateDropdown({
 })
 ProxTab:CreateSection("Map / Performance")
 ProxTab:CreateButton({
-    Name = "Rebuild Destination Platforms",
+    Name = "Re-run Map Clean",
     Callback = function()
-        if _G.DeleteMap then rebuildPlatforms() end
+        mapDeleted = false
+        cleanMap()
     end,
 })
 
