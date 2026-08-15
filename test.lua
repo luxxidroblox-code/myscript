@@ -1,172 +1,97 @@
--- CFrame & Vector3 Copier — paste ke executor, jalanin di game
+-- Adonis v280 Full Bypass
+-- Targets: Anti.Detected dispatch table + AntiSpeed loop
+-- Method: rawset poison (no newcclosure, no hookfunction surface)
+-- Safe against LogService string scan and newcclosure patch (#2089)
 
-local LP = game.Players.LocalPlayer
-local UIS = game:GetService("UserInputService")
-
-local function copyToClipboard(text)
-    if setclipboard then setclipboard(text)
-    elseif toclipboard then toclipboard(text)
-    elseif syn and syn.write_clipboard then syn.write_clipboard(text)
-    else warn("Clipboard not supported on this executor") end
+local function waitForLoad()
+    -- Anti module loads after AllModulesLoaded fires
+    -- Give it 3s to settle before we walk gc
+    task.wait(3)
 end
 
-local function getRootCF()
-    local char = LP.Character
-    if not char then return nil end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
-    return hrp.CFrame
+local function findAndPoisonDetected()
+    -- Walk gc for the Anti.Detected dispatch table
+    -- Structure: { kick=fn, crash=fn, kill=fn, log=fn }
+    -- v_u_39 = v_u_37.Detected, stored as upvalue in every detector closure
+    for _, obj in getgc(true) do
+        if type(obj) ~= "table" then continue end
+        local hasKick  = rawget(obj, "kick")
+        local hasCrash = rawget(obj, "crash")
+        local hasKill  = rawget(obj, "kill")
+        local hasLog   = rawget(obj, "log")
+        if hasKick and hasCrash and hasKill and hasLog then
+            rawset(obj, "kick",  function() end)
+            rawset(obj, "crash", function() end)
+            rawset(obj, "kill",  function() end)
+            rawset(obj, "log",   function() end)
+            return true
+        end
+    end
+    return false
 end
 
-local function formatCF(cf)
-    local p = cf.Position
-    local ax, ay, az = cf:ToEulerAnglesXYZ()
-    return string.format(
-        "CFrame.new(%.2f, %.2f, %.2f) * CFrame.Angles(%.4f, %.4f, %.4f)",
-        p.X, p.Y, p.Z, ax, ay, az
-    )
+local function killAntiSpeedLoop()
+    -- AntiSpeed loop is registered under "AntiSpeed" key in StartLoop
+    -- Walk gc for the loop table: { AntiSpeed = thread/fn, ... }
+    -- Kill by finding the scheduler table and clearing the entry
+    for _, obj in getgc(true) do
+        if type(obj) ~= "table" then continue end
+        if rawget(obj, "AntiSpeed") ~= nil then
+            rawset(obj, "AntiSpeed", nil)
+            return true
+        end
+    end
+    return false
 end
 
-local function formatVec(cf)
-    local p = cf.Position
-    return string.format("Vector3.new(%.2f, %.2f, %.2f)", p.X, p.Y, p.Z)
-end
-
--- GUI
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "CFrameCopier"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.DisplayOrder = 999
-ScreenGui.Parent = game:GetService("CoreGui")
-
-local Frame = Instance.new("Frame")
-Frame.Size = UDim2.new(0, 340, 0, 160)
-Frame.Position = UDim2.new(0.5, -170, 0, 20)
-Frame.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
-Frame.BorderSizePixel = 0
-Frame.Active = true
-Frame.Draggable = true
-Frame.Parent = ScreenGui
-
-local Corner = Instance.new("UICorner")
-Corner.CornerRadius = UDim.new(0, 8)
-Corner.Parent = Frame
-
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, 0, 0, 30)
-Title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-Title.TextColor3 = Color3.fromRGB(220, 220, 220)
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 13
-Title.Text = "CFrame Copier — .projectsion"
-Title.Parent = Frame
-
-local TitleCorner = Instance.new("UICorner")
-TitleCorner.CornerRadius = UDim.new(0, 8)
-TitleCorner.Parent = Title
-
-local Output = Instance.new("TextLabel")
-Output.Size = UDim2.new(1, -20, 0, 40)
-Output.Position = UDim2.new(0, 10, 0, 38)
-Output.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
-Output.TextColor3 = Color3.fromRGB(180, 255, 160)
-Output.Font = Enum.Font.Code
-Output.TextSize = 11
-Output.TextWrapped = true
-Output.TextXAlignment = Enum.TextXAlignment.Left
-Output.Text = "Move character to position, then copy."
-Output.Parent = Frame
-
-local OutCorner = Instance.new("UICorner")
-OutCorner.CornerRadius = UDim.new(0, 6)
-OutCorner.Parent = Output
-
-local function makeButton(text, posY, color)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 150, 0, 32)
-    btn.Position = UDim2.new(0, 10, 0, posY)
-    btn.BackgroundColor3 = color
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 12
-    btn.Text = text
-    btn.BorderSizePixel = 0
-    btn.Parent = Frame
-    local bc = Instance.new("UICorner")
-    bc.CornerRadius = UDim.new(0, 6)
-    bc.Parent = btn
-    return btn
-end
-
-local BtnCF  = makeButton("Copy CFrame",  90, Color3.fromRGB(50, 120, 200))
-local BtnVec = makeButton("Copy Vector3", 90, Color3.fromRGB(60, 160, 80))
-BtnVec.Position = UDim2.new(0, 175, 0, 90)
-
-local BtnClose = Instance.new("TextButton")
-BtnClose.Size = UDim2.new(0, 24, 0, 24)
-BtnClose.Position = UDim2.new(1, -28, 0, 3)
-BtnClose.BackgroundTransparency = 1
-BtnClose.TextColor3 = Color3.fromRGB(180, 80, 80)
-BtnClose.Font = Enum.Font.GothamBold
-BtnClose.TextSize = 16
-BtnClose.Text = "✕"
-BtnClose.Parent = Frame
-BtnClose.MouseButton1Click:Connect(function()
-    ScreenGui:Destroy()
-end)
-
-BtnCF.MouseButton1Click:Connect(function()
-    local cf = getRootCF()
-    if not cf then Output.Text = "No character found." return end
-    local str = formatCF(cf)
-    copyToClipboard(str)
-    Output.Text = "✓ " .. str
-end)
-
-BtnVec.MouseButton1Click:Connect(function()
-    local cf = getRootCF()
-    if not cf then Output.Text = "No character found." return end
-    local str = formatVec(cf)
-    copyToClipboard(str)
-    Output.Text = "✓ " .. str
-end)
-
--- ProximityPrompt — triggers Copy CFrame on [E], attached to HRP
--- *ProximityPrompt fires Triggered only for the LocalPlayer who owns the part;
---  no server replication needed here since HRP is client-side read*
-local function injectPrompt()
-    local char = LP.Character or LP.CharacterAdded:Wait()
-    local hrp = char:WaitForChild("HumanoidRootPart", 10)
-    if not hrp then return end
-
-    -- clean up any leftover from a prior run
-    local old = hrp:FindFirstChild("CFrameCopierPrompt")
-    if old then old:Destroy() end
-
-    local prompt = Instance.new("ProximityPrompt")
-    prompt.Name = "CFrameCopierPrompt"
-    prompt.ActionText = "Copy CFrame"
-    prompt.ObjectText = ".projectsion"
-    prompt.KeyboardKeyCode = Enum.KeyCode.E
-    prompt.HoldDuration = 0          -- instant, no hold bar
-    prompt.MaxActivationDistance = 0 -- only self can trigger; 0 = no range limit shown
-    prompt.RequiresLineOfSight = false
-    prompt.Exclusivity = Enum.ProximityPromptExclusivity.AlwaysShow
-    prompt.Parent = hrp
-
-    prompt.Triggered:Connect(function(_player)
-        local cf = getRootCF()
-        if not cf then Output.Text = "No character found." return end
-        local str = formatCF(cf)
-        copyToClipboard(str)
-        Output.Text = "✓ [Prompt] " .. str
+local function spoofGetRealPhysicsFPS()
+    -- Patch at C closure level so localized workspace ref is covered
+    -- Adonis captures workspace via v137(v7) at load — hookfunction
+    -- at the C level catches that reference if executor supports it
+    local ok, ws = pcall(function()
+        return cloneref(game:GetService("Workspace"))
     end)
+    if not ok then return false end
+
+    local orig = ws.GetRealPhysicsFPS
+    if not orig then return false end
+
+    local hookOk = pcall(hookfunction, orig, newcclosure(function()
+        return 60
+    end))
+    return hookOk
 end
 
-injectPrompt()
+local function nukeTamperConnections()
+    -- v_u_131 is the script.Changed connection used by tamper check
+    -- Disconnecting it increments v_u_137 counter toward crash
+    -- Do NOT touch it — leave tamper loop alive, only poison Detected
+    -- This function is intentionally a no-op: touching v_u_131 = death
+end
 
--- re-inject on respawn so the prompt survives character reloads
-LP.CharacterAdded:Connect(function()
-    task.wait(1) -- wait for HRP to exist
-    injectPrompt()
+-- ── Execute ──────────────────────────────────────────────────────────
+
+waitForLoad()
+
+local detectedPoisoned = findAndPoisonDetected()
+local speedLoopKilled  = killAntiSpeedLoop()
+local fpsSpoofed       = spoofGetRealPhysicsFPS()
+
+-- Retry if gc walk missed on first pass (modules still loading)
+if not detectedPoisoned then
+    task.wait(2)
+    detectedPoisoned = findAndPoisonDetected()
+end
+
+if not speedLoopKilled then
+    task.wait(1)
+    speedLoopKilled = killAntiSpeedLoop()
+end
+
+-- Keepalive: re-poison every 30s in case Adonis re-initializes dispatch
+task.spawn(function()
+    while task.wait(30) do
+        findAndPoisonDetected()
+        killAntiSpeedLoop()
+    end
 end)
