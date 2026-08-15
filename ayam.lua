@@ -60,15 +60,10 @@ Frame.BorderSizePixel = 0
 
 task.spawn(function()
     while task.wait(0.5) do
-        if _G.blackscreen then
-            BlackScreen.Enabled = true
-        else
-            BlackScreen.Enabled = false
-        end
+        BlackScreen.Enabled = _G.blackscreen
     end
 end)
 
--- PATCHED: Auto Kick — boots self if anyone else is in the server
 local function checkAndKick()
     local playerList = Players:GetPlayers()
     if #playerList > 1 then
@@ -78,18 +73,16 @@ local function checkAndKick()
                 table.insert(names, p.Name)
             end
         end
-        LP:Kick("\n[VoidlineHub]\nPlayer detected in server!\nKicked to protect farm.\nDetected: " .. table.concat(names, ", "))
+        LP:Kick("admim mesum joim private server lu woi aowkaowk: " .. table.concat(names, ", "))
     end
 end
 
--- fire on join
 Players.PlayerAdded:Connect(function(player)
     if player == LP then return end
-    task.wait(0.5) -- small delay so name resolves
+    task.wait(0.5)
     checkAndKick()
 end)
 
--- polling loop as backup (catches edge cases where PlayerAdded misfires)
 task.spawn(function()
     while true do
         task.wait(3)
@@ -147,7 +140,7 @@ local lastTarget = nil
 local noBillboardTime = 0
 local jobStarted = false
 
-local BaranangsangEndCF = CFrame.new(22756.03, 293.01, -39497.54)
+local BaranangsangEndCF = CFrame.new(22732.02, 293.21, -39525.31) * CFrame.Angles(2.8307, -0.7276, 2.9293)
 
 local TP_Locations = {
     ["Dealership"] = CFrame.new(19830.625, 266.913116, -27910.4844, 0.999847949, 0, 0.017436387, 0, 1, 0, -0.017436387, 0, 0.999847949),
@@ -159,7 +152,7 @@ game.Players.LocalPlayer.Idled:Connect(function()
     if _G.AntiAFK then
         VirtualUser:CaptureController()
         VirtualUser:ClickButton2(Vector2.new())
-        warn("VoidlineHub: Anti-AFK Aktif!")
+        warn("anti afk nyala tenang be")
     end
 end)
 
@@ -173,29 +166,65 @@ local function GetMyBus()
     return workspace.SpawnedVehicles:FindFirstChild(_G.SelectedBus)
 end
 
-local function SetFreeze(state)
+-- ============================================================
+-- SmoothTP: replaces InstantTP + SetFreeze
+-- Moves at JB5_MAX_SPEED studs/sec with smoothstep easing.
+-- No position jump. No Anchored flag. Server sees normal velocity.
+-- ============================================================
+local JB5_MAX_SPEED   = 75   -- studs/sec â€” tune to match JB5 top speed
+local MIN_TRAVEL_TIME = 1.0  -- floor: never arrive under 1s regardless of distance
+
+local function SmoothTP(targetCF)
     local bus = GetMyBus()
-    if bus then
-        for _, part in pairs(bus:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.Anchored = state
-                if not state then
-                    part.AssemblyLinearVelocity = Vector3.new(0,0,0)
-                    part.AssemblyAngularVelocity = Vector3.new(0,0,0)
+    if not bus then return end
+
+    -- clear any anchors before moving
+    for _, part in pairs(bus:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Anchored = false
+            part.AssemblyLinearVelocity  = Vector3.zero
+            part.AssemblyAngularVelocity = Vector3.zero
+        end
+    end
+
+    local originCF   = bus:GetPivot()
+    local distance   = (targetCF.Position - originCF.Position).Magnitude
+    local travelTime = math.max(distance / JB5_MAX_SPEED, MIN_TRAVEL_TIME)
+    local elapsed    = 0
+
+    while elapsed < travelTime and _G.AutoFull do
+        local dt = task.wait()
+        elapsed  = elapsed + dt
+        local alpha = math.clamp(elapsed / travelTime, 0, 1)
+        -- smoothstep cubic: looks like real acceleration + braking
+        local t = alpha * alpha * (3 - 2 * alpha)
+        bus:PivotTo(originCF:Lerp(targetCF, t))
+    end
+
+    bus:PivotTo(targetCF)
+end
+
+-- ============================================================
+-- HoldAtStop: replaces SetFreeze(true) at stop dwell time
+-- Zeros velocity every HOLD_INTERVAL instead of anchoring parts.
+-- Same result â€” bus stays put â€” no Anchored flag on any BasePart.
+-- ============================================================
+local HOLD_INTERVAL = 0.1
+
+local function HoldAtStop(duration)
+    local bus     = GetMyBus()
+    local elapsed = 0
+    while elapsed < duration and _G.AutoFull do
+        task.wait(HOLD_INTERVAL)
+        elapsed = elapsed + HOLD_INTERVAL
+        if bus then
+            for _, part in pairs(bus:GetDescendants()) do
+                if part:IsA("BasePart") and not part.Anchored then
+                    part.AssemblyLinearVelocity  = Vector3.zero
+                    part.AssemblyAngularVelocity = Vector3.zero
                 end
             end
         end
-    end
-end
-
-local function InstantTP(targetCF)
-    local bus = GetMyBus()
-    if not bus then return end
-    SetFreeze(false)
-    task.wait(0.1)
-    for i = 1, 3 do
-        bus:PivotTo(targetCF)
-        task.wait(0.05)
     end
 end
 
@@ -246,7 +275,7 @@ local function sendWebhook(income, target)
         ["fields"] = {
             {["name"] = "protected", ["value"] = LP.Name, ["inline"] = false},
             {["name"] = "Cycle Income", ["value"] = formatRP(income), ["inline"] = false},
-            {["name"] = "Target", ["value"] = "Cirebon → Baranangsiang Route", ["inline"] = false},
+            {["name"] = "Target", ["value"] = "Cirebon â†’ Baranangsiang Route", ["inline"] = false},
             {["name"] = "Current Money", ["value"] = formatRP(currentMoney), ["inline"] = false},
             {["name"] = "Total Earning", ["value"] = formatRP(_G.TotalEarning), ["inline"] = false},
             {["name"] = "Cycle Count", ["value"] = tostring(_G.CycleCount), ["inline"] = false},
@@ -287,12 +316,10 @@ StatsFolder.Uang:GetPropertyChangedSignal("Value"):Connect(function()
             task.spawn(function()
                 while isRunning do
                     task.wait(65)
-
                     if pendingIncome > 0 and _G.WebhookURL ~= "" and _G.WebhookEnabled then
                         sendWebhook(pendingIncome, 0)
                         pendingIncome = 0
                     end
-
                     if not _G.AutoFull then
                         isRunning = false
                     end
@@ -322,13 +349,10 @@ MainTab:CreateToggle({
     CurrentValue = false,
     Callback = function(Value)
         _G.AutoFull = Value
-        _G.blackscreen = Value
 
         if not Value then
-            _G.blackscreen = false
             lastTarget = nil
             jobStarted = false
-            SetFreeze(false)
             SetStatus("Idle")
         end
 
@@ -380,38 +404,36 @@ MainTab:CreateToggle({
             if target then
                 noBillboardTime = 0
                 if target ~= lastTarget then
-                    SetFreeze(true)
-                    task.wait(0.2)
-                    InstantTP(target.CFrame)
                     lastTarget = target
 
+                    -- smooth drive to stop â€” no instant jump, no Anchored flag
+                    SetStatus("Driving to stop...")
+                    SmoothTP(target.CFrame)
+
+                    -- 30s hold: game registers bus presence, velocity-zeroed not anchored
                     for i = 1, 30 do
                         if not _G.AutoFull then break end
                         if infoLabel and string.find(string.upper(infoLabel.Text), "RETURN TO THE CHECKPOINT") then
-                            SetStatus("Correction: TP Again!")
-                            SetFreeze(false)
-                            task.wait(0.5)
-                            InstantTP(target.CFrame)
-                            task.wait(0.5)
-                            SetFreeze(true)
+                            SetStatus("Correction: repositioning...")
+                            SmoothTP(target.CFrame)
                         else
-                            SetStatus("Position Secure...")
+                            SetStatus("Position confirmed...")
                         end
-                        task.wait(1)
+                        HoldAtStop(1)
                     end
 
+                    -- 15s approach window
                     for i = 15, 1, -1 do
                         if not _G.AutoFull then break end
-                        SetStatus("To Stations: " .. i .. "s")
-                        task.wait(1)
+                        SetStatus("Next stop in: " .. i .. "s")
+                        HoldAtStop(1)
                     end
 
-                    SetFreeze(false)
-
-                    for i = 74, 1, -1 do
+                    -- 90s inter-stop delay
+                    for i = 90, 1, -1 do
                         if not _G.AutoFull then break end
                         SetStatus("Delay TP: " .. i .. "s")
-                        task.wait(1)
+                        HoldAtStop(1)
                     end
                 end
             else
@@ -421,12 +443,9 @@ MainTab:CreateToggle({
 
                     if noBillboardTime >= 20 then
                         SetStatus("Finishing Job...")
-                        SetFreeze(true)
-                        task.wait(0.2)
-                        InstantTP(BaranangsangEndCF)
+                        SmoothTP(BaranangsangEndCF)
 
                         task.wait(2)
-                        SetFreeze(false)
                         jobStarted = false
                         lastTarget = nil
                         noBillboardTime = 0
@@ -442,6 +461,16 @@ MainTab:CreateToggle({
             task.wait(1)
         end
     end
+})
+
+-- BLACK SCREEN TOGGLE â€” manual, independent of autofarm
+MainTab:CreateToggle({
+    Name = "Black Screen",
+    CurrentValue = false,
+    Flag = "BlackScreen",
+    Callback = function(Value)
+        _G.blackscreen = Value
+    end,
 })
 
 MainTab:CreateSection("Auto Stop Settings")
@@ -562,7 +591,7 @@ MoreTab:CreateSection("important features")
 
 MoreTab:CreateToggle({
    Name = "Anti-AFK System",
-   CurrentValue = false,
+   CurrentValue = true,
    Flag = "AntiAFK",
    Callback = function(Value)
       _G.AntiAFK = Value
@@ -585,9 +614,20 @@ MoreTab:CreateToggle({
 
 MoreTab:CreateSection("Visual & Performance")
 
+-- Guard: GetActiveStop() relies on BillboardGui.Enabled â€” destroying them
+-- during autofarm kills stop detection. Blocked while AutoFull is true.
 MoreTab:CreateButton({
    Name = "Hide All Names",
    Callback = function()
+      if _G.AutoFull then
+          Rayfield:Notify({
+              Title = "Blocked",
+              Content = "Turn off autofarm first â€” BillboardGui destruction breaks stop detection.",
+              Duration = 4,
+              Image = "alert-triangle",
+          })
+          return
+      end
       for _, v in pairs(workspace:GetDescendants()) do
           if v:IsA("BillboardGui") then
               v:Destroy()
