@@ -167,7 +167,7 @@ end
 --   Heartbeat-driven via CFrameValue.Changed â€” same pattern as CDI script.
 -- ============================================================
 local AERIAL_HEIGHT  = 1000
-local DESCENT_TIME   = 5    -- tune: faster = snappier, slower = safer
+local DESCENT_TIME   = 7    -- tune: faster = snappier, slower = safer
 
 -- ============================================================
 -- AerialTP
