@@ -459,7 +459,7 @@ MainTab:CreateToggle({
                     end
 
                     -- 90s inter-stop delay
-                    for i = 60, 1, -1 do
+                    for i = 62, 1, -1 do
                         if not _G.AutoFull then break end
                         SetStatus("Delay TP: " .. i .. "s")
                         HoldAtStop(1)
