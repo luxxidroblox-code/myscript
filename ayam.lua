@@ -1,5 +1,17 @@
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
+local Window = Rayfield:CreateWindow({
+   Name = ".projectsion",
+   LoadingTitle = "Bus Explorer Indonesia",
+   LoadingSubtitle = "by .projectsion",
+   Theme = "Bloom",
+   ConfigurationSaving = {
+      Enabled = true,
+      FileName = "VoidlineConfig"
+   },
+   KeySystem = false,
+})
+
 local VirtualUser    = game:GetService("VirtualUser")
 local TweenService   = game:GetService("TweenService")
 local Players        = game:GetService("Players")
@@ -12,18 +24,6 @@ local StartTime      = os.time()
 local CarData        = Remotes.GetClientCustomizationData:InvokeServer()
 local OwnedCarsFolder = LP:WaitForChild("PlayerData"):WaitForChild("OwnedCars")
 local HttpService    = game:GetService("HttpService")
-
-local Window = Rayfield:CreateWindow({
-   Name = ".projectsion",
-   LoadingTitle = "Bus Explorer Indonesia",
-   LoadingSubtitle = "by .projectsion",
-   Theme = "Bloom",
-   ConfigurationSaving = {
-      Enabled = true,
-      FileName = "VoidlineConfig"
-   },
-   KeySystem = false,
-})
 
 _G.AutoFull        = false
 _G.AntiAFK         = true
