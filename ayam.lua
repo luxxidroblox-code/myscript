@@ -167,7 +167,7 @@ end
 --   Heartbeat-driven via CFrameValue.Changed â€” same pattern as CDI script.
 -- ============================================================
 local AERIAL_HEIGHT  = 1000
-local DESCENT_TIME   = 8    -- tune: faster = snappier, slower = safer
+local DESCENT_TIME   = 5    -- tune: faster = snappier, slower = safer
 
 -- ============================================================
 -- AerialTP
@@ -410,14 +410,14 @@ MainTab:CreateToggle({
                     bus.DriveSeat:Sit(hum)
                     task.wait(2)
 
-                    SetStatus("get job...")
+                    SetStatus("Invoke job...")
                     Remotes:WaitForChild("StartBusJob"):InvokeServer("Cirebon_Baranangsiang4", nil)
                     task.wait(1)
 
                     hum.Jump = true
                     task.wait(1.5)
 
-                    SetStatus("Spawn vehicle..")
+                    SetStatus("Spawning vehicle..")
                     Remotes:WaitForChild("SpawnCar"):FireServer(_G.SelectedBus)
                     task.wait(4)
                     bus = GetMyBus()
@@ -440,7 +440,7 @@ MainTab:CreateToggle({
                     AerialTP(target.CFrame)
 
                     -- 30s presence hold at stop, velocity zeroed each tick
-                    for i = 1, 30 do
+                    for i = 1, 20 do
                         if not _G.AutoFull then break end
                         if infoLabel and string.find(string.upper(infoLabel.Text), "RETURN TO THE CHECKPOINT") then
                             SetStatus("Correction: re-approaching...")
@@ -452,14 +452,14 @@ MainTab:CreateToggle({
                     end
 
                     -- 15s window before next stop
-                    for i = 15, 1, -1 do
+                    for i = 10, 1, -1 do
                         if not _G.AutoFull then break end
                         SetStatus("Next stop in: " .. i .. "s")
                         HoldAtStop(1)
                     end
 
                     -- 90s inter-stop delay
-                    for i = 90, 1, -1 do
+                    for i = 70, 1, -1 do
                         if not _G.AutoFull then break end
                         SetStatus("Delay TP: " .. i .. "s")
                         HoldAtStop(1)
