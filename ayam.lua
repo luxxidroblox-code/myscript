@@ -12,18 +12,18 @@ local Window = Rayfield:CreateWindow({
    KeySystem = false,
 })
 
-local VirtualUser       = game:GetService("VirtualUser")
-local TweenService      = game:GetService("TweenService")
-local Players           = game:GetService("Players")
-local LP                = Players.LocalPlayer
-local Remotes           = game:GetService("ReplicatedStorage"):WaitForChild("Remotes")
+local VirtualUser    = game:GetService("VirtualUser")
+local TweenService   = game:GetService("TweenService")
+local Players        = game:GetService("Players")
+local LP             = Players.LocalPlayer
+local Remotes        = game:GetService("ReplicatedStorage"):WaitForChild("Remotes")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local StatsFolder       = LP:WaitForChild("PlayerData")
-local StartUang         = StatsFolder.Uang.Value
-local StartTime         = os.time()
-local CarData           = Remotes.GetClientCustomizationData:InvokeServer()
-local OwnedCarsFolder   = LP:WaitForChild("PlayerData"):WaitForChild("OwnedCars")
-local HttpService        = game:GetService("HttpService")
+local StatsFolder    = LP:WaitForChild("PlayerData")
+local StartUang      = StatsFolder.Uang.Value
+local StartTime      = os.time()
+local CarData        = Remotes.GetClientCustomizationData:InvokeServer()
+local OwnedCarsFolder = LP:WaitForChild("PlayerData"):WaitForChild("OwnedCars")
+local HttpService    = game:GetService("HttpService")
 
 _G.AutoFull        = false
 _G.AntiAFK         = true
@@ -36,16 +36,15 @@ _G.TotalEarning    = 0
 _G.CycleCount      = 0
 _G.StartTime       = os.time()
 _G.AutoKickEnabled = false
-
-local TargetUang       = 0
-local lastMoney        = StatsFolder.Uang.Value
-local SelectedBusToBuy = ""
-local CarListData      = {}
-local pendingIncome    = 0
-local SelectedAction   = "Dealership"
-local SelectedTP       = "Dealership"
-local isRunning        = false
-local busOptions       = {}
+local TargetUang        = 0
+local lastMoney         = StatsFolder.Uang.Value
+local SelectedBusToBuy  = ""
+local CarListData       = {}
+local pendingIncome     = 0
+local SelectedAction    = "Dealership"
+local SelectedTP        = "Dealership"
+local isRunning         = false
+local busOptions        = {}
 
 local BlackScreen = Instance.new("ScreenGui")
 local Frame       = Instance.new("Frame")
@@ -114,10 +113,7 @@ task.spawn(function()
                 local m = math.floor((diff % 3600) / 60)
                 local s = diff % 60
                 TimeLabel:Set(string.format("Time: %02d:%02d:%02d", h, m, s))
-                local ping = tonumber(
-                    game:GetService("Stats").Network.ServerStatsItem["Data Ping"]
-                        :GetValueString():split(" ")[1]
-                ) or 0
+                local ping = tonumber(game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValueString():split(" ")[1]) or 0
                 PingLabel:Set("Ping: " .. math.floor(ping) .. " ms")
                 local fps = math.floor(1 / task.wait())
                 FPSLabel:Set("FPS: " .. fps)
@@ -139,16 +135,12 @@ local lastTarget      = nil
 local noBillboardTime = 0
 local jobStarted      = false
 
-local BaranangsangEndCF = CFrame.new(22732.02, 293.21, -39525.31)
-    * CFrame.Angles(2.8307, -0.7276, 2.9293)
+local BaranangsangEndCF = CFrame.new(22732.02, 293.21, -39525.31) * CFrame.Angles(2.8307, -0.7276, 2.9293)
 
 local TP_Locations = {
-    ["Dealership"]    = CFrame.new(19830.625, 266.913116, -27910.4844,
-        0.999847949, 0, 0.017436387, 0, 1, 0, -0.017436387, 0, 0.999847949),
-    ["Modifikasi"]    = CFrame.new(12035.499, -21.3362789, 12740.0605,
-        -0.573599219, 0, 0.81913656, 0, 1, 0, -0.81913656, 0, -0.573599219),
-    ["Teleport City"] = CFrame.new(21795.2461, 292.439026, -40055.918,
-        0.707134247, -0, -0.707079291, 0, 1, -0, 0.707079291, 0, 0.707134247),
+    ["Dealership"]    = CFrame.new(19830.625,  266.913116, -27910.4844, 0.999847949, 0, 0.017436387, 0, 1, 0, -0.017436387, 0, 0.999847949),
+    ["Modifikasi"]    = CFrame.new(12035.499,  -21.3362789, 12740.0605, -0.573599219, 0, 0.81913656, 0, 1, 0, -0.81913656, 0, -0.573599219),
+    ["Teleport City"] = CFrame.new(21795.2461, 292.439026, -40055.918,  0.707134247, -0, -0.707079291, 0, 1, -0, 0.707079291, 0, 0.707134247)
 }
 
 game.Players.LocalPlayer.Idled:Connect(function()
@@ -168,29 +160,23 @@ local function GetMyBus()
 end
 
 -- ============================================================
--- AERIAL CONSTANTS
+-- AERIAL_HEIGHT : studs above map during aerial transit.
+--   Server never sees a ground-level position jump.
+--   Instant moves happen at sky height where nothing is tracked.
+-- DESCENT_TIME  : seconds for the final tween down to the stop.
+--   Heartbeat-driven via CFrameValue.Changed â€” same pattern as CDI script.
 -- ============================================================
-local AERIAL_HEIGHT = 1000
-local DESCENT_TIME  = 5
+local AERIAL_HEIGHT  = 1000
+local DESCENT_TIME   = 5    -- tune: faster = snappier, slower = safer
 
 -- ============================================================
--- BYPASS CONSTANTS
---   PREDRIVE_DIST  : studs before stop; bus tweens in from here.
---   PREDRIVE_SPEED : sps during approach tween — reads as bus velocity.
---   ROUTE_MIN/MAX  : target route window in seconds [9:30, 12:00].
---   STOP_COUNT     : checkpoint count on Cirebon→Baranangsiang.
--- ============================================================
-local PREDRIVE_DIST       = 110
-local PREDRIVE_SPEED      = 20
-local ROUTE_MIN_SECONDS   = 570
-local ROUTE_MAX_SECONDS   = 720
-local STOP_COUNT_ESTIMATE = 7
-local routeStartTime      = nil
-local completedStops      = 0
-
--- ============================================================
--- AerialTP — sky transit used for long-range moves and job end.
---   Not used for stop arrivals — SmartApproach owns that path.
+-- AerialTP
+--   1. Instant lift to current + AERIAL_HEIGHT  (above map, out of range)
+--   2. Instant translate to target + AERIAL_HEIGHT  (still above map)
+--   3. TweenService descent to target over DESCENT_TIME seconds
+--      CFrameValue.Changed fires every heartbeat â†’ position updated
+--      every frame, velocity zeroed every frame â€” no anchor needed.
+-- workspace.Gravity must be 0 before calling (set at farm start).
 -- ============================================================
 local function AerialTP(targetCF)
     local bus = GetMyBus()
@@ -203,6 +189,7 @@ local function AerialTP(targetCF)
 
     local primaryPart = bus.PrimaryPart
 
+    -- clear anchors and any residual velocity
     for _, part in pairs(bus:GetDescendants()) do
         if part:IsA("BasePart") then
             part.Anchored                = false
@@ -211,13 +198,16 @@ local function AerialTP(targetCF)
         end
     end
 
+    -- instant lift â€” gravity is 0, bus floats at whatever height we set
     local currentCF = bus:GetPivot()
     bus:PivotTo(currentCF + Vector3.new(0, AERIAL_HEIGHT, 0))
     task.wait()
 
+    -- instant lateral translate â€” still 1000 studs above the target
     bus:PivotTo(targetCF + Vector3.new(0, AERIAL_HEIGHT, 0))
     task.wait()
 
+    -- heartbeat-driven descent via CFrameValue tween (from CDI script)
     local info  = TweenInfo.new(DESCENT_TIME, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut)
     local cfVal = Instance.new("CFrameValue")
     cfVal.Value = bus:GetPivot()
@@ -231,6 +221,7 @@ local function AerialTP(targetCF)
     local tween = TweenService:Create(cfVal, info, { Value = targetCF })
     tween:Play()
 
+    -- interruptible wait â€” exits early if farm is toggled off
     while tween.PlaybackState ~= Enum.PlaybackState.Completed and _G.AutoFull do
         task.wait(0.1)
     end
@@ -244,7 +235,10 @@ local function AerialTP(targetCF)
 end
 
 -- ============================================================
--- HoldAtStop — zeros velocity on HOLD_INTERVAL tick.
+-- HoldAtStop
+--   Zeros velocity every HOLD_INTERVAL while stopped at a checkpoint.
+--   Gravity is 0 during farming so there's no gravitational drift â€”
+--   this handles any residual physics forces only.
 -- ============================================================
 local HOLD_INTERVAL = 0.05
 
@@ -265,74 +259,6 @@ local function HoldAtStop(duration)
     end
 end
 
--- ============================================================
--- SmartApproach — velocity-driven stop arrival.
---   1. AerialTP to predrive zone (PREDRIVE_DIST studs in front).
---   2. Quad/Out tween into the stop — reads as a braking vehicle.
---   Anticheat sees: velocity > 0, deceleration curve, no instant delta.
--- ============================================================
-local function SmartApproach(stopPart)
-    local bus = GetMyBus()
-    if not bus then return end
-    if not bus.PrimaryPart then
-        bus.PrimaryPart = bus:FindFirstChildWhichIsA("BasePart")
-    end
-    if not bus.PrimaryPart then return end
-
-    local stopCF = stopPart.CFrame
-    -- -Z in local space = in front of the stop along its look axis
-    local preCF  = stopCF * CFrame.new(0, 2, -PREDRIVE_DIST)
-
-    AerialTP(preCF)
-    task.wait(0.25)
-
-    -- ±3s human variance so the interval isn't constant across cycles
-    local driveSec = (PREDRIVE_DIST / PREDRIVE_SPEED) + (math.random(-30, 30) * 0.1)
-    driveSec = math.max(2.5, driveSec)
-
-    local cfVal = Instance.new("CFrameValue")
-    cfVal.Value  = bus:GetPivot()
-
-    -- Quad/Out = deceleration curve — looks like a bus braking into a stop
-    local info = TweenInfo.new(driveSec, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-    local conn = cfVal.Changed:Connect(function()
-        bus:PivotTo(cfVal.Value)
-        bus.PrimaryPart.AssemblyLinearVelocity  = Vector3.zero
-        bus.PrimaryPart.AssemblyAngularVelocity = Vector3.zero
-    end)
-
-    local tween = TweenService:Create(cfVal, info, { Value = stopCF })
-    tween:Play()
-
-    while tween.PlaybackState ~= Enum.PlaybackState.Completed and _G.AutoFull do
-        task.wait(0.1)
-    end
-    if tween.PlaybackState ~= Enum.PlaybackState.Completed then tween:Cancel() end
-
-    conn:Disconnect()
-    cfVal:Destroy()
-    bus:PivotTo(stopCF)
-end
-
--- ============================================================
--- getDynamicDelay — paces the route inside [9:30, 12:00].
---   Distributes remaining time across remaining stops.
---   ±8s jitter prevents uniform interval fingerprinting.
--- ============================================================
-local function getDynamicDelay()
-    if not routeStartTime then return 80 end
-
-    local elapsed   = os.time() - routeStartTime
-    local target    = math.random(ROUTE_MIN_SECONDS, ROUTE_MAX_SECONDS)
-    local timeLeft  = math.max(35, target - elapsed)
-    local stopsLeft = math.max(1, STOP_COUNT_ESTIMATE - completedStops)
-    local raw       = timeLeft / stopsLeft
-    local jitter    = math.random(-80, 80) * 0.1   -- ±8s
-
-    -- 35s floor = stop registration buffer; 135s ceiling = no drag
-    return math.max(35, math.min(135, raw + jitter))
-end
-
 local function GetActiveStop()
     for _, part in pairs(workspace.Checkpoints:GetChildren()) do
         local bs = part:FindFirstChild("BusStop")
@@ -344,8 +270,7 @@ local function GetActiveStop()
 end
 
 local function getAvatar()
-    return "https://www.roblox.com/headshot-thumbnail/image?userId="
-        .. LP.UserId .. "&width=420&height=420&format=png"
+    return "https://www.roblox.com/headshot-thumbnail/image?userId=" .. LP.UserId .. "&width=420&height=420&format=png"
 end
 
 local function formatRP(v)
@@ -359,10 +284,7 @@ end
 
 local function getRunningTime()
     local diff = os.time() - _G.StartTime
-    return string.format("%02d:%02d:%02d",
-        math.floor(diff / 3600),
-        math.floor((diff % 3600) / 60),
-        diff % 60)
+    return string.format("%02d:%02d:%02d", math.floor(diff/3600), math.floor((diff%3600)/60), diff%60)
 end
 
 local function sendWebhook(income, target)
@@ -372,30 +294,28 @@ local function sendWebhook(income, target)
     _G.TotalEarning = _G.TotalEarning + income
 
     local currentMoney = StatsFolder.Uang.Value
-    local http_request = request or http_request
-        or (syn and syn.request)
-        or (fluxus and fluxus.request)
+    local http_request = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
 
     local embed = {
         ["author"] = { ["name"] = "Projectsion Webhook", ["icon_url"] = getAvatar() },
         ["title"]  = "Bus Route Completed",
         ["color"]  = 0xFFFFFF,
         ["fields"] = {
-            { ["name"] = "Player",        ["value"] = LP.Name,                         ["inline"] = false },
-            { ["name"] = "Cycle Income",  ["value"] = formatRP(income),                ["inline"] = false },
-            { ["name"] = "Target",        ["value"] = "Cirebon → Baranangsiang Route", ["inline"] = false },
-            { ["name"] = "Current Money", ["value"] = formatRP(currentMoney),          ["inline"] = false },
-            { ["name"] = "Total Earning", ["value"] = formatRP(_G.TotalEarning),       ["inline"] = false },
-            { ["name"] = "Cycle Count",   ["value"] = tostring(_G.CycleCount),         ["inline"] = false },
-            { ["name"] = "Running Time",  ["value"] = getRunningTime(),                ["inline"] = false },
+            {["name"] = "protected",     ["value"] = LP.Name,                          ["inline"] = false},
+            {["name"] = "Cycle Income",  ["value"] = formatRP(income),                 ["inline"] = false},
+            {["name"] = "Target",        ["value"] = "Cirebon â†’ Baranangsiang Route",  ["inline"] = false},
+            {["name"] = "Current Money", ["value"] = formatRP(currentMoney),           ["inline"] = false},
+            {["name"] = "Total Earning", ["value"] = formatRP(_G.TotalEarning),        ["inline"] = false},
+            {["name"] = "Cycle Count",   ["value"] = tostring(_G.CycleCount),          ["inline"] = false},
+            {["name"] = "Running Time",  ["value"] = getRunningTime(),                 ["inline"] = false}
         },
-        ["image"]  = { ["url"] = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg" },
-        ["footer"] = { ["text"] = "Made By Projectsion | " .. os.date("%m/%d/%Y %I:%M %p") },
+        ["image"]  = { ["url"] = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&" },
+        ["footer"] = { ["text"] = "Made By Projectsion | " .. os.date("%m/%d/%Y %I:%M %p") }
     }
 
     local payload = HttpService:JSONEncode({
         ["username"] = "Projectsion Reports",
-        ["embeds"]   = { embed },
+        ["embeds"]   = { embed }
     })
 
     if http_request then
@@ -403,8 +323,8 @@ local function sendWebhook(income, target)
             http_request({
                 Url     = _G.WebhookURL,
                 Method  = "POST",
-                Headers = { ["Content-Type"] = "application/json" },
-                Body    = payload,
+                Headers = {["Content-Type"] = "application/json"},
+                Body    = payload
             })
         end)
     end
@@ -433,22 +353,18 @@ end)
 
 local ClientData = Remotes.GetClientCustomizationData:InvokeServer()
 if ClientData and ClientData.CarData_Cars then
-    for carID, _ in pairs(ClientData.CarData_Cars) do
+    for carID, data in pairs(ClientData.CarData_Cars) do
         table.insert(CarListData, carID)
     end
     table.sort(CarListData)
 end
 
--- ============================================================
--- UI
--- ============================================================
 local MainTab = Window:CreateTab("Main Farm", "play")
 MainTab:CreateSection("Autofarm bus")
 MainTab:CreateParagraph({
     Title   = "WARNING",
-    Content = "USE JB5 ONLY, IF U USE OTHER BUS IT WILL DETECTED, TURN ON AUTO KICK WHEN STAFF JOINED",
+    Content = "USE JB5 ONLY, IF U USE OTHER BUS IT WILL DETECTED, TURN ON AUTO KICK WHEN STAFF JOINED"
 })
-
 MainTab:CreateToggle({
     Name         = "On Autofarm",
     CurrentValue = false,
@@ -456,24 +372,23 @@ MainTab:CreateToggle({
         _G.AutoFull = Value
 
         if not Value then
-            lastTarget        = nil
-            jobStarted        = false
-            routeStartTime    = nil
-            completedStops    = 0
-            workspace.Gravity = 196.2
+            lastTarget    = nil
+            jobStarted    = false
+            workspace.Gravity = 196.2   -- restore gravity on manual stop
             SetStatus("Idle")
             return
         end
 
-        -- gravity 0 for entire session — bus floats at whatever height AerialTP sets
+        -- zero gravity for the entire farming session â€”
+        -- AerialTP lifts the bus above map, moves laterally, tweens down.
+        -- gravity 0 means the bus floats at whatever height we set instantly.
         workspace.Gravity = 0
 
         while _G.AutoFull do
             pcall(function()
                 local cikamurang = workspace:FindFirstChild("Cikamurang")
                 if cikamurang then
-                    local folderModel = cikamurang:FindFirstChild("model")
-                        or cikamurang:FindFirstChild("Model")
+                    local folderModel = cikamurang:FindFirstChild("model") or cikamurang:FindFirstChild("Model")
                     if folderModel then
                         local targetHapus = folderModel:WaitForChild("SInar", 0.1)
                         if targetHapus then targetHapus:Destroy() end
@@ -481,7 +396,7 @@ MainTab:CreateToggle({
                 end
             end)
 
-            local hum = LP.Character and LP.Character:FindFirstChild("Humanoid")
+            local hum      = LP.Character and LP.Character:FindFirstChild("Humanoid")
             local infoLabel = LP.PlayerGui:FindFirstChild("BusJobGUI")
                 and LP.PlayerGui.BusJobGUI.JobStatusFrame.InfoLabel
 
@@ -509,9 +424,7 @@ MainTab:CreateToggle({
 
                     if bus and bus:FindFirstChild("DriveSeat") then
                         bus.DriveSeat:Sit(hum)
-                        jobStarted     = true
-                        routeStartTime = os.time()   -- pace timer starts here
-                        completedStops = 0
+                        jobStarted = true
                     end
                 end
             end
@@ -522,38 +435,33 @@ MainTab:CreateToggle({
                 if target ~= lastTarget then
                     lastTarget = target
 
-                    -- velocity-driven arrival — not an instant billboard teleport
-                    SetStatus(string.format(
-                        "Approach [%d/%d]", completedStops + 1, STOP_COUNT_ESTIMATE))
-                    SmartApproach(target)
+                    -- lift above map â†’ translate above stop â†’ tween down
+                    SetStatus("Aerial approach...")
+                    AerialTP(target.CFrame)
 
-                    -- 20s presence hold; re-approach if server pushes back
+                    -- 30s presence hold at stop, velocity zeroed each tick
                     for i = 1, 20 do
                         if not _G.AutoFull then break end
-                        if infoLabel and string.find(
-                            string.upper(infoLabel.Text), "RETURN TO THE CHECKPOINT") then
+                        if infoLabel and string.find(string.upper(infoLabel.Text), "RETURN TO THE CHECKPOINT") then
                             SetStatus("Correction: re-approaching...")
-                            SmartApproach(target)
+                            AerialTP(target.CFrame)
                         else
                             SetStatus("Position confirmed...")
                         end
                         HoldAtStop(1)
                     end
 
-                    -- 10s window before dynamic delay opens
+                    -- 15s window before next stop
                     for i = 10, 1, -1 do
                         if not _G.AutoFull then break end
                         SetStatus("Next stop in: " .. i .. "s")
                         HoldAtStop(1)
                     end
 
-                    -- dynamic inter-stop delay — paces route inside [9:30, 12:00]
-                    completedStops = completedStops + 1
-                    local stopDelay = getDynamicDelay()
-                    for i = math.floor(stopDelay), 1, -1 do
+                    -- 90s inter-stop delay
+                    for i = 60, 1, -1 do
                         if not _G.AutoFull then break end
-                        SetStatus(string.format(
-                            "Route [%d/%d] next: %ds", completedStops, STOP_COUNT_ESTIMATE, i))
+                        SetStatus("Delay TP: " .. i .. "s")
                         HoldAtStop(1)
                     end
                 end
@@ -570,8 +478,6 @@ MainTab:CreateToggle({
                         jobStarted      = false
                         lastTarget      = nil
                         noBillboardTime = 0
-                        routeStartTime  = nil   -- reset pace timer for next cycle
-                        completedStops  = 0
 
                         local bus = GetMyBus()
                         if bus then bus:Destroy() end
@@ -584,8 +490,8 @@ MainTab:CreateToggle({
             task.wait(1)
         end
 
-        workspace.Gravity = 196.2
-    end,
+        workspace.Gravity = 196.2   -- restore when loop exits naturally
+    end
 })
 
 MainTab:CreateToggle({
@@ -600,16 +506,16 @@ MainTab:CreateToggle({
 MainTab:CreateSection("Auto Stop Settings")
 
 MainTab:CreateInput({
-   Name                     = "Set Target Money",
-   PlaceholderText          = "input your target",
+   Name                    = "Set Target Money",
+   PlaceholderText         = "input your target",
    RemoveTextAfterFocusLost = false,
    Callback = function(Text)
       local cleanNumber = Text:gsub("%.", "")
       TargetUang = tonumber(cleanNumber) or 0
       Rayfield:Notify({
-         Title    = "Target Set",
-         Content  = "money target is set to: Rp " .. formatRS(TargetUang),
-         Duration = 3,
+         Title   = "Target Set",
+         Content = "money target is set to: Rp " .. formatRS(TargetUang),
+         Duration = 3
       })
    end,
 })
@@ -625,8 +531,7 @@ MainTab:CreateToggle({
               while _G.AutoKickEnabled do
                   local currentMoney = StatsFolder.Uang.Value
                   if TargetUang > 0 and currentMoney >= TargetUang then
-                      LP:Kick("\n[VoidlineHub]\nTarget money reached!\nTotal: Rp "
-                          .. formatRS(currentMoney))
+                      LP:Kick("\n[VoidlineHub]\nTarget money reached!\nTotal: Rp " .. formatRS(currentMoney))
                       break
                   end
                   task.wait(2)
@@ -642,7 +547,7 @@ ConfigTab:CreateSection("Select Spawner Vehicle")
 local BusDropdown = ConfigTab:CreateDropdown({
    Name            = "Select Owned Bus",
    Options         = busOptions,
-   CurrentOption   = { busOptions[1] },
+   CurrentOption   = {busOptions[1]},
    MultipleOptions = false,
    Callback        = function(Option)
       _G.SelectedBus = Option[1]
@@ -664,16 +569,16 @@ ConfigTab:CreateButton({
 ConfigTab:CreateSection("Webhook")
 
 ConfigTab:CreateInput({
-   Name                     = "Discord Webhook URL",
-   PlaceholderText          = "Paste URL Here",
+   Name                    = "Discord Webhook URL",
+   PlaceholderText         = "Paste URL Here",
    RemoveTextAfterFocusLost = false,
    Callback = function(Text)
       _G.WebhookURL = Text
       Rayfield:Notify({
-         Title    = "Webhook Updated",
-         Content  = "URL has been saved.",
+         Title   = "Webhook Updated",
+         Content = "URL has been saved.",
          Duration = 3,
-         Image    = "link",
+         Image   = "link",
       })
    end,
 })
@@ -699,6 +604,7 @@ ConfigTab:CreateToggle({
 })
 
 local StatsTab = Window:CreateTab("Stats", "trending-up")
+
 StatsTab:CreateSection("Info Farm")
 StatusLabel  = StatsTab:CreateLabel("Status: Waiting", "clock")
 UangLabel    = StatsTab:CreateLabel("Uang: Rp " .. StartUang, "banknote")
@@ -733,14 +639,15 @@ MoreTab:CreateToggle({
 
 MoreTab:CreateSection("Visual & Performance")
 
--- Guard: destroying BillboardGui during autofarm kills GetActiveStop()
+-- Guard: GetActiveStop() relies on BillboardGui.Enabled â€”
+-- destroying them during autofarm silences the stop detector.
 MoreTab:CreateButton({
    Name     = "Hide All Names",
    Callback = function()
       if _G.AutoFull then
           Rayfield:Notify({
               Title    = "Blocked",
-              Content  = "Turn off autofarm first — BillboardGui destruction breaks stop detection.",
+              Content  = "Turn off autofarm first â€” BillboardGui destruction breaks stop detection.",
               Duration = 4,
               Image    = "alert-triangle",
           })
@@ -788,7 +695,7 @@ MoreTab:CreateSection("auto buy bus")
 MoreTab:CreateDropdown({
    Name            = "Select Bus to Purchase",
    Options         = CarListData,
-   CurrentOption   = { CarListData[1] or "None" },
+   CurrentOption   = {CarListData[1] or "None"},
    MultipleOptions = false,
    Callback        = function(Option)
       SelectedBusToBuy = Option[1]
@@ -799,18 +706,14 @@ MoreTab:CreateButton({
    Name     = "Purchase Selected Bus",
    Callback = function()
       if SelectedBusToBuy == "" or SelectedBusToBuy == "None" then
-          Rayfield:Notify({
-              Title   = "Error",
-              Content = "Please select a bus first!",
-              Duration = 3,
-          })
+          Rayfield:Notify({Title = "Error", Content = "Please select a bus first!", Duration = 3})
           return
       end
       Rayfield:Notify({
-         Title    = "Confirm Purchase",
-         Content  = "Buying: " .. SelectedBusToBuy .. ". Please wait...",
+         Title   = "Confirm Purchase",
+         Content = "Buying: " .. SelectedBusToBuy .. ". Please wait...",
          Duration = 5,
-         Image    = "shopping-cart",
+         Image   = "shopping-cart",
       })
       local success, err = pcall(function()
           Remotes:WaitForChild("BuyCar"):FireServer(SelectedBusToBuy)
@@ -828,8 +731,8 @@ MoreTab:CreateSection("World Teleport")
 
 MoreTab:CreateDropdown({
    Name            = "Select TP Destination",
-   Options         = { "Dealership", "Modifikasi", "Teleport City" },
-   CurrentOption   = { "Dealership" },
+   Options         = {"Dealership", "Modifikasi", "Teleport City"},
+   CurrentOption   = {"Dealership"},
    MultipleOptions = false,
    Callback        = function(Option)
       SelectedTP = Option[1]
@@ -851,8 +754,8 @@ MoreTab:CreateSection("Open UI / Actions")
 
 MoreTab:CreateDropdown({
    Name            = "Select Menu to Open",
-   Options         = { "Dealership", "Modifikasi", "Teleport City" },
-   CurrentOption   = { "Dealership" },
+   Options         = {"Dealership", "Modifikasi", "Teleport City"},
+   CurrentOption   = {"Dealership"},
    MultipleOptions = false,
    Callback        = function(Option)
       SelectedAction = Option[1]
