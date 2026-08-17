@@ -19,25 +19,52 @@ local BENDERA = {
     { name = "Bendera 10", cf = CFrame.new(-22241.518, -186.630,  31077.883, -0.776, -0.000,  0.631,-0.000, 1.000,  0.000, -0.631,  0.000, -0.776) },
 }
 
--- ── network-claim teleport ───────────────────────────────────
--- setsimulationradius: tells the replication layer this client
--- owns physics for all parts within radius — server accepts
--- incoming CFrame as ground truth instead of rejecting it
+-- ── raycast ground resolver ──────────────────────────────────
+-- shoots a ray from 500 studs above target XZ downward
+-- returns Y of first terrain/part hit + character hip offset
+local RAY_IGNORE  = RaycastParams.new()
+RAY_IGNORE.FilterType = Enum.RaycastFilterType.Exclude
+RAY_IGNORE.FilterDescendantsInstances = { character }
+
+local HIP_OFFSET  = 3.0  -- studs above ground hit to place rootPart
+
+local function resolveGroundY(targetCF)
+    local origin    = Vector3.new(targetCF.X, targetCF.Y + 500, targetCF.Z)
+    local direction = Vector3.new(0, -1000, 0)
+    local result    = workspace:Raycast(origin, direction, RAY_IGNORE)
+
+    if result then
+        return result.Position.Y + HIP_OFFSET
+    end
+    -- no hit — flag is likely over void or underground, use raw Y
+    return targetCF.Y
+end
+
+-- ── teleport ─────────────────────────────────────────────────
 local function safeTeleport(targetCF, onDone)
-    -- claim ownership
     setsimulationradius(math.huge, math.huge)
 
-    -- freeze velocity so server sees zero momentum on arrival
-    rootPart.Velocity        = Vector3.zero
-    rootPart.RotVelocity     = Vector3.zero
+    rootPart.Velocity    = Vector3.zero
+    rootPart.RotVelocity = Vector3.zero
 
-    task.wait()  -- let the radius claim propagate one tick
+    task.wait()
 
-    rootPart.CFrame = targetCF
+    local groundY   = resolveGroundY(targetCF)
+    -- reconstruct CFrame at resolved Y, keep original rotation
+    local landingCF = CFrame.new(
+        Vector3.new(targetCF.X, groundY, targetCF.Z)
+    ) * CFrame.fromMatrix(
+        Vector3.zero,
+        targetCF.XVector,
+        targetCF.YVector,
+        targetCF.ZVector
+    )
+
+    rootPart.CFrame      = landingCF
+    rootPart.Velocity    = Vector3.zero
+    rootPart.RotVelocity = Vector3.zero
 
     task.wait(0.1)
-
-    -- release back to normal so game doesn't flag sustained ownership
     setsimulationradius(1000, 1000)
 
     if onDone then onDone() end
@@ -136,12 +163,14 @@ for i, entry in ipairs(BENDERA) do
         statusLabel.Text       = "Teleporting → " .. entry.name .. "..."
         statusLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
 
-        safeTeleport(entry.cf, function()
-            statusLabel.Text       = "Arrived: " .. entry.name
-            statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
-            task.delay(2, function()
-                statusLabel.Text       = "Select a flag"
-                statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
+        task.spawn(function()
+            safeTeleport(entry.cf, function()
+                statusLabel.Text       = "Arrived: " .. entry.name
+                statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
+                task.delay(2, function()
+                    statusLabel.Text       = "Select a flag"
+                    statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
+                end)
             end)
         end)
     end)
@@ -151,6 +180,7 @@ player.CharacterAdded:Connect(function(char)
     character = char
     rootPart  = char:WaitForChild("HumanoidRootPart")
     humanoid  = char:WaitForChild("Humanoid")
+    RAY_IGNORE.FilterDescendantsInstances = { character }
     statusLabel.Text       = "Select a flag"
     statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
 end)
