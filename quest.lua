@@ -1,13 +1,18 @@
--- Projectsion | Bendera Teleport GUI
--- LocalScript / executor inject
--- Instant CFrame teleport, no tween
+-- Projectsion | Bendera Teleport — Stepped Anti-Detect
+-- Moves in small chunks per Heartbeat frame, stays under delta threshold
+-- Tune STEP_SIZE down if still getting kicked
 
-local Players  = game:GetService("Players")
+local Players    = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
-local player   = Players.LocalPlayer
+local player    = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local rootPart  = character:WaitForChild("HumanoidRootPart")
+local humanoid  = character:WaitForChild("Humanoid")
+
+local STEP_SIZE  = 180   -- studs per frame chunk — lower = safer, slower
+local MOVING     = false
 
 local BENDERA = {
     { name = "Bendera 1",  cf = CFrame.new(22010.752,   291.610, -40318.680,  0.660, -0.000,  0.751, 0.000, 1.000,  0.000, -0.751, -0.000,  0.660) },
@@ -22,6 +27,41 @@ local BENDERA = {
     { name = "Bendera 10", cf = CFrame.new(-22241.518, -186.630,  31077.883, -0.776, -0.000,  0.631,-0.000, 1.000,  0.000, -0.631,  0.000, -0.776) },
 }
 
+-- ── stepped teleport ─────────────────────────────────────────
+-- moves STEP_SIZE studs per Heartbeat tick toward target
+-- server only sees incremental deltas, not a full warp
+local function steppedTeleport(targetCF, onDone)
+    if MOVING then return end
+    MOVING = true
+
+    local conn
+    conn = RunService.Heartbeat:Connect(function()
+        local currentPos = rootPart.Position
+        local targetPos  = targetCF.Position
+        local delta      = targetPos - currentPos
+        local dist       = delta.Magnitude
+
+        if dist <= STEP_SIZE then
+            -- close enough — snap final position + rotation
+            rootPart.CFrame = targetCF
+            MOVING = false
+            conn:Disconnect()
+            if onDone then onDone() end
+        else
+            local step = delta.Unit * STEP_SIZE
+            -- keep target rotation lerped, position stepped
+            local t = STEP_SIZE / dist
+            rootPart.CFrame = CFrame.new(currentPos + step)
+                * CFrame.fromMatrix(
+                    Vector3.zero,
+                    rootPart.CFrame.XVector:Lerp(targetCF.XVector, t),
+                    rootPart.CFrame.YVector:Lerp(targetCF.YVector, t),
+                    rootPart.CFrame.ZVector:Lerp(targetCF.ZVector, t)
+                )
+        end
+    end)
+end
+
 -- ── GUI ─────────────────────────────────────────────────────
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name           = "BenderaTeleportGUI"
@@ -31,8 +71,8 @@ screenGui.Parent         = player.PlayerGui
 
 local frame = Instance.new("Frame")
 frame.Name             = "MainFrame"
-frame.Size             = UDim2.new(0, 220, 0, 370)
-frame.Position         = UDim2.new(0, 16, 0.5, -185)
+frame.Size             = UDim2.new(0, 220, 0, 390)
+frame.Position         = UDim2.new(0, 16, 0.5, -195)
 frame.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
 frame.BorderSizePixel  = 0
 frame.Active           = true
@@ -52,30 +92,42 @@ header.Parent           = frame
 Instance.new("UICorner", header).CornerRadius = UDim.new(0, 10)
 
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Size                  = UDim2.new(1, -10, 1, 0)
-titleLabel.Position              = UDim2.new(0, 10, 0, 0)
+titleLabel.Size                   = UDim2.new(1, -10, 1, 0)
+titleLabel.Position               = UDim2.new(0, 10, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text                  = "⚑  BENDERA TELEPORT"
-titleLabel.TextColor3            = Color3.fromRGB(160, 120, 255)
-titleLabel.Font                  = Enum.Font.GothamBold
-titleLabel.TextSize              = 13
-titleLabel.TextXAlignment        = Enum.TextXAlignment.Left
-titleLabel.Parent                = header
+titleLabel.Text                   = "⚑  BENDERA TELEPORT"
+titleLabel.TextColor3             = Color3.fromRGB(160, 120, 255)
+titleLabel.Font                   = Enum.Font.GothamBold
+titleLabel.TextSize               = 13
+titleLabel.TextXAlignment         = Enum.TextXAlignment.Left
+titleLabel.Parent                 = header
 
 local statusLabel = Instance.new("TextLabel")
-statusLabel.Size                  = UDim2.new(1, -20, 0, 16)
-statusLabel.Position              = UDim2.new(0, 10, 0, 42)
+statusLabel.Size                   = UDim2.new(1, -20, 0, 16)
+statusLabel.Position               = UDim2.new(0, 10, 0, 42)
 statusLabel.BackgroundTransparency = 1
-statusLabel.Text                  = "Select a flag"
-statusLabel.TextColor3            = Color3.fromRGB(120, 100, 200)
-statusLabel.Font                  = Enum.Font.Gotham
-statusLabel.TextSize              = 11
-statusLabel.TextXAlignment        = Enum.TextXAlignment.Left
-statusLabel.Parent                = frame
+statusLabel.Text                   = "Select a flag"
+statusLabel.TextColor3             = Color3.fromRGB(120, 100, 200)
+statusLabel.Font                   = Enum.Font.Gotham
+statusLabel.TextSize               = 11
+statusLabel.TextXAlignment         = Enum.TextXAlignment.Left
+statusLabel.Parent                 = frame
+
+-- step size slider label
+local sliderLabel = Instance.new("TextLabel")
+sliderLabel.Size                   = UDim2.new(1, -20, 0, 14)
+sliderLabel.Position               = UDim2.new(0, 10, 0, 60)
+sliderLabel.BackgroundTransparency = 1
+sliderLabel.Text                   = "Step: " .. STEP_SIZE .. " st/f  [tune if kicked]"
+sliderLabel.TextColor3             = Color3.fromRGB(90, 70, 160)
+sliderLabel.Font                   = Enum.Font.Gotham
+sliderLabel.TextSize               = 10
+sliderLabel.TextXAlignment         = Enum.TextXAlignment.Left
+sliderLabel.Parent                 = frame
 
 local scroll = Instance.new("ScrollingFrame")
-scroll.Size                   = UDim2.new(1, -16, 1, -66)
-scroll.Position               = UDim2.new(0, 8, 0, 62)
+scroll.Size                   = UDim2.new(1, -16, 1, -84)
+scroll.Position               = UDim2.new(0, 8, 0, 80)
 scroll.BackgroundTransparency = 1
 scroll.ScrollBarThickness     = 3
 scroll.ScrollBarImageColor3   = Color3.fromRGB(80, 60, 180)
@@ -85,8 +137,8 @@ scroll.BorderSizePixel        = 0
 scroll.Parent                 = frame
 
 local listLayout = Instance.new("UIListLayout", scroll)
-listLayout.Padding    = UDim.new(0, 5)
-listLayout.SortOrder  = Enum.SortOrder.LayoutOrder
+listLayout.Padding   = UDim.new(0, 5)
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
 for i, entry in ipairs(BENDERA) do
     local btn = Instance.new("TextButton")
@@ -115,19 +167,26 @@ for i, entry in ipairs(BENDERA) do
     end)
 
     btn.MouseButton1Click:Connect(function()
-        rootPart.CFrame        = entry.cf
-        statusLabel.Text       = "Teleported: " .. entry.name
-        statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
-        task.delay(2, function()
-            statusLabel.Text       = "Select a flag"
-            statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
+        if MOVING then return end
+        statusLabel.Text       = "Moving → " .. entry.name .. "..."
+        statusLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
+
+        steppedTeleport(entry.cf, function()
+            statusLabel.Text       = "Arrived: " .. entry.name
+            statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
+            task.delay(2, function()
+                statusLabel.Text       = "Select a flag"
+                statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
+            end)
         end)
     end)
 end
 
 player.CharacterAdded:Connect(function(char)
-    character = char
-    rootPart  = char:WaitForChild("HumanoidRootPart")
+    character  = char
+    rootPart   = char:WaitForChild("HumanoidRootPart")
+    humanoid   = char:WaitForChild("Humanoid")
+    MOVING     = false
     statusLabel.Text       = "Select a flag"
     statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
 end)
