@@ -1,18 +1,14 @@
 -- Projectsion | Bendera Teleport GUI
--- LocalScript inside StarterPlayerScripts or executor inject
--- TweenService lerp: sky-arc path, 2.4s per teleport
+-- LocalScript / executor inject
+-- Instant CFrame teleport, no tween
 
-local Players       = game:GetService("Players")
-local TweenService  = game:GetService("TweenService")
-local RunService    = game:GetService("RunService")
-local UIS           = game:GetService("UserInputService")
+local Players  = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
 
-local player        = Players.LocalPlayer
-local character     = player.Character or player.CharacterAdded:Wait()
-local rootPart      = character:WaitForChild("HumanoidRootPart")
-local humanoid      = character:WaitForChild("Humanoid")
+local player   = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local rootPart  = character:WaitForChild("HumanoidRootPart")
 
--- ── destinations ────────────────────────────────────────────
 local BENDERA = {
     { name = "Bendera 1",  cf = CFrame.new(22010.752,   291.610, -40318.680,  0.660, -0.000,  0.751, 0.000, 1.000,  0.000, -0.751, -0.000,  0.660) },
     { name = "Bendera 2",  cf = CFrame.new(-10680.044, -147.972,  36229.938,  0.197,  0.000,  0.980, 0.000, 1.000, -0.000, -0.980,  0.000,  0.197) },
@@ -26,129 +22,75 @@ local BENDERA = {
     { name = "Bendera 10", cf = CFrame.new(-22241.518, -186.630,  31077.883, -0.776, -0.000,  0.631,-0.000, 1.000,  0.000, -0.631,  0.000, -0.776) },
 }
 
-local ARC_HEIGHT   = 2800   -- studs above midpoint
-local TWEEN_TIME   = 2.4    -- seconds per teleport
-local STEPS        = 90     -- arc resolution
-
--- ── tween arc teleport ───────────────────────────────────────
-local isTweening = false
-
-local function arcTeleport(targetCF)
-    if isTweening then return end
-    isTweening = true
-
-    local originPos = rootPart.Position
-    local targetPos = targetCF.Position
-    local midPos    = (originPos + targetPos) / 2 + Vector3.new(0, ARC_HEIGHT, 0)
-
-    humanoid.WalkSpeed = 0
-    humanoid.JumpPower = 0
-
-    local stepTime = TWEEN_TIME / STEPS
-    local elapsed  = 0
-
-    local conn
-    conn = RunService.Heartbeat:Connect(function(dt)
-        elapsed = elapsed + dt
-        local t = math.clamp(elapsed / TWEEN_TIME, 0, 1)
-        local ease = t < 0.5
-            and 4 * t * t * t
-            or 1 - (-2 * t + 2)^3 / 2  -- easeInOutCubic
-
-        local p0 = originPos:Lerp(midPos, ease)
-        local p1 = midPos:Lerp(targetPos, ease)
-        local arcPos = p0:Lerp(p1, ease)
-
-        local interpCF = CFrame.new(arcPos) * (CFrame.new(originPos):Lerp(targetCF, ease) - CFrame.new(originPos):Lerp(targetCF, ease).Position)
-        rootPart.CFrame = CFrame.new(arcPos) * CFrame.fromMatrix(Vector3.zero, targetCF.XVector, targetCF.YVector, targetCF.ZVector)
-
-        if t >= 1 then
-            rootPart.CFrame    = targetCF
-            humanoid.WalkSpeed = 16
-            humanoid.JumpPower = 50
-            isTweening         = false
-            conn:Disconnect()
-        end
-    end)
-end
-
 -- ── GUI ─────────────────────────────────────────────────────
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name            = "BenderaTeleportGUI"
-screenGui.ResetOnSpawn    = false
-screenGui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
-screenGui.Parent          = player.PlayerGui
+screenGui.Name           = "BenderaTeleportGUI"
+screenGui.ResetOnSpawn   = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent         = player.PlayerGui
 
--- main frame
 local frame = Instance.new("Frame")
-frame.Name              = "MainFrame"
-frame.Size              = UDim2.new(0, 240, 0, 380)
-frame.Position          = UDim2.new(0, 16, 0.5, -190)
-frame.BackgroundColor3  = Color3.fromRGB(12, 12, 18)
-frame.BorderSizePixel   = 0
-frame.Active            = true
-frame.Draggable         = true
-frame.Parent            = screenGui
-
+frame.Name             = "MainFrame"
+frame.Size             = UDim2.new(0, 220, 0, 370)
+frame.Position         = UDim2.new(0, 16, 0.5, -185)
+frame.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
+frame.BorderSizePixel  = 0
+frame.Active           = true
+frame.Draggable        = true
+frame.Parent           = screenGui
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
 
 local stroke = Instance.new("UIStroke", frame)
 stroke.Color     = Color3.fromRGB(80, 60, 180)
 stroke.Thickness = 1.5
 
--- header
 local header = Instance.new("Frame")
-header.Size             = UDim2.new(1, 0, 0, 40)
+header.Size             = UDim2.new(1, 0, 0, 38)
 header.BackgroundColor3 = Color3.fromRGB(22, 14, 48)
 header.BorderSizePixel  = 0
 header.Parent           = frame
-
 Instance.new("UICorner", header).CornerRadius = UDim.new(0, 10)
 
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Size              = UDim2.new(1, -10, 1, 0)
-titleLabel.Position          = UDim2.new(0, 10, 0, 0)
+titleLabel.Size                  = UDim2.new(1, -10, 1, 0)
+titleLabel.Position              = UDim2.new(0, 10, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text              = "⚑  BENDERA TELEPORT"
-titleLabel.TextColor3        = Color3.fromRGB(160, 120, 255)
-titleLabel.Font              = Enum.Font.GothamBold
-titleLabel.TextSize          = 13
-titleLabel.TextXAlignment    = Enum.TextXAlignment.Left
-titleLabel.Parent            = header
+titleLabel.Text                  = "⚑  BENDERA TELEPORT"
+titleLabel.TextColor3            = Color3.fromRGB(160, 120, 255)
+titleLabel.Font                  = Enum.Font.GothamBold
+titleLabel.TextSize              = 13
+titleLabel.TextXAlignment        = Enum.TextXAlignment.Left
+titleLabel.Parent                = header
 
--- status bar
 local statusLabel = Instance.new("TextLabel")
-statusLabel.Name             = "Status"
-statusLabel.Size             = UDim2.new(1, -20, 0, 18)
-statusLabel.Position         = UDim2.new(0, 10, 0, 44)
+statusLabel.Size                  = UDim2.new(1, -20, 0, 16)
+statusLabel.Position              = UDim2.new(0, 10, 0, 42)
 statusLabel.BackgroundTransparency = 1
-statusLabel.Text             = "Select a flag to teleport"
-statusLabel.TextColor3       = Color3.fromRGB(120, 100, 200)
-statusLabel.Font             = Enum.Font.Gotham
-statusLabel.TextSize         = 11
-statusLabel.TextXAlignment    = Enum.TextXAlignment.Left
-statusLabel.Parent           = frame
+statusLabel.Text                  = "Select a flag"
+statusLabel.TextColor3            = Color3.fromRGB(120, 100, 200)
+statusLabel.Font                  = Enum.Font.Gotham
+statusLabel.TextSize              = 11
+statusLabel.TextXAlignment        = Enum.TextXAlignment.Left
+statusLabel.Parent                = frame
 
--- scroll container
 local scroll = Instance.new("ScrollingFrame")
-scroll.Size                  = UDim2.new(1, -16, 1, -72)
-scroll.Position              = UDim2.new(0, 8, 0, 66)
+scroll.Size                   = UDim2.new(1, -16, 1, -66)
+scroll.Position               = UDim2.new(0, 8, 0, 62)
 scroll.BackgroundTransparency = 1
-scroll.ScrollBarThickness    = 3
-scroll.ScrollBarImageColor3  = Color3.fromRGB(80, 60, 180)
-scroll.CanvasSize            = UDim2.new(0, 0, 0, 0)
-scroll.AutomaticCanvasSize   = Enum.AutomaticSize.Y
-scroll.BorderSizePixel       = 0
-scroll.Parent                = frame
+scroll.ScrollBarThickness     = 3
+scroll.ScrollBarImageColor3   = Color3.fromRGB(80, 60, 180)
+scroll.CanvasSize             = UDim2.new(0, 0, 0, 0)
+scroll.AutomaticCanvasSize    = Enum.AutomaticSize.Y
+scroll.BorderSizePixel        = 0
+scroll.Parent                 = frame
 
 local listLayout = Instance.new("UIListLayout", scroll)
-listLayout.Padding        = UDim.new(0, 6)
-listLayout.SortOrder      = Enum.SortOrder.LayoutOrder
+listLayout.Padding    = UDim.new(0, 5)
+listLayout.SortOrder  = Enum.SortOrder.LayoutOrder
 
--- build buttons
 for i, entry in ipairs(BENDERA) do
     local btn = Instance.new("TextButton")
-    btn.Size             = UDim2.new(1, 0, 0, 32)
+    btn.Size             = UDim2.new(1, 0, 0, 30)
     btn.BackgroundColor3 = Color3.fromRGB(24, 18, 52)
     btn.BorderSizePixel  = 0
     btn.Text             = string.format("  ⚑  %s", entry.name)
@@ -159,43 +101,33 @@ for i, entry in ipairs(BENDERA) do
     btn.LayoutOrder      = i
     btn.AutoButtonColor  = false
     btn.Parent           = scroll
-
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
 
     local btnStroke = Instance.new("UIStroke", btn)
     btnStroke.Color     = Color3.fromRGB(60, 40, 130)
     btnStroke.Thickness = 1
 
-    -- hover
     btn.MouseEnter:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.15), {
-            BackgroundColor3 = Color3.fromRGB(50, 30, 110)
-        }):Play()
+        TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(50, 30, 110) }):Play()
     end)
     btn.MouseLeave:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.15), {
-            BackgroundColor3 = Color3.fromRGB(24, 18, 52)
-        }):Play()
+        TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(24, 18, 52) }):Play()
     end)
 
     btn.MouseButton1Click:Connect(function()
-        if isTweening then return end
-        statusLabel.Text      = string.format("Flying to %s...", entry.name)
+        rootPart.CFrame        = entry.cf
+        statusLabel.Text       = "Teleported: " .. entry.name
         statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
-        arcTeleport(entry.cf)
-        task.delay(TWEEN_TIME + 0.1, function()
-            statusLabel.Text       = string.format("Arrived: %s", entry.name)
+        task.delay(2, function()
+            statusLabel.Text       = "Select a flag"
             statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
         end)
     end)
 end
 
--- respawn refresh
 player.CharacterAdded:Connect(function(char)
     character = char
     rootPart  = char:WaitForChild("HumanoidRootPart")
-    humanoid  = char:WaitForChild("Humanoid")
-    isTweening = false
-    statusLabel.Text       = "Select a flag to teleport"
+    statusLabel.Text       = "Select a flag"
     statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
 end)
