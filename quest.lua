@@ -1,5 +1,6 @@
-local Players    = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
+local Players       = game:GetService("Players")
+local TweenService  = game:GetService("TweenService")
+local RunService    = game:GetService("RunService")
 
 local player    = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -19,53 +20,71 @@ local BENDERA = {
     { name = "Bendera 10", cf = CFrame.new(-22241.518, -186.630,  31077.883, -0.776, -0.000,  0.631,-0.000, 1.000,  0.000, -0.631,  0.000, -0.776) },
 }
 
--- ── raycast ground resolver ──────────────────────────────────
--- shoots a ray from 500 studs above target XZ downward
--- returns Y of first terrain/part hit + character hip offset
-local RAY_IGNORE  = RaycastParams.new()
-RAY_IGNORE.FilterType = Enum.RaycastFilterType.Exclude
-RAY_IGNORE.FilterDescendantsInstances = { character }
+-- ── hop between intermediate waypoints so delta-distance per
+--    server tick never exceeds the speed threshold the anticheat
+--    samples against. 2500 studs/hop at ~20 ticks/s = safe window.
+local HOP_DISTANCE = 2500
+local HOP_WAIT     = 0.065  -- seconds between hops; tune down if still flagged
 
-local HIP_OFFSET  = 3.0  -- studs above ground hit to place rootPart
-
-local function resolveGroundY(targetCF)
-    local origin    = Vector3.new(targetCF.X, targetCF.Y + 500, targetCF.Z)
-    local direction = Vector3.new(0, -1000, 0)
-    local result    = workspace:Raycast(origin, direction, RAY_IGNORE)
-
-    if result then
-        return result.Position.Y + HIP_OFFSET
-    end
-    -- no hit — flag is likely over void or underground, use raw Y
-    return targetCF.Y
-end
-
--- ── teleport ─────────────────────────────────────────────────
-local function safeTeleport(targetCF, onDone)
+local function interpolatedTeleport(targetCF, onDone)
+    -- claim full physics ownership for the duration
     setsimulationradius(math.huge, math.huge)
 
-    rootPart.Velocity    = Vector3.zero
-    rootPart.RotVelocity = Vector3.zero
+    -- kill all momentum before the server sees anything move
+    local function zeroVelocity()
+        rootPart.Velocity        = Vector3.zero
+        rootPart.RotVelocity     = Vector3.zero
+        humanoid.WalkSpeed       = 0
+        humanoid.JumpPower       = 0
+    end
 
-    task.wait()
+    zeroVelocity()
+    task.wait()  -- one tick for radius claim to replicate
 
-    local groundY   = resolveGroundY(targetCF)
-    -- reconstruct CFrame at resolved Y, keep original rotation
-    local landingCF = CFrame.new(
-        Vector3.new(targetCF.X, groundY, targetCF.Z)
-    ) * CFrame.fromMatrix(
-        Vector3.zero,
-        targetCF.XVector,
-        targetCF.YVector,
-        targetCF.ZVector
-    )
+    local origin    = rootPart.CFrame
+    local targetPos = targetCF.Position
+    local originPos = origin.Position
+    local totalDist = (targetPos - originPos).Magnitude
 
-    rootPart.CFrame      = landingCF
-    rootPart.Velocity    = Vector3.zero
-    rootPart.RotVelocity = Vector3.zero
+    if totalDist <= HOP_DISTANCE then
+        -- close enough: single hop
+        zeroVelocity()
+        rootPart.CFrame = targetCF
+        task.wait(HOP_WAIT)
+    else
+        -- multi-hop: walk the ray in HOP_DISTANCE steps
+        local steps     = math.ceil(totalDist / HOP_DISTANCE)
+        local direction = (targetPos - originPos).Unit
 
-    task.wait(0.1)
+        for step = 1, steps do
+            zeroVelocity()
+
+            local fraction  = math.min(step * HOP_DISTANCE, totalDist) / totalDist
+            local hopPos    = originPos + direction * (totalDist * fraction)
+
+            -- interpolate rotation too so the CFrame lands clean
+            local hopCF = origin:Lerp(targetCF, fraction)
+            -- override position to stay on the ray (Lerp curves it slightly)
+            hopCF = CFrame.new(hopPos) * (hopCF - hopCF.Position)
+
+            rootPart.CFrame = hopCF
+            task.wait(HOP_WAIT)
+        end
+
+        -- final precision placement
+        zeroVelocity()
+        rootPart.CFrame = targetCF
+        task.wait(HOP_WAIT)
+    end
+
+    -- restore to normal radius; sustained math.huge is its own flag
     setsimulationradius(1000, 1000)
+
+    -- restore walkspeed/jumppower after a brief settle window
+    task.delay(0.2, function()
+        humanoid.WalkSpeed = 16
+        humanoid.JumpPower = 50
+    end)
 
     if onDone then onDone() end
 end
@@ -136,6 +155,8 @@ local listLayout = Instance.new("UIListLayout", scroll)
 listLayout.Padding   = UDim.new(0, 5)
 listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
+local teleporting = false
+
 for i, entry in ipairs(BENDERA) do
     local btn = Instance.new("TextButton")
     btn.Size             = UDim2.new(1, 0, 0, 30)
@@ -160,27 +181,29 @@ for i, entry in ipairs(BENDERA) do
     end)
 
     btn.MouseButton1Click:Connect(function()
+        if teleporting then return end
+        teleporting = true
+
         statusLabel.Text       = "Teleporting → " .. entry.name .. "..."
         statusLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
 
-        task.spawn(function()
-            safeTeleport(entry.cf, function()
-                statusLabel.Text       = "Arrived: " .. entry.name
-                statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
-                task.delay(2, function()
-                    statusLabel.Text       = "Select a flag"
-                    statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
-                end)
+        interpolatedTeleport(entry.cf, function()
+            teleporting            = false
+            statusLabel.Text       = "Arrived: " .. entry.name
+            statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
+            task.delay(2, function()
+                statusLabel.Text       = "Select a flag"
+                statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
             end)
         end)
     end)
 end
 
 player.CharacterAdded:Connect(function(char)
-    character = char
-    rootPart  = char:WaitForChild("HumanoidRootPart")
-    humanoid  = char:WaitForChild("Humanoid")
-    RAY_IGNORE.FilterDescendantsInstances = { character }
+    character  = char
+    rootPart   = char:WaitForChild("HumanoidRootPart")
+    humanoid   = char:WaitForChild("Humanoid")
+    teleporting = false
     statusLabel.Text       = "Select a flag"
     statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
 end)
