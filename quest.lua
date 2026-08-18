@@ -7,10 +7,6 @@ local character = player.Character or player.CharacterAdded:Wait()
 local rootPart  = character:WaitForChild("HumanoidRootPart")
 local humanoid  = character:WaitForChild("Humanoid")
 
--- ── saved defaults (restored after every teleport) ───────────
-local DEFAULT_WALKSPEED = 16
-local DEFAULT_JUMPPOWER = 50
-
 local BENDERA = {
     { name = "Bendera 1",  cf = CFrame.new(22010.752,   291.610, -40318.680,  0.660, -0.000,  0.751,  0.000, 1.000,  0.000, -0.751, -0.000,  0.660) },
     { name = "Bendera 2",  cf = CFrame.new(-10680.044, -147.972,  36229.938,  0.197,  0.000,  0.980,  0.000, 1.000, -0.000, -0.980,  0.000,  0.197) },
@@ -29,82 +25,81 @@ local BENDERA = {
     { name = "Bendera 15", cf = CFrame.new(27850.434,   129.072,  -3485.787,  0.978, -0.000,  0.210,  0.000, 1.000,  0.000, -0.210, -0.000,  0.978) },
 }
 
--- ── stealth config ───────────────────────────────────────────
--- HOP_DIST: max studs moved per server tick window.
--- Roblox speed AC typically thresholds around 100–150 studs/s;
--- at 20Hz replication that is ~5–7 studs/tick. We stay at 50
--- per hop with 0.08s between hops → ~625 studs/s apparent but
--- each individual delta is within the per-tick budget because
--- ownership is held and velocity reads zero.
-local HOP_DIST   = 50
-local HOP_WAIT   = 0.08   -- seconds between hops
-local SETTLE_FRAMES = 2   -- physics frames held at zero after arrival
+-- ── aerial constants (mirrored from bus script) ───────────────
+-- AERIAL_HEIGHT: how far above the map the character floats
+--   during transit. At this altitude the speed check never
+--   samples a meaningful ground-level delta.
+-- DESCENT_TIME: seconds for the CFrameValue tween to land.
+--   Heartbeat-driven via Changed → position updated every frame,
+--   velocity zeroed every frame. Same pattern as bus AerialTP.
+local AERIAL_HEIGHT = 1200   -- studs above current position
+local DESCENT_TIME  = 3.5    -- tune down for snappier landing
 
--- tiny random XZ nudge per hop so the path is never a perfect
--- machine line (some ACs flag straight-line high-speed movement)
-local JITTER = 0.8  -- studs radius; keep small
+-- ── aerial teleport ───────────────────────────────────────────
+local function aerialTP(targetCF, onDone)
+    -- 1. zero gravity so the character floats at whatever Y we set
+    workspace.Gravity = 0
 
-local function rng(n) return (math.random() * 2 - 1) * n end
-
-local function freezeState()
+    -- 2. kill all velocity and freeze state
     humanoid.WalkSpeed   = 0
     humanoid.JumpPower   = 0
     rootPart.Velocity    = Vector3.zero
     rootPart.RotVelocity = Vector3.zero
-end
 
-local function restoreState()
-    humanoid.WalkSpeed = DEFAULT_WALKSPEED
-    humanoid.JumpPower = DEFAULT_JUMPPOWER
-end
-
--- ── core teleport ────────────────────────────────────────────
-local function stealthTeleport(targetCF, onDone)
-    -- 1. claim full physics ownership
-    setsimulationradius(math.huge, math.huge)
-    freezeState()
-    -- wait one tick so the ownership claim replicates before we move
+    -- one tick for gravity change to take effect
     RunService.Stepped:Wait()
 
-    local origin    = rootPart.CFrame
-    local originPos = origin.Position
-    local targetPos = targetCF.Position
-    local totalDist = (targetPos - originPos).Magnitude
-    local steps     = math.max(1, math.ceil(totalDist / HOP_DIST))
+    -- 3. instant vertical lift — still above current XZ, nothing lateral yet
+    rootPart.CFrame = rootPart.CFrame + Vector3.new(0, AERIAL_HEIGHT, 0)
+    RunService.Stepped:Wait()
 
-    for step = 1, steps do
-        freezeState()  -- re-zero every hop; velocity can accumulate between waits
+    -- 4. instant lateral translate — now above the TARGET at sky height
+    --    the server sees the character appear 1200 studs in the air;
+    --    it does not register a ground-level speed delta
+    local skyTargetCF = targetCF + Vector3.new(0, AERIAL_HEIGHT, 0)
+    rootPart.CFrame = skyTargetCF
+    RunService.Stepped:Wait()
 
-        local t      = step / steps
-        local hopPos = originPos:Lerp(targetPos, t)
+    -- 5. heartbeat-driven descent via CFrameValue tween
+    --    CFrameValue.Changed fires every Heartbeat → rootPart.CFrame
+    --    is updated every frame, velocity zeroed every frame.
+    --    No anchor needed; gravity is 0.
+    local cfVal = Instance.new("CFrameValue")
+    cfVal.Value = rootPart.CFrame
 
-        -- jitter: nudge XZ slightly off the straight line
-        if step < steps then
-            hopPos = hopPos + Vector3.new(rng(JITTER), 0, rng(JITTER))
-        end
+    local conn = cfVal.Changed:Connect(function()
+        rootPart.CFrame      = cfVal.Value
+        rootPart.Velocity    = Vector3.zero
+        rootPart.RotVelocity = Vector3.zero
+    end)
 
-        -- interpolate rotation cleanly between origin and target
-        local hopCF = CFrame.new(hopPos) * (origin:Lerp(targetCF, t) - origin:Lerp(targetCF, t).Position)
+    local info  = TweenInfo.new(DESCENT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
+    local tween = TweenService:Create(cfVal, info, { Value = targetCF })
+    tween:Play()
+    tween.Completed:Wait()
 
-        rootPart.CFrame = hopCF
-        task.wait(HOP_WAIT)
-    end
+    conn:Disconnect()
+    cfVal:Destroy()
 
-    -- final precision snap to exact target
-    freezeState()
-    rootPart.CFrame = targetCF
+    -- 6. precision snap to exact target
+    rootPart.CFrame      = targetCF
+    rootPart.Velocity    = Vector3.zero
+    rootPart.RotVelocity = Vector3.zero
 
-    -- settle: hold zero across N physics frames so the server's
-    -- velocity integrator sees a clean stop, not a lingering delta
-    for _ = 1, SETTLE_FRAMES do
-        RunService.Stepped:Wait()
-        freezeState()
-        rootPart.CFrame = targetCF
-    end
+    -- two physics frames of settle — server integrator sees clean stop
+    RunService.Stepped:Wait()
+    rootPart.CFrame   = targetCF
+    rootPart.Velocity = Vector3.zero
+    RunService.Stepped:Wait()
+    rootPart.CFrame   = targetCF
+    rootPart.Velocity = Vector3.zero
 
-    -- release ownership; restore humanoid after a brief window
-    setsimulationradius(1000, 1000)
-    task.delay(0.25, restoreState)
+    -- 7. restore physics and humanoid
+    workspace.Gravity = 196.2
+    task.delay(0.3, function()
+        humanoid.WalkSpeed = 16
+        humanoid.JumpPower = 50
+    end)
 
     if onDone then onDone() end
 end
@@ -208,11 +203,11 @@ for i, entry in ipairs(BENDERA) do
         if teleporting then return end
         teleporting = true
 
-        statusLabel.Text       = "Teleporting → " .. entry.name .. "..."
+        statusLabel.Text       = "Lifting → " .. entry.name .. "..."
         statusLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
 
         task.spawn(function()
-            stealthTeleport(entry.cf, function()
+            aerialTP(entry.cf, function()
                 teleporting            = false
                 statusLabel.Text       = "Arrived: " .. entry.name
                 statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
@@ -232,6 +227,8 @@ player.CharacterAdded:Connect(function(char)
     rootPart    = char:WaitForChild("HumanoidRootPart")
     humanoid    = char:WaitForChild("Humanoid")
     teleporting = false
+    -- safety restore if teleport was mid-flight on respawn
+    workspace.Gravity = 196.2
     statusLabel.Text       = "Select a flag"
     statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
 end)
