@@ -1,15 +1,13 @@
 local Players      = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
-local RunService   = game:GetService("RunService")
 
 local player    = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local rootPart  = character:WaitForChild("HumanoidRootPart")
 local humanoid  = character:WaitForChild("Humanoid")
 
--- Updated Bendera positions
 local BENDERA = {
-    { name = "Bendera 1",  cf = CFrame.new(22012.752, 291.610, -40320.789, -0.109, 0.000, 0.994, -0.000, 1.000, -0.000, -0.994, -0.000, -0.109) },
+    { name = "Bendera 1",  cf = CFrame.new(22010.752,   291.610, -40318.680,  0.660, -0.000,  0.751,  0.000, 1.000,  0.000, -0.751, -0.000,  0.660) },
     { name = "Bendera 2",  cf = CFrame.new(-10680.044, -147.972,  36229.938,  0.197,  0.000,  0.980,  0.000, 1.000, -0.000, -0.980,  0.000,  0.197) },
     { name = "Bendera 3",  cf = CFrame.new(24321.625,   216.564, -23175.205, -0.987,  0.000, -0.161,  0.000, 1.000,  0.000,  0.161,  0.000, -0.987) },
     { name = "Bendera 4",  cf = CFrame.new(25919.605,   220.652, -18256.594, -0.953, -0.000, -0.304, -0.000, 1.000,  0.000,  0.304,  0.000, -0.953) },
@@ -31,96 +29,41 @@ local NPC_QUEST = {
     cf   = CFrame.new(25987.922, 220.577, -18501.188, -0.999, 0.000, 0.046, -0.000, 1.000, -0.000, -0.046, -0.000, -0.999)
 }
 
-local HOLD_TIME  = 3.5
-local TWEEN_SPEED = 250 -- Studs per second (Adjust if rubberbanding occurs)
+-- ── Sit bypass teleport ───────────────────────────────────────
+local function sitTP(targetCF, onDone)
+    -- fabricate a temporary seat at origin so Animate/seat state fires
+    local seat = Instance.new("Seat")
+    seat.CFrame        = rootPart.CFrame
+    seat.Anchored      = true
+    seat.CanCollide    = false
+    seat.Transparency  = 1
+    seat.Parent        = workspace
 
--- ── Tween Movement Engine ──
-local function safePivotTo(targetCF, onDone)
-    character = player.Character or player.CharacterAdded:Wait()
-    rootPart  = character:WaitForChild("HumanoidRootPart")
-    humanoid  = character:WaitForChild("Humanoid")
-    
-    if not character or not rootPart then return end
-    
-    if humanoid then humanoid.Sit = false end
-    rootPart.Anchored = false
-    
-    local distance = (rootPart.Position - targetCF.Position).Magnitude
-    local duration = distance / TWEEN_SPEED
+    humanoid.Sit = true
+    task.wait()                          -- let the sit state register
 
-    -- Active physics damping and collision disable
-    local stepConnection
-    stepConnection = RunService.Stepped:Connect(function()
-        if not character or not character:Parent() then return end
-        for _, part in ipairs(character:GetChildren()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-            end
-        end
-        rootPart.AssemblyLinearVelocity = Vector3.zero
-        rootPart.AssemblyAngularVelocity = Vector3.zero
-    end)
+    -- hammer network ownership so the server accepts the CFrame write
+    rootPart:SetNetworkOwner(player)
 
-    local tweenInfo = TweenInfo.new(
-        duration,
-        Enum.EasingStyle.Linear,
-        Enum.EasingDirection.Out
-    )
+    rootPart.CFrame = targetCF
+    task.wait()
+    rootPart.CFrame = targetCF           -- double-tap; first write sometimes dropped
 
-    local tween = TweenService:Create(rootPart, tweenInfo, { CFrame = targetCF })
-    tween:Play()
+    humanoid.Sit = false
+    seat:Destroy()
 
-    tween.Completed:Connect(function()
-        if stepConnection then 
-            stepConnection:Disconnect() 
-        end
-        
-        if character and character:Parent() then
-            for _, part in ipairs(character:GetChildren()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = true
-                end
-            end
-            rootPart.AssemblyLinearVelocity = Vector3.zero
-            rootPart.AssemblyAngularVelocity = Vector3.zero
-        end
+    task.wait(0.1)
+    rootPart.CFrame = targetCF           -- re-anchor after unsit bounce
 
-        if onDone then onDone() end
-    end)
+    if onDone then onDone() end
 end
 
--- ── ProximityPrompt Trigger ──
-local function triggerNearbyPrompts(radius)
-    if not rootPart then return end
-    local origin = rootPart.Position
-
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") then
-            local parent = obj.Parent
-            local pos = parent:IsA("BasePart") and parent.Position 
-                     or (parent:IsA("Model") and parent:GetPivot().Position)
-            
-            if pos and (pos - origin).Magnitude <= (radius or 25) then
-                pcall(function()
-                    if fireproximityprompt then
-                        fireproximityprompt(obj)
-                    else
-                        obj:InputHoldBegin()
-                        task.wait(obj.HoldDuration > 0 and obj.HoldDuration or HOLD_TIME)
-                        obj:InputHoldEnd()
-                    end
-                end)
-            end
-        end
-    end
-end
-
--- ── GUI Implementation ──
+-- ── GUI ──────────────────────────────────────────────────────
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name           = "BenderaTeleportGUI"
 screenGui.ResetOnSpawn   = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent         = player:WaitForChild("PlayerGui")
+screenGui.Parent         = player.PlayerGui
 
 local frame = Instance.new("Frame")
 frame.Name             = "MainFrame"
@@ -198,9 +141,29 @@ local listLayout = Instance.new("UIListLayout", scroll)
 listLayout.Padding   = UDim.new(0, 5)
 listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
-local isMoving = false
+local teleporting = false
 
-local function createDestinationButton(entry, index)
+local function fireTP(entry)
+    if teleporting then return end
+    teleporting = true
+    statusLabel.Text       = "Teleporting → " .. entry.name .. "..."
+    statusLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
+    task.spawn(function()
+        sitTP(entry.cf, function()
+            teleporting            = false
+            statusLabel.Text       = "Arrived: " .. entry.name
+            statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
+            task.delay(2, function()
+                if not teleporting then
+                    statusLabel.Text       = "Select a destination"
+                    statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
+                end
+            end)
+        end)
+    end)
+end
+
+local function makeBtn(entry, index)
     local btn = Instance.new("TextButton")
     btn.Size             = UDim2.new(1, 0, 0, 30)
     btn.BackgroundColor3 = Color3.fromRGB(24, 18, 52)
@@ -217,68 +180,39 @@ local function createDestinationButton(entry, index)
     Instance.new("UIStroke", btn).Color = Color3.fromRGB(60, 40, 130)
 
     btn.MouseEnter:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(50, 30, 110) }):Play()
+        TweenService:Create(btn, TweenInfo.new(0.12), {
+            BackgroundColor3 = Color3.fromRGB(50, 30, 110)
+        }):Play()
     end)
     btn.MouseLeave:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(24, 18, 52) }):Play()
+        TweenService:Create(btn, TweenInfo.new(0.12), {
+            BackgroundColor3 = Color3.fromRGB(24, 18, 52)
+        }):Play()
     end)
-
-    btn.MouseButton1Click:Connect(function()
-        if isMoving then return end
-        isMoving = true
-        statusLabel.Text       = "Moving → " .. entry.name
-        statusLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
-        
-        safePivotTo(entry.cf, function()
-            triggerNearbyPrompts(25)
-            isMoving               = false
-            statusLabel.Text       = "Arrived: " .. entry.name
-            statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
-            task.delay(2, function()
-                if not isMoving then
-                    statusLabel.Text       = "Select a destination"
-                    statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
-                end
-            end)
-        end)
-    end)
+    btn.MouseButton1Click:Connect(function() fireTP(entry) end)
 end
 
 for i, entry in ipairs(BENDERA) do
-    createDestinationButton(entry, i)
+    makeBtn(entry, i)
 end
 
 npcBtn.MouseEnter:Connect(function()
-    TweenService:Create(npcBtn, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(70, 40, 120) }):Play()
+    TweenService:Create(npcBtn, TweenInfo.new(0.12), {
+        BackgroundColor3 = Color3.fromRGB(70, 40, 120)
+    }):Play()
 end)
 npcBtn.MouseLeave:Connect(function()
-    TweenService:Create(npcBtn, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(40, 20, 80) }):Play()
+    TweenService:Create(npcBtn, TweenInfo.new(0.12), {
+        BackgroundColor3 = Color3.fromRGB(40, 20, 80)
+    }):Play()
 end)
-npcBtn.MouseButton1Click:Connect(function()
-    if isMoving then return end
-    isMoving = true
-    statusLabel.Text       = "Moving → NPC Quest"
-    statusLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
-    
-    safePivotTo(NPC_QUEST.cf, function()
-        triggerNearbyPrompts(25)
-        isMoving               = false
-        statusLabel.Text       = "Arrived: NPC Quest"
-        statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
-        task.delay(2, function()
-            if not isMoving then
-                statusLabel.Text       = "Select a destination"
-                statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
-            end
-        end)
-    end)
-end)
+npcBtn.MouseButton1Click:Connect(function() fireTP(NPC_QUEST) end)
 
 player.CharacterAdded:Connect(function(char)
     character   = char
     rootPart    = char:WaitForChild("HumanoidRootPart")
     humanoid    = char:WaitForChild("Humanoid")
-    isMoving    = false
+    teleporting = false
     statusLabel.Text       = "Select a destination"
     statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
 end)
