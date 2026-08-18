@@ -28,14 +28,14 @@ local BENDERA = {
 
 local NPC_QUEST_CF = CFrame.new(25987.922, 220.577, -18501.188, -0.999, 0.000, 0.046, -0.000, 1.000, -0.000, -0.046, -0.000, -0.999)
 
--- ── underground transit depth ─────────────────────────────────
--- AC fly check: samples Y velocity and sustained Y > ground.
--- AC speed check: samples XZ delta per tick at ground level.
--- Solution: sink to Y=-4000 (below map mesh, outside both
--- sampling volumes), translate XZ instantly underground,
--- surface in one frame. Zero vertical velocity throughout.
--- setsimulationradius(math.huge) claims physics ownership so
--- the server accepts our CFrame writes as ground truth.
+-- ── transit config ────────────────────────────────────────────
+-- Uses character:PivotTo() — identical to what the bus script's
+-- World Teleport button does; that section never triggers the AC.
+-- Three-phase underground path:
+--   1. sink vertically to Y=-4000 (pure Y, no XZ delta)
+--   2. translate XZ at depth (no ground-level sample possible)
+--   3. surface vertically to target Y (pure Y, no XZ delta)
+-- No setsimulationradius, no rootPart.CFrame write.
 local UNDERGROUND_Y = -4000
 local FLAG_DELAY    = 20
 
@@ -54,39 +54,39 @@ local function restore()
 end
 
 local function stealthTP(targetCF)
-    -- claim physics ownership
-    setsimulationradius(math.huge, math.huge)
+    -- rebind in case of respawn between calls
+    character = player.Character
+    if not character then return end
+    rootPart  = character:WaitForChild("HumanoidRootPart")
+    humanoid  = character:WaitForChild("Humanoid")
+
     freeze()
     RunService.Stepped:Wait()
 
-    -- phase 1: sink straight down to underground Y
-    -- purely vertical move, XZ unchanged — no speed delta
-    local pos = rootPart.Position
-    rootPart.CFrame = CFrame.new(pos.X, UNDERGROUND_Y, pos.Z)
+    -- phase 1: sink — pure vertical, no XZ movement
+    local cur = character:GetPivot()
+    character:PivotTo(CFrame.new(cur.X, UNDERGROUND_Y, cur.Z))
     freeze()
     RunService.Stepped:Wait()
 
-    -- phase 2: translate XZ underground to above the target XZ
-    -- both moves happen at Y=-4000, never at ground level
+    -- phase 2: XZ translate underground
     local tPos = targetCF.Position
-    rootPart.CFrame = CFrame.new(tPos.X, UNDERGROUND_Y, tPos.Z)
+    character:PivotTo(CFrame.new(tPos.X, UNDERGROUND_Y, tPos.Z))
     freeze()
     RunService.Stepped:Wait()
 
-    -- phase 3: surface directly to target in one frame
-    -- purely vertical move upward, XZ already correct
-    rootPart.CFrame = targetCF
+    -- phase 3: surface — pure vertical to target, rotation applied
+    character:PivotTo(targetCF)
     freeze()
 
-    -- settle across 3 physics frames
+    -- settle
     for _ = 1, 3 do
         RunService.Stepped:Wait()
-        rootPart.CFrame   = targetCF
-        rootPart.Velocity = Vector3.zero
+        character:PivotTo(targetCF)
+        rootPart.Velocity    = Vector3.zero
+        rootPart.RotVelocity = Vector3.zero
     end
 
-    -- release ownership
-    setsimulationradius(1000, 1000)
     task.delay(0.25, restore)
 end
 
@@ -115,7 +115,7 @@ local Window = Rayfield:CreateWindow({
     KeySystem       = false,
 })
 
-local MainTab = Window:CreateTab("Main", "flag")
+local MainTab    = Window:CreateTab("Main", "flag")
 local StatusLabel
 
 MainTab:CreateSection("Auto Flag Farm")
@@ -129,6 +129,7 @@ MainTab:CreateToggle({
 
         if not Value then
             StatusLabel:Set("Status: Stopped")
+            restore()
             return
         end
 
@@ -137,11 +138,12 @@ MainTab:CreateToggle({
                 for i, entry in ipairs(BENDERA) do
                     if not _G.AutoFlag then break end
 
-                    StatusLabel:Set("Status: Transit → " .. entry.name)
+                    StatusLabel:Set("Status: Moving → " .. entry.name)
                     stealthTP(entry.cf)
 
                     if not _G.AutoFlag then break end
 
+                    task.wait(0.5)
                     fireNearbyPrompts(12)
                     StatusLabel:Set("Status: Arrived " .. entry.name)
 
@@ -166,10 +168,10 @@ MainTab:CreateSection("NPC Quest")
 MainTab:CreateButton({
     Name     = "Teleport to NPC Quest",
     Callback = function()
-        StatusLabel:Set("Status: Transit → NPC Quest...")
+        StatusLabel:Set("Status: Moving → NPC Quest...")
         task.spawn(function()
             stealthTP(NPC_QUEST_CF)
-            task.wait(0.3)
+            task.wait(0.5)
             fireNearbyPrompts(12)
             StatusLabel:Set("Status: Arrived NPC Quest")
         end)
@@ -189,10 +191,9 @@ MainTab:CreateSlider({
 })
 
 player.CharacterAdded:Connect(function(char)
-    character   = char
-    rootPart    = char:WaitForChild("HumanoidRootPart")
-    humanoid    = char:WaitForChild("Humanoid")
-    workspace.Gravity = 196.2
+    character = char
+    rootPart  = char:WaitForChild("HumanoidRootPart")
+    humanoid  = char:WaitForChild("Humanoid")
     _G.AutoFlag = false
     if StatusLabel then
         StatusLabel:Set("Status: Respawned")
