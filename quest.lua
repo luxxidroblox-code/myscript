@@ -28,12 +28,11 @@ local BENDERA = {
 
 local NPC_QUEST_CF = CFrame.new(25987.922, 220.577, -18501.188, -0.999, 0.000, 0.046, -0.000, 1.000, -0.000, -0.046, -0.000, -0.999)
 
-local DESCENT_TIME = 3.5
-local FLAG_DELAY   = 20
-local HOLD_TIME    = 3     -- seconds to hold proximity prompt
-_G.AutoFlag        = false
+local FLAG_DELAY = 20
+local HOLD_TIME  = 3
+_G.AutoFlag      = false
 
--- ── raycast ground resolver ───────────────────────────────────
+-- ── raycast ground ────────────────────────────────────────────
 local RAY_PARAMS = RaycastParams.new()
 RAY_PARAMS.FilterType = Enum.RaycastFilterType.Exclude
 
@@ -44,104 +43,44 @@ local function resolveGroundY(targetCF)
     return result and (result.Position.Y + 3.2) or targetCF.Y
 end
 
--- ── hold proximity prompts near current position ──────────────
+-- ── pivot teleport ────────────────────────────────────────────
+local function pivotTP(targetCF)
+    local groundY = resolveGroundY(targetCF)
+    local landingCF = CFrame.new(
+        Vector3.new(targetCF.X, groundY, targetCF.Z)
+    ) * CFrame.fromMatrix(Vector3.zero, targetCF.XVector, targetCF.YVector, targetCF.ZVector)
+
+    setsimulationradius(1e6, 1e6)
+    RunService.Stepped:Wait()
+
+    rootPart.CFrame   = landingCF
+    rootPart.Velocity = Vector3.zero
+
+    RunService.Stepped:Wait()
+    rootPart.CFrame   = landingCF
+    rootPart.Velocity = Vector3.zero
+
+    task.delay(0.1, function()
+        setsimulationradius(1000, 2000)
+    end)
+end
+
+-- ── hold proximity prompts ────────────────────────────────────
 local function holdNearbyPrompts(radius)
-    radius = radius or 15
     local origin = rootPart.Position
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj:IsA("ProximityPrompt") then
             local part = obj.Parent
             if part and part:IsA("BasePart") then
-                if (part.Position - origin).Magnitude <= radius then
-                    pcall(function()
-                        -- holdproximityprompt fires the hold interaction
-                        -- HoldDuration matches the prompt's required hold time
-                        holdproximityprompt(obj)
-                    end)
+                if (part.Position - origin).Magnitude <= (radius or 15) then
+                    pcall(function() holdproximityprompt(obj) end)
                 end
             end
         end
     end
 end
 
--- ── speed-safe aerial teleport ────────────────────────────────
--- NO single-tick lateral XZ snap — use a CFrameValue tween for
--- the full path: current pos → high above target → land
--- server only ever sees smooth positional increments
-local AERIAL_HEIGHT = 800
-
-local function aerialTP(targetCF)
-    local groundY   = resolveGroundY(targetCF)
-    local landingCF = CFrame.new(
-        Vector3.new(targetCF.X, groundY, targetCF.Z)
-    ) * CFrame.fromMatrix(Vector3.zero, targetCF.XVector, targetCF.YVector, targetCF.ZVector)
-
-    humanoid.WalkSpeed = 0
-    humanoid.JumpPower = 0
-
-    setsimulationradius(1e6, 1e6)
-    RunService.Stepped:Wait()
-
-    -- phase 1: tween straight up from current pos
-    local upTarget = rootPart.CFrame + Vector3.new(0, AERIAL_HEIGHT, 0)
-    local cfVal    = Instance.new("CFrameValue")
-    cfVal.Value    = rootPart.CFrame
-
-    local posConn = cfVal.Changed:Connect(function()
-        rootPart.CFrame   = cfVal.Value
-        rootPart.Velocity = Vector3.zero
-    end)
-
-    -- rise: 1.2s — short, believable
-    local riseTween = TweenService:Create(
-        cfVal,
-        TweenInfo.new(1.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-        { Value = upTarget }
-    )
-    riseTween:Play()
-    riseTween.Completed:Wait()
-
-    -- phase 2: tween laterally + above landing point
-    local aboveLanding = landingCF + Vector3.new(0, AERIAL_HEIGHT, 0)
-    local lateralTween = TweenService:Create(
-        cfVal,
-        TweenInfo.new(1.8, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut),
-        { Value = aboveLanding }
-    )
-    lateralTween:Play()
-    lateralTween.Completed:Wait()
-
-    -- phase 3: descent — Quad.In so it accelerates like freefall
-    local descentTween = TweenService:Create(
-        cfVal,
-        TweenInfo.new(DESCENT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-        { Value = landingCF }
-    )
-    descentTween:Play()
-    descentTween.Completed:Wait()
-
-    posConn:Disconnect()
-    cfVal:Destroy()
-
-    -- precision landing
-    rootPart.CFrame   = landingCF
-    rootPart.Velocity = Vector3.zero
-    RunService.Stepped:Wait()
-    rootPart.CFrame   = landingCF
-    rootPart.Velocity = Vector3.zero
-
-    -- release ownership with slight delay
-    task.delay(0.1, function()
-        setsimulationradius(1000, 2000)
-    end)
-
-    task.delay(0.35, function()
-        humanoid.WalkSpeed = 16
-        humanoid.JumpPower = 50
-    end)
-end
-
--- ── Rayfield window ───────────────────────────────────────────
+-- ── Rayfield ──────────────────────────────────────────────────
 local Window = Rayfield:CreateWindow({
     Name            = "Auto find flag by .projectsion",
     LoadingTitle    = "Auto Find Flag",
@@ -157,6 +96,7 @@ local StatusLabel
 MainTab:CreateSection("Auto Flag Farm")
 StatusLabel = MainTab:CreateLabel("Status: Idle", "activity")
 
+local cycleToggle
 MainTab:CreateToggle({
     Name         = "Auto Find Flag (1–15)",
     CurrentValue = false,
@@ -168,30 +108,33 @@ MainTab:CreateToggle({
         end
 
         task.spawn(function()
-            while _G.AutoFlag do
-                for i, entry in ipairs(BENDERA) do
+            -- single cycle
+            for i, entry in ipairs(BENDERA) do
+                if not _G.AutoFlag then break end
+
+                StatusLabel:Set("Status: Teleporting → " .. entry.name)
+                pivotTP(entry.cf)
+                task.wait(0.4)
+
+                if not _G.AutoFlag then break end
+
+                StatusLabel:Set("Status: Holding prompt @ " .. entry.name)
+                holdNearbyPrompts(15)
+                task.wait(HOLD_TIME)
+
+                for t = FLAG_DELAY, 1, -1 do
                     if not _G.AutoFlag then break end
-
-                    StatusLabel:Set("Status: Flying → " .. entry.name)
-                    aerialTP(entry.cf)
-                    if not _G.AutoFlag then break end
-
-                    -- hold prompt — waits HOLD_TIME so the interaction completes
-                    StatusLabel:Set("Status: Holding prompt @ " .. entry.name)
-                    holdNearbyPrompts(15)
-                    task.wait(HOLD_TIME)
-
-                    for t = FLAG_DELAY, 1, -1 do
-                        if not _G.AutoFlag then break end
-                        StatusLabel:Set("Status: [" .. entry.name .. "] next in " .. t .. "s")
-                        task.wait(1)
-                    end
+                    StatusLabel:Set("Status: [" .. entry.name .. "] next in " .. t .. "s")
+                    task.wait(1)
                 end
+            end
 
-                if _G.AutoFlag then
-                    StatusLabel:Set("Status: Cycle complete — restarting...")
-                    task.wait(2)
-                end
+            -- done — flip toggle off
+            _G.AutoFlag = false
+            StatusLabel:Set("Status: Cycle complete ✓")
+            -- reset the toggle UI state
+            if cycleToggle then
+                cycleToggle:Set(false)
             end
         end)
     end,
@@ -202,26 +145,18 @@ MainTab:CreateSection("NPC Quest")
 MainTab:CreateButton({
     Name     = "Teleport to NPC Quest",
     Callback = function()
-        StatusLabel:Set("Status: Flying → NPC Quest...")
+        StatusLabel:Set("Status: Teleporting → NPC Quest...")
         task.spawn(function()
-            aerialTP(NPC_QUEST_CF)
-            task.wait(0.5)
+            pivotTP(NPC_QUEST_CF)
+            task.wait(0.4)
             holdNearbyPrompts(15)
             task.wait(HOLD_TIME)
-            StatusLabel:Set("Status: Arrived NPC Quest")
+            StatusLabel:Set("Status: NPC Quest done")
         end)
     end,
 })
 
 MainTab:CreateSection("Settings")
-
-MainTab:CreateSlider({
-    Name         = "Descent Time (seconds)",
-    Range        = {1, 8},
-    Increment    = 0.5,
-    CurrentValue = DESCENT_TIME,
-    Callback     = function(Value) DESCENT_TIME = Value end,
-})
 
 MainTab:CreateSlider({
     Name         = "Flag Delay (seconds)",
