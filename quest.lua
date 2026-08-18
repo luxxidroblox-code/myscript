@@ -5,10 +5,9 @@ local RunService   = game:GetService("RunService")
 local player    = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local rootPart  = character:WaitForChild("HumanoidRootPart")
-local humanoid  = character:WaitForChild("Humanoid")
 
 local BENDERA = {
-    { name = "Bendera 1",  cf = CFrame.new(22010.752,   291.610, -40318.680,  0.660, -0.000,  0.751,  0.000, 1.000,  0.000, -0.751, -0.000,  0.660) },
+    { name = "Bendera 1",  cf = CFrame.new(22012.752, 291.610, -40320.789, -0.109, 0.000, 0.994, -0.000, 1.000, -0.000, -0.994, -0.000, -0.109) },
     { name = "Bendera 2",  cf = CFrame.new(-10680.044, -147.972,  36229.938,  0.197,  0.000,  0.980,  0.000, 1.000, -0.000, -0.980,  0.000,  0.197) },
     { name = "Bendera 3",  cf = CFrame.new(24321.625,   216.564, -23175.205, -0.987,  0.000, -0.161,  0.000, 1.000,  0.000,  0.161,  0.000, -0.987) },
     { name = "Bendera 4",  cf = CFrame.new(25919.605,   220.652, -18256.594, -0.953, -0.000, -0.304, -0.000, 1.000,  0.000,  0.304,  0.000, -0.953) },
@@ -30,61 +29,56 @@ local NPC_QUEST = {
     cf   = CFrame.new(25987.922, 220.577, -18501.188, -0.999, 0.000, 0.046, -0.000, 1.000, -0.000, -0.046, -0.000, -0.999)
 }
 
-local AERIAL_HEIGHT = 1200
-local DESCENT_TIME  = 3.5
-
-local function aerialTP(targetCF, onDone)
-    workspace.Gravity    = 0
-    humanoid.WalkSpeed   = 0
-    humanoid.JumpPower   = 0
-    rootPart.Velocity    = Vector3.zero
-    rootPart.RotVelocity = Vector3.zero
-
-    RunService.Stepped:Wait()
-    rootPart.CFrame = rootPart.CFrame + Vector3.new(0, AERIAL_HEIGHT, 0)
-    RunService.Stepped:Wait()
-    rootPart.CFrame = targetCF + Vector3.new(0, AERIAL_HEIGHT, 0)
-    RunService.Stepped:Wait()
-
-    local cfVal = Instance.new("CFrameValue")
-    cfVal.Value  = rootPart.CFrame
-
-    local conn = cfVal.Changed:Connect(function()
-        rootPart.CFrame      = cfVal.Value
-        rootPart.Velocity    = Vector3.zero
-        rootPart.RotVelocity = Vector3.zero
+-- ── Safe Pivot Movement (Bypasses Speed/Teleport Anti-Cheats) ──
+local function pivotTP(targetCF, onDone)
+    if not character or not character:Parent() then return end
+    
+    local startCF = character:GetPivot()
+    local distance = (startCF.Position - targetCF.Position).Magnitude
+    
+    -- Calculate steps dynamically: ~300 studs per step avoids instant delta-displacement triggers
+    local stepSize = 300
+    local steps = math.max(1, math.ceil(distance / stepSize))
+    
+    -- Temporarily disable physical collisions to prevent getting stuck in geometry mid-pivot
+    local noclipConnection = RunService.Stepped:Connect(function()
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
     end)
 
-    local tween = TweenService:Create(
-        cfVal,
-        TweenInfo.new(DESCENT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut),
-        { Value = targetCF }
-    )
-    tween:Play()
-    tween.Completed:Wait()
-    conn:Disconnect()
-    cfVal:Destroy()
-
-    rootPart.CFrame      = targetCF
-    rootPart.Velocity    = Vector3.zero
-    rootPart.RotVelocity = Vector3.zero
-    RunService.Stepped:Wait()
-    rootPart.CFrame   = targetCF
-    rootPart.Velocity = Vector3.zero
-    RunService.Stepped:Wait()
-    rootPart.CFrame   = targetCF
-    rootPart.Velocity = Vector3.zero
-
-    workspace.Gravity = 196.2
-    task.delay(0.3, function()
-        humanoid.WalkSpeed = 16
-        humanoid.JumpPower = 50
+    task.spawn(function()
+        for i = 1, steps do
+            local alpha = i / steps
+            local nextCF = startCF:Lerp(targetCF, alpha)
+            
+            -- Primary PivotTo call for modern Roblox model movement
+            character:PivotTo(nextCF)
+            
+            -- Reset physics assembly velocity to prevent fall-damage or momentum checks
+            if rootPart then
+                rootPart.AssemblyLinearVelocity = Vector3.zero
+                rootPart.AssemblyAngularVelocity = Vector3.zero
+            end
+            
+            RunService.Heartbeat:Wait()
+        end
+        
+        -- Final alignment guarantee
+        character:PivotTo(targetCF)
+        if rootPart then
+            rootPart.AssemblyLinearVelocity = Vector3.zero
+            rootPart.AssemblyAngularVelocity = Vector3.zero
+        end
+        
+        noclipConnection:Disconnect()
+        if onDone then onDone() end
     end)
-
-    if onDone then onDone() end
 end
 
--- ── GUI ──────────────────────────────────────────────────────
+-- ── GUI Implementation ──────────────────────────────────────
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name           = "BenderaTeleportGUI"
 screenGui.ResetOnSpawn   = false
@@ -135,7 +129,6 @@ statusLabel.TextSize               = 11
 statusLabel.TextXAlignment         = Enum.TextXAlignment.Left
 statusLabel.Parent                 = frame
 
--- NPC Quest button pinned above the scroll list
 local npcBtn = Instance.new("TextButton")
 npcBtn.Size             = UDim2.new(1, -16, 0, 30)
 npcBtn.Position         = UDim2.new(0, 8, 0, 62)
@@ -170,7 +163,7 @@ listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
 local teleporting = false
 
-local function makeBtn(entry, index, isNpc)
+local function makeBtn(entry, index)
     local btn = Instance.new("TextButton")
     btn.Size             = UDim2.new(1, 0, 0, 30)
     btn.BackgroundColor3 = Color3.fromRGB(24, 18, 52)
@@ -200,19 +193,18 @@ local function makeBtn(entry, index, isNpc)
     btn.MouseButton1Click:Connect(function()
         if teleporting then return end
         teleporting = true
-        statusLabel.Text       = "Lifting → " .. entry.name .. "..."
+        statusLabel.Text       = "Moving → " .. entry.name .. "..."
         statusLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
-        task.spawn(function()
-            aerialTP(entry.cf, function()
-                teleporting            = false
-                statusLabel.Text       = "Arrived: " .. entry.name
-                statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
-                task.delay(2, function()
-                    if not teleporting then
-                        statusLabel.Text       = "Select a destination"
-                        statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
-                    end
-                end)
+        
+        pivotTP(entry.cf, function()
+            teleporting            = false
+            statusLabel.Text       = "Arrived: " .. entry.name
+            statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
+            task.delay(2, function()
+                if not teleporting then
+                    statusLabel.Text       = "Select a destination"
+                    statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
+                end
             end)
         end)
     end)
@@ -222,7 +214,6 @@ for i, entry in ipairs(BENDERA) do
     makeBtn(entry, i)
 end
 
--- NPC Quest pinned button wiring
 npcBtn.MouseEnter:Connect(function()
     TweenService:Create(npcBtn, TweenInfo.new(0.12), {
         BackgroundColor3 = Color3.fromRGB(70, 40, 120)
@@ -236,19 +227,18 @@ end)
 npcBtn.MouseButton1Click:Connect(function()
     if teleporting then return end
     teleporting = true
-    statusLabel.Text       = "Lifting → NPC Quest..."
+    statusLabel.Text       = "Moving → NPC Quest..."
     statusLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
-    task.spawn(function()
-        aerialTP(NPC_QUEST.cf, function()
-            teleporting            = false
-            statusLabel.Text       = "Arrived: NPC Quest"
-            statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
-            task.delay(2, function()
-                if not teleporting then
-                    statusLabel.Text       = "Select a destination"
-                    statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
-                end
-            end)
+    
+    pivotTP(NPC_QUEST.cf, function()
+        teleporting            = false
+        statusLabel.Text       = "Arrived: NPC Quest"
+        statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
+        task.delay(2, function()
+            if not teleporting then
+                statusLabel.Text       = "Select a destination"
+                statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
+            end
         end)
     end)
 end)
@@ -256,9 +246,7 @@ end)
 player.CharacterAdded:Connect(function(char)
     character   = char
     rootPart    = char:WaitForChild("HumanoidRootPart")
-    humanoid    = char:WaitForChild("Humanoid")
     teleporting = false
-    workspace.Gravity      = 196.2
     statusLabel.Text       = "Select a destination"
     statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
 end)
