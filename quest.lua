@@ -1,3 +1,4 @@
+local Rayfield     = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Players      = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local RunService   = game:GetService("RunService")
@@ -25,45 +26,34 @@ local BENDERA = {
     { name = "Bendera 15", cf = CFrame.new(27850.434,   129.072,  -3485.787,  0.978, -0.000,  0.210,  0.000, 1.000,  0.000, -0.210, -0.000,  0.978) },
 }
 
--- ── aerial constants (mirrored from bus script) ───────────────
--- AERIAL_HEIGHT: how far above the map the character floats
---   during transit. At this altitude the speed check never
---   samples a meaningful ground-level delta.
--- DESCENT_TIME: seconds for the CFrameValue tween to land.
---   Heartbeat-driven via Changed → position updated every frame,
---   velocity zeroed every frame. Same pattern as bus AerialTP.
-local AERIAL_HEIGHT = 1200   -- studs above current position
-local DESCENT_TIME  = 3.5    -- tune down for snappier landing
+-- NPC quest CFrame — proximity prompt fired after teleport
+local NPC_QUEST_CF = CFrame.new(25987.922, 220.577, -18501.188, -0.999, 0.000, 0.046, -0.000, 1.000, -0.000, -0.046, -0.000, -0.999)
 
--- ── aerial teleport ───────────────────────────────────────────
-local function aerialTP(targetCF, onDone)
-    -- 1. zero gravity so the character floats at whatever Y we set
-    workspace.Gravity = 0
+local AERIAL_HEIGHT = 1200
+local DESCENT_TIME  = 3.5
+local FLAG_DELAY    = 20   -- seconds between flags
 
-    -- 2. kill all velocity and freeze state
+_G.AutoFlag = false
+
+-- ── aerial teleport (same method as bus script) ───────────────
+local function aerialTP(targetCF)
+    workspace.Gravity    = 0
     humanoid.WalkSpeed   = 0
     humanoid.JumpPower   = 0
     rootPart.Velocity    = Vector3.zero
     rootPart.RotVelocity = Vector3.zero
 
-    -- one tick for gravity change to take effect
     RunService.Stepped:Wait()
 
-    -- 3. instant vertical lift — still above current XZ, nothing lateral yet
+    -- lift
     rootPart.CFrame = rootPart.CFrame + Vector3.new(0, AERIAL_HEIGHT, 0)
     RunService.Stepped:Wait()
 
-    -- 4. instant lateral translate — now above the TARGET at sky height
-    --    the server sees the character appear 1200 studs in the air;
-    --    it does not register a ground-level speed delta
-    local skyTargetCF = targetCF + Vector3.new(0, AERIAL_HEIGHT, 0)
-    rootPart.CFrame = skyTargetCF
+    -- lateral translate above target
+    rootPart.CFrame = targetCF + Vector3.new(0, AERIAL_HEIGHT, 0)
     RunService.Stepped:Wait()
 
-    -- 5. heartbeat-driven descent via CFrameValue tween
-    --    CFrameValue.Changed fires every Heartbeat → rootPart.CFrame
-    --    is updated every frame, velocity zeroed every frame.
-    --    No anchor needed; gravity is 0.
+    -- heartbeat-driven descent
     local cfVal = Instance.new("CFrameValue")
     cfVal.Value = rootPart.CFrame
 
@@ -73,20 +63,21 @@ local function aerialTP(targetCF, onDone)
         rootPart.RotVelocity = Vector3.zero
     end)
 
-    local info  = TweenInfo.new(DESCENT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
-    local tween = TweenService:Create(cfVal, info, { Value = targetCF })
+    local tween = TweenService:Create(
+        cfVal,
+        TweenInfo.new(DESCENT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut),
+        { Value = targetCF }
+    )
     tween:Play()
     tween.Completed:Wait()
 
     conn:Disconnect()
     cfVal:Destroy()
 
-    -- 6. precision snap to exact target
+    -- precision snap + settle
     rootPart.CFrame      = targetCF
     rootPart.Velocity    = Vector3.zero
     rootPart.RotVelocity = Vector3.zero
-
-    -- two physics frames of settle — server integrator sees clean stop
     RunService.Stepped:Wait()
     rootPart.CFrame   = targetCF
     rootPart.Velocity = Vector3.zero
@@ -94,141 +85,132 @@ local function aerialTP(targetCF, onDone)
     rootPart.CFrame   = targetCF
     rootPart.Velocity = Vector3.zero
 
-    -- 7. restore physics and humanoid
     workspace.Gravity = 196.2
     task.delay(0.3, function()
         humanoid.WalkSpeed = 16
         humanoid.JumpPower = 50
     end)
-
-    if onDone then onDone() end
 end
 
--- ── GUI ──────────────────────────────────────────────────────
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name           = "BenderaTeleportGUI"
-screenGui.ResetOnSpawn   = false
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent         = player.PlayerGui
+-- ── fire all proximity prompts within radius of current pos ──
+local function fireNearbyPrompts(radius)
+    radius = radius or 15
+    local origin = rootPart.Position
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") then
+            local part = obj.Parent
+            if part and part:IsA("BasePart") then
+                if (part.Position - origin).Magnitude <= radius then
+                    pcall(function() fireproximityprompt(obj) end)
+                end
+            end
+        end
+    end
+end
 
-local frame = Instance.new("Frame")
-frame.Name             = "MainFrame"
-frame.Size             = UDim2.new(0, 220, 0, 420)
-frame.Position         = UDim2.new(0, 16, 0.5, -210)
-frame.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
-frame.BorderSizePixel  = 0
-frame.Active           = true
-frame.Draggable        = true
-frame.Parent           = screenGui
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
+-- ── Rayfield window ───────────────────────────────────────────
+local Window = Rayfield:CreateWindow({
+    Name             = "Auto find flag by .projectsion",
+    LoadingTitle     = "Auto Find Flag",
+    LoadingSubtitle  = "by .projectsion",
+    Theme            = "Bloom",
+    ConfigurationSaving = { Enabled = false },
+    KeySystem        = false,
+})
 
-local stroke = Instance.new("UIStroke", frame)
-stroke.Color     = Color3.fromRGB(80, 60, 180)
-stroke.Thickness = 1.5
+local MainTab = Window:CreateTab("Main", "flag")
+local StatusLabel
 
-local header = Instance.new("Frame")
-header.Size             = UDim2.new(1, 0, 0, 38)
-header.BackgroundColor3 = Color3.fromRGB(22, 14, 48)
-header.BorderSizePixel  = 0
-header.Parent           = frame
-Instance.new("UICorner", header).CornerRadius = UDim.new(0, 10)
+MainTab:CreateSection("Auto Flag Farm")
 
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size                   = UDim2.new(1, -10, 1, 0)
-titleLabel.Position               = UDim2.new(0, 10, 0, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text                   = "⚑  BENDERA TELEPORT"
-titleLabel.TextColor3             = Color3.fromRGB(160, 120, 255)
-titleLabel.Font                   = Enum.Font.GothamBold
-titleLabel.TextSize               = 13
-titleLabel.TextXAlignment         = Enum.TextXAlignment.Left
-titleLabel.Parent                 = header
+StatusLabel = MainTab:CreateLabel("Status: Idle", "activity")
 
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size                   = UDim2.new(1, -20, 0, 16)
-statusLabel.Position               = UDim2.new(0, 10, 0, 42)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Text                   = "Select a flag"
-statusLabel.TextColor3             = Color3.fromRGB(120, 100, 200)
-statusLabel.Font                   = Enum.Font.Gotham
-statusLabel.TextSize               = 11
-statusLabel.TextXAlignment         = Enum.TextXAlignment.Left
-statusLabel.Parent                 = frame
+MainTab:CreateToggle({
+    Name         = "Auto Find Flag (1–15)",
+    CurrentValue = false,
+    Callback     = function(Value)
+        _G.AutoFlag = Value
 
-local scroll = Instance.new("ScrollingFrame")
-scroll.Size                   = UDim2.new(1, -16, 1, -66)
-scroll.Position               = UDim2.new(0, 8, 0, 62)
-scroll.BackgroundTransparency = 1
-scroll.ScrollBarThickness     = 3
-scroll.ScrollBarImageColor3   = Color3.fromRGB(80, 60, 180)
-scroll.CanvasSize             = UDim2.new(0, 0, 0, 0)
-scroll.AutomaticCanvasSize    = Enum.AutomaticSize.Y
-scroll.BorderSizePixel        = 0
-scroll.Parent                 = frame
-
-local listLayout = Instance.new("UIListLayout", scroll)
-listLayout.Padding   = UDim.new(0, 5)
-listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
-local teleporting = false
-
-for i, entry in ipairs(BENDERA) do
-    local btn = Instance.new("TextButton")
-    btn.Size             = UDim2.new(1, 0, 0, 30)
-    btn.BackgroundColor3 = Color3.fromRGB(24, 18, 52)
-    btn.BorderSizePixel  = 0
-    btn.Text             = string.format("  ⚑  %s", entry.name)
-    btn.TextColor3       = Color3.fromRGB(200, 180, 255)
-    btn.Font             = Enum.Font.Gotham
-    btn.TextSize         = 12
-    btn.TextXAlignment   = Enum.TextXAlignment.Left
-    btn.LayoutOrder      = i
-    btn.AutoButtonColor  = false
-    btn.Parent           = scroll
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-    Instance.new("UIStroke", btn).Color = Color3.fromRGB(60, 40, 130)
-
-    btn.MouseEnter:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.12), {
-            BackgroundColor3 = Color3.fromRGB(50, 30, 110)
-        }):Play()
-    end)
-    btn.MouseLeave:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.12), {
-            BackgroundColor3 = Color3.fromRGB(24, 18, 52)
-        }):Play()
-    end)
-
-    btn.MouseButton1Click:Connect(function()
-        if teleporting then return end
-        teleporting = true
-
-        statusLabel.Text       = "Lifting → " .. entry.name .. "..."
-        statusLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
+        if not Value then
+            StatusLabel:Set("Status: Stopped")
+            return
+        end
 
         task.spawn(function()
-            aerialTP(entry.cf, function()
-                teleporting            = false
-                statusLabel.Text       = "Arrived: " .. entry.name
-                statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
-                task.delay(2, function()
-                    if not teleporting then
-                        statusLabel.Text       = "Select a flag"
-                        statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
-                    end
-                end)
-            end)
-        end)
-    end)
-end
+            while _G.AutoFlag do
+                for i, entry in ipairs(BENDERA) do
+                    if not _G.AutoFlag then break end
 
+                    StatusLabel:Set("Status: Flying → " .. entry.name)
+                    aerialTP(entry.cf)
+
+                    if not _G.AutoFlag then break end
+
+                    -- hold and fire any prompt at the flag location
+                    fireNearbyPrompts(15)
+                    StatusLabel:Set("Status: Arrived " .. entry.name .. " — waiting " .. FLAG_DELAY .. "s")
+
+                    -- interruptible delay
+                    for t = FLAG_DELAY, 1, -1 do
+                        if not _G.AutoFlag then break end
+                        StatusLabel:Set("Status: [" .. entry.name .. "] next in " .. t .. "s")
+                        task.wait(1)
+                    end
+                end
+
+                if _G.AutoFlag then
+                    StatusLabel:Set("Status: Cycle complete — restarting...")
+                    task.wait(2)
+                end
+            end
+        end)
+    end,
+})
+
+MainTab:CreateSection("NPC Quest")
+
+MainTab:CreateButton({
+    Name     = "Teleport to NPC Quest",
+    Callback = function()
+        StatusLabel:Set("Status: Flying → NPC Quest...")
+        task.spawn(function()
+            aerialTP(NPC_QUEST_CF)
+            task.wait(0.5)
+            fireNearbyPrompts(15)
+            StatusLabel:Set("Status: Arrived NPC Quest")
+        end)
+    end,
+})
+
+MainTab:CreateSection("Settings")
+
+MainTab:CreateSlider({
+    Name    = "Descent Time (seconds)",
+    Range   = {1, 8},
+    Increment = 0.5,
+    CurrentValue = DESCENT_TIME,
+    Callback = function(Value)
+        DESCENT_TIME = Value
+    end,
+})
+
+MainTab:CreateSlider({
+    Name    = "Flag Delay (seconds)",
+    Range   = {5, 60},
+    Increment = 1,
+    CurrentValue = FLAG_DELAY,
+    Callback = function(Value)
+        FLAG_DELAY = Value
+    end,
+})
+
+-- ── character respawn rebind ──────────────────────────────────
 player.CharacterAdded:Connect(function(char)
     character   = char
     rootPart    = char:WaitForChild("HumanoidRootPart")
     humanoid    = char:WaitForChild("Humanoid")
-    teleporting = false
-    -- safety restore if teleport was mid-flight on respawn
     workspace.Gravity = 196.2
-    statusLabel.Text       = "Select a flag"
-    statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
+    if StatusLabel then
+        StatusLabel:Set("Status: Respawned — " .. (_G.AutoFlag and "resuming..." or "Idle"))
+    end
 end)
