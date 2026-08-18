@@ -2,7 +2,6 @@ local Rayfield     = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Players      = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local RunService   = game:GetService("RunService")
-local PhysicsService = game:GetService("PhysicsService")
 
 local player    = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -31,6 +30,7 @@ local NPC_QUEST_CF = CFrame.new(25987.922, 220.577, -18501.188, -0.999, 0.000, 0
 
 local DESCENT_TIME = 3.5
 local FLAG_DELAY   = 20
+local HOLD_TIME    = 3     -- seconds to hold proximity prompt
 _G.AutoFlag        = false
 
 -- ── raycast ground resolver ───────────────────────────────────
@@ -41,116 +41,11 @@ local function resolveGroundY(targetCF)
     RAY_PARAMS.FilterDescendantsInstances = { character }
     local origin = Vector3.new(targetCF.X, targetCF.Y + 600, targetCF.Z)
     local result = workspace:Raycast(origin, Vector3.new(0, -1200, 0), RAY_PARAMS)
-    if result then
-        return result.Position.Y + 3.2  -- hip offset
-    end
-    return targetCF.Y
+    return result and (result.Position.Y + 3.2) or targetCF.Y
 end
 
--- ── ownership pulse ───────────────────────────────────────────
--- claim in short bursts: sustained math.huge flags some anticheats
-local function claimOwnership()
-    setsimulationradius(1e6, 1e6)
-end
-local function releaseOwnership()
-    task.delay(0.08, function()
-        setsimulationradius(1000, 2000)
-    end)
-end
-
--- ── spoof freefall velocity ───────────────────────────────────
--- server expects downward velocity during a fall;
--- inject plausible Y velocity so the arrival looks like a jump arc
-local function spoofFallVelocity(targetCF, elapsed)
-    -- simulate v = g*t capped at terminal ~100 st/s
-    local fallV = math.min(workspace.Gravity * elapsed, 100)
-    rootPart.Velocity = Vector3.new(
-        (targetCF.X - rootPart.Position.X) * 0.4,
-        -fallV,
-        (targetCF.Z - rootPart.Position.Z) * 0.4
-    )
-end
-
--- ── hardened aerial teleport ─────────────────────────────────
-local AERIAL_HEIGHT = 900  -- lower than before: less time in "fly" state
-
-local function aerialTP(targetCF)
-    -- resolve real ground Y at destination
-    local groundY  = resolveGroundY(targetCF)
-    local landingCF = CFrame.new(
-        Vector3.new(targetCF.X, groundY, targetCF.Z)
-    ) * CFrame.fromMatrix(Vector3.zero, targetCF.XVector, targetCF.YVector, targetCF.ZVector)
-
-    humanoid.WalkSpeed = 0
-    humanoid.JumpPower = 0
-
-    -- claim before any position write
-    claimOwnership()
-    RunService.Stepped:Wait()
-
-    -- lift: keep gravity ON, just reposition — looks like a jump to server
-    local liftPos = rootPart.CFrame + Vector3.new(0, AERIAL_HEIGHT, 0)
-    rootPart.CFrame   = liftPos
-    rootPart.Velocity = Vector3.new(0, 50, 0)  -- upward momentum, not zero
-    RunService.Stepped:Wait()
-
-    -- lateral snap above target while still "in air"
-    rootPart.CFrame   = landingCF + Vector3.new(0, AERIAL_HEIGHT, 0)
-    rootPart.Velocity = Vector3.new(0, 20, 0)
-    RunService.Stepped:Wait()
-
-    -- tween descent — gravity stays ON the whole way
-    local cfVal   = Instance.new("CFrameValue")
-    cfVal.Value   = rootPart.CFrame
-    local elapsed = 0
-
-    local heartConn = RunService.Heartbeat:Connect(function(dt)
-        elapsed = elapsed + dt
-        -- keep ownership pulsed every ~0.25s, not sustained
-        if math.floor(elapsed / 0.25) % 2 == 0 then
-            setsimulationradius(1e6, 1e6)
-        else
-            setsimulationradius(1000, 2000)
-        end
-        -- inject realistic fall velocity
-        spoofFallVelocity(landingCF, elapsed)
-    end)
-
-    local posConn = cfVal.Changed:Connect(function()
-        rootPart.CFrame = cfVal.Value
-    end)
-
-    local tween = TweenService:Create(
-        cfVal,
-        TweenInfo.new(DESCENT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-        { Value = landingCF }
-    )
-    tween:Play()
-    tween.Completed:Wait()
-
-    heartConn:Disconnect()
-    posConn:Disconnect()
-    cfVal:Destroy()
-
-    -- precision landing snap
-    claimOwnership()
-    rootPart.CFrame   = landingCF
-    rootPart.Velocity = Vector3.zero  -- dead stop on ground — normal landing
-    RunService.Stepped:Wait()
-    rootPart.CFrame   = landingCF
-    rootPart.Velocity = Vector3.zero
-
-    releaseOwnership()
-
-    -- restore movement after brief settle
-    task.delay(0.35, function()
-        humanoid.WalkSpeed = 16
-        humanoid.JumpPower = 50
-    end)
-end
-
--- ── fire proximity prompts near current position ──────────────
-local function fireNearbyPrompts(radius)
+-- ── hold proximity prompts near current position ──────────────
+local function holdNearbyPrompts(radius)
     radius = radius or 15
     local origin = rootPart.Position
     for _, obj in pairs(workspace:GetDescendants()) do
@@ -158,11 +53,92 @@ local function fireNearbyPrompts(radius)
             local part = obj.Parent
             if part and part:IsA("BasePart") then
                 if (part.Position - origin).Magnitude <= radius then
-                    pcall(function() fireproximityprompt(obj) end)
+                    pcall(function()
+                        -- holdproximityprompt fires the hold interaction
+                        -- HoldDuration matches the prompt's required hold time
+                        holdproximityprompt(obj)
+                    end)
                 end
             end
         end
     end
+end
+
+-- ── speed-safe aerial teleport ────────────────────────────────
+-- NO single-tick lateral XZ snap — use a CFrameValue tween for
+-- the full path: current pos → high above target → land
+-- server only ever sees smooth positional increments
+local AERIAL_HEIGHT = 800
+
+local function aerialTP(targetCF)
+    local groundY   = resolveGroundY(targetCF)
+    local landingCF = CFrame.new(
+        Vector3.new(targetCF.X, groundY, targetCF.Z)
+    ) * CFrame.fromMatrix(Vector3.zero, targetCF.XVector, targetCF.YVector, targetCF.ZVector)
+
+    humanoid.WalkSpeed = 0
+    humanoid.JumpPower = 0
+
+    setsimulationradius(1e6, 1e6)
+    RunService.Stepped:Wait()
+
+    -- phase 1: tween straight up from current pos
+    local upTarget = rootPart.CFrame + Vector3.new(0, AERIAL_HEIGHT, 0)
+    local cfVal    = Instance.new("CFrameValue")
+    cfVal.Value    = rootPart.CFrame
+
+    local posConn = cfVal.Changed:Connect(function()
+        rootPart.CFrame   = cfVal.Value
+        rootPart.Velocity = Vector3.zero
+    end)
+
+    -- rise: 1.2s — short, believable
+    local riseTween = TweenService:Create(
+        cfVal,
+        TweenInfo.new(1.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        { Value = upTarget }
+    )
+    riseTween:Play()
+    riseTween.Completed:Wait()
+
+    -- phase 2: tween laterally + above landing point
+    local aboveLanding = landingCF + Vector3.new(0, AERIAL_HEIGHT, 0)
+    local lateralTween = TweenService:Create(
+        cfVal,
+        TweenInfo.new(1.8, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut),
+        { Value = aboveLanding }
+    )
+    lateralTween:Play()
+    lateralTween.Completed:Wait()
+
+    -- phase 3: descent — Quad.In so it accelerates like freefall
+    local descentTween = TweenService:Create(
+        cfVal,
+        TweenInfo.new(DESCENT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+        { Value = landingCF }
+    )
+    descentTween:Play()
+    descentTween.Completed:Wait()
+
+    posConn:Disconnect()
+    cfVal:Destroy()
+
+    -- precision landing
+    rootPart.CFrame   = landingCF
+    rootPart.Velocity = Vector3.zero
+    RunService.Stepped:Wait()
+    rootPart.CFrame   = landingCF
+    rootPart.Velocity = Vector3.zero
+
+    -- release ownership with slight delay
+    task.delay(0.1, function()
+        setsimulationradius(1000, 2000)
+    end)
+
+    task.delay(0.35, function()
+        humanoid.WalkSpeed = 16
+        humanoid.JumpPower = 50
+    end)
 end
 
 -- ── Rayfield window ───────────────────────────────────────────
@@ -175,7 +151,7 @@ local Window = Rayfield:CreateWindow({
     KeySystem       = false,
 })
 
-local MainTab   = Window:CreateTab("Main", "flag")
+local MainTab = Window:CreateTab("Main", "flag")
 local StatusLabel
 
 MainTab:CreateSection("Auto Flag Farm")
@@ -200,8 +176,10 @@ MainTab:CreateToggle({
                     aerialTP(entry.cf)
                     if not _G.AutoFlag then break end
 
-                    fireNearbyPrompts(15)
-                    StatusLabel:Set("Status: Arrived " .. entry.name)
+                    -- hold prompt — waits HOLD_TIME so the interaction completes
+                    StatusLabel:Set("Status: Holding prompt @ " .. entry.name)
+                    holdNearbyPrompts(15)
+                    task.wait(HOLD_TIME)
 
                     for t = FLAG_DELAY, 1, -1 do
                         if not _G.AutoFlag then break end
@@ -228,7 +206,8 @@ MainTab:CreateButton({
         task.spawn(function()
             aerialTP(NPC_QUEST_CF)
             task.wait(0.5)
-            fireNearbyPrompts(15)
+            holdNearbyPrompts(15)
+            task.wait(HOLD_TIME)
             StatusLabel:Set("Status: Arrived NPC Quest")
         end)
     end,
@@ -250,6 +229,14 @@ MainTab:CreateSlider({
     Increment    = 1,
     CurrentValue = FLAG_DELAY,
     Callback     = function(Value) FLAG_DELAY = Value end,
+})
+
+MainTab:CreateSlider({
+    Name         = "Hold Duration (seconds)",
+    Range        = {1, 6},
+    Increment    = 0.5,
+    CurrentValue = HOLD_TIME,
+    Callback     = function(Value) HOLD_TIME = Value end,
 })
 
 -- ── respawn rebind ────────────────────────────────────────────
