@@ -1,7 +1,6 @@
-local Rayfield     = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
-local Players      = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-local RunService   = game:GetService("RunService")
+local Rayfield  = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Players   = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local player    = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -9,7 +8,7 @@ local rootPart  = character:WaitForChild("HumanoidRootPart")
 local humanoid  = character:WaitForChild("Humanoid")
 
 local BENDERA = {
-    { name = "Bendera 1",  cf = CFrame.new(22010.752,   291.610, -40318.680,  0.660, -0.000,  0.751,  0.000, 1.000,  0.000, -0.751, -0.000,  0.660) },
+    { name = "Bendera 1",  cf = CFrame.new(22010.752,   271.610, -40318.680,  0.660, -0.000,  0.751,  0.000, 1.000,  0.000, -0.751, -0.000,  0.660) },
     { name = "Bendera 2",  cf = CFrame.new(-10680.044, -147.972,  36229.938,  0.197,  0.000,  0.980,  0.000, 1.000, -0.000, -0.980,  0.000,  0.197) },
     { name = "Bendera 3",  cf = CFrame.new(24321.625,   216.564, -23175.205, -0.987,  0.000, -0.161,  0.000, 1.000,  0.000,  0.161,  0.000, -0.987) },
     { name = "Bendera 4",  cf = CFrame.new(25919.605,   220.652, -18256.594, -0.953, -0.000, -0.304, -0.000, 1.000,  0.000,  0.304,  0.000, -0.953) },
@@ -32,15 +31,34 @@ local FLAG_DELAY = 20
 local HOLD_TIME  = 3
 _G.AutoFlag      = false
 
--- ── raycast ground ────────────────────────────────────────────
+-- ── raycast: multi-pass, skips thin roof meshes ───────────────
+-- fires multiple rays offset XZ so rooftop hits average out;
+-- picks the lowest Y hit as the real ground
 local RAY_PARAMS = RaycastParams.new()
 RAY_PARAMS.FilterType = Enum.RaycastFilterType.Exclude
 
+local OFFSETS = {
+    Vector3.new(0,0,0), Vector3.new(2,0,0), Vector3.new(-2,0,0),
+    Vector3.new(0,0,2), Vector3.new(0,0,-2),
+}
+
 local function resolveGroundY(targetCF)
     RAY_PARAMS.FilterDescendantsInstances = { character }
-    local origin = Vector3.new(targetCF.X, targetCF.Y + 600, targetCF.Z)
-    local result = workspace:Raycast(origin, Vector3.new(0, -1200, 0), RAY_PARAMS)
-    return result and (result.Position.Y + 3.2) or targetCF.Y
+    local hits = {}
+    for _, offset in ipairs(OFFSETS) do
+        local origin = Vector3.new(targetCF.X + offset.X, targetCF.Y + 600, targetCF.Z + offset.Z)
+        local result = workspace:Raycast(origin, Vector3.new(0, -1200, 0), RAY_PARAMS)
+        if result then
+            table.insert(hits, result.Position.Y)
+        end
+    end
+    if #hits == 0 then return targetCF.Y end
+    -- take the minimum Y — deepest hit = actual ground, not a roof
+    local minY = hits[1]
+    for _, y in ipairs(hits) do
+        if y < minY then minY = y end
+    end
+    return minY + 3.2
 end
 
 -- ── pivot teleport ────────────────────────────────────────────
@@ -55,7 +73,6 @@ local function pivotTP(targetCF)
 
     rootPart.CFrame   = landingCF
     rootPart.Velocity = Vector3.zero
-
     RunService.Stepped:Wait()
     rootPart.CFrame   = landingCF
     rootPart.Velocity = Vector3.zero
@@ -66,6 +83,7 @@ local function pivotTP(targetCF)
 end
 
 -- ── hold proximity prompts ────────────────────────────────────
+-- passes prompt.HoldDuration so the engine registers a full hold
 local function holdNearbyPrompts(radius)
     local origin = rootPart.Position
     for _, obj in pairs(workspace:GetDescendants()) do
@@ -73,7 +91,9 @@ local function holdNearbyPrompts(radius)
             local part = obj.Parent
             if part and part:IsA("BasePart") then
                 if (part.Position - origin).Magnitude <= (radius or 15) then
-                    pcall(function() holdproximityprompt(obj) end)
+                    pcall(function()
+                        holdproximityprompt(obj, obj.HoldDuration)
+                    end)
                 end
             end
         end
@@ -92,12 +112,12 @@ local Window = Rayfield:CreateWindow({
 
 local MainTab = Window:CreateTab("Main", "flag")
 local StatusLabel
+local cycleToggleRef
 
 MainTab:CreateSection("Auto Flag Farm")
 StatusLabel = MainTab:CreateLabel("Status: Idle", "activity")
 
-local cycleToggle
-MainTab:CreateToggle({
+cycleToggleRef = MainTab:CreateToggle({
     Name         = "Auto Find Flag (1–15)",
     CurrentValue = false,
     Callback     = function(Value)
@@ -108,19 +128,20 @@ MainTab:CreateToggle({
         end
 
         task.spawn(function()
-            -- single cycle
             for i, entry in ipairs(BENDERA) do
                 if not _G.AutoFlag then break end
 
                 StatusLabel:Set("Status: Teleporting → " .. entry.name)
                 pivotTP(entry.cf)
-                task.wait(0.4)
+                task.wait(0.5)
 
                 if not _G.AutoFlag then break end
 
                 StatusLabel:Set("Status: Holding prompt @ " .. entry.name)
                 holdNearbyPrompts(15)
                 task.wait(HOLD_TIME)
+
+                if not _G.AutoFlag then break end
 
                 for t = FLAG_DELAY, 1, -1 do
                     if not _G.AutoFlag then break end
@@ -129,12 +150,10 @@ MainTab:CreateToggle({
                 end
             end
 
-            -- done — flip toggle off
             _G.AutoFlag = false
             StatusLabel:Set("Status: Cycle complete ✓")
-            -- reset the toggle UI state
-            if cycleToggle then
-                cycleToggle:Set(false)
+            if cycleToggleRef then
+                cycleToggleRef:Set(false)
             end
         end)
     end,
@@ -148,7 +167,7 @@ MainTab:CreateButton({
         StatusLabel:Set("Status: Teleporting → NPC Quest...")
         task.spawn(function()
             pivotTP(NPC_QUEST_CF)
-            task.wait(0.4)
+            task.wait(0.5)
             holdNearbyPrompts(15)
             task.wait(HOLD_TIME)
             StatusLabel:Set("Status: NPC Quest done")
@@ -174,7 +193,6 @@ MainTab:CreateSlider({
     Callback     = function(Value) HOLD_TIME = Value end,
 })
 
--- ── respawn rebind ────────────────────────────────────────────
 player.CharacterAdded:Connect(function(char)
     character = char
     rootPart  = char:WaitForChild("HumanoidRootPart")
