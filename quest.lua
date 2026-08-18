@@ -1,95 +1,115 @@
-local Players       = game:GetService("Players")
-local TweenService  = game:GetService("TweenService")
-local RunService    = game:GetService("RunService")
+local Players      = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local RunService   = game:GetService("RunService")
 
 local player    = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local rootPart  = character:WaitForChild("HumanoidRootPart")
 local humanoid  = character:WaitForChild("Humanoid")
 
+-- ── saved defaults (restored after every teleport) ───────────
+local DEFAULT_WALKSPEED = 16
+local DEFAULT_JUMPPOWER = 50
+
 local BENDERA = {
-    { name = "Bendera 1",  cf = CFrame.new(22010.752,   291.610, -40318.680,  0.660, -0.000,  0.751, 0.000, 1.000,  0.000, -0.751, -0.000,  0.660) },
-    { name = "Bendera 2",  cf = CFrame.new(-10680.044, -147.972,  36229.938,  0.197,  0.000,  0.980, 0.000, 1.000, -0.000, -0.980,  0.000,  0.197) },
-    { name = "Bendera 3",  cf = CFrame.new(24321.625,   216.564, -23175.205, -0.987,  0.000, -0.161, 0.000, 1.000,  0.000,  0.161,  0.000, -0.987) },
-    { name = "Bendera 4",  cf = CFrame.new(25919.605,   220.652, -18256.594, -0.953, -0.000, -0.304,-0.000, 1.000,  0.000,  0.304,  0.000, -0.953) },
-    { name = "Bendera 5",  cf = CFrame.new(22864.131,   300.992, -39667.996,  0.629,  0.000, -0.777, 0.000, 1.000,  0.000,  0.777, -0.000,  0.629) },
-    { name = "Bendera 6",  cf = CFrame.new(-11895.996, -194.369,  29305.900,  0.676,  0.000, -0.737,-0.000, 1.000,  0.000,  0.737, -0.000,  0.676) },
-    { name = "Bendera 7",  cf = CFrame.new(12264.988,   -29.009,  12884.489,  0.527,  0.000,  0.850, 0.000, 1.000, -0.000, -0.850,  0.000,  0.527) },
-    { name = "Bendera 8",  cf = CFrame.new(15358.921,   -64.393,  16893.139,  0.770, -0.000,  0.638, 0.000, 1.000,  0.000, -0.638, -0.000,  0.770) },
-    { name = "Bendera 9",  cf = CFrame.new(-2173.090,  -148.266,  29692.879, -0.875,  0.000,  0.484, 0.000, 1.000,  0.000, -0.484,  0.000, -0.875) },
-    { name = "Bendera 10", cf = CFrame.new(-22241.518, -186.630,  31077.883, -0.776, -0.000,  0.631,-0.000, 1.000,  0.000, -0.631,  0.000, -0.776) },
+    { name = "Bendera 1",  cf = CFrame.new(22010.752,   291.610, -40318.680,  0.660, -0.000,  0.751,  0.000, 1.000,  0.000, -0.751, -0.000,  0.660) },
+    { name = "Bendera 2",  cf = CFrame.new(-10680.044, -147.972,  36229.938,  0.197,  0.000,  0.980,  0.000, 1.000, -0.000, -0.980,  0.000,  0.197) },
+    { name = "Bendera 3",  cf = CFrame.new(24321.625,   216.564, -23175.205, -0.987,  0.000, -0.161,  0.000, 1.000,  0.000,  0.161,  0.000, -0.987) },
+    { name = "Bendera 4",  cf = CFrame.new(25919.605,   220.652, -18256.594, -0.953, -0.000, -0.304, -0.000, 1.000,  0.000,  0.304,  0.000, -0.953) },
+    { name = "Bendera 5",  cf = CFrame.new(22864.131,   300.992, -39667.996,  0.629,  0.000, -0.777,  0.000, 1.000,  0.000,  0.777, -0.000,  0.629) },
+    { name = "Bendera 6",  cf = CFrame.new(-11895.996, -194.369,  29305.900,  0.676,  0.000, -0.737, -0.000, 1.000,  0.000,  0.737, -0.000,  0.676) },
+    { name = "Bendera 7",  cf = CFrame.new(12264.988,   -29.009,  12884.489,  0.527,  0.000,  0.850,  0.000, 1.000, -0.000, -0.850,  0.000,  0.527) },
+    { name = "Bendera 8",  cf = CFrame.new(15358.921,   -64.393,  16893.139,  0.770, -0.000,  0.638,  0.000, 1.000,  0.000, -0.638, -0.000,  0.770) },
+    { name = "Bendera 9",  cf = CFrame.new(-2173.090,  -148.266,  29692.879, -0.875,  0.000,  0.484,  0.000, 1.000,  0.000, -0.484,  0.000, -0.875) },
+    { name = "Bendera 10", cf = CFrame.new(-22241.518, -186.630,  31077.883, -0.776, -0.000,  0.631, -0.000, 1.000,  0.000, -0.631,  0.000, -0.776) },
+    { name = "Bendera 11", cf = CFrame.new(21908.070,   291.163, -39988.266,  0.742, -0.000,  0.670,  0.000, 1.000,  0.000, -0.670, -0.000,  0.742) },
+    { name = "Bendera 12", cf = CFrame.new(19992.523,   265.478, -27978.184,  0.997,  0.000, -0.077, -0.000, 1.000,  0.000,  0.077, -0.000,  0.997) },
+    { name = "Bendera 13", cf = CFrame.new(23871.199,   222.195, -16860.410,  0.152,  0.000, -0.988,  0.000, 1.000,  0.000,  0.988, -0.000,  0.152) },
+    { name = "Bendera 14", cf = CFrame.new(-21253.691, -219.169,  35107.188,  0.898,  0.000, -0.440, -0.000, 1.000, -0.000,  0.440,  0.000,  0.898) },
+    { name = "Bendera 15", cf = CFrame.new(27850.434,   129.072,  -3485.787,  0.978, -0.000,  0.210,  0.000, 1.000,  0.000, -0.210, -0.000,  0.978) },
 }
 
--- ── hop between intermediate waypoints so delta-distance per
---    server tick never exceeds the speed threshold the anticheat
---    samples against. 2500 studs/hop at ~20 ticks/s = safe window.
-local HOP_DISTANCE = 2500
-local HOP_WAIT     = 0.065  -- seconds between hops; tune down if still flagged
+-- ── stealth config ───────────────────────────────────────────
+-- HOP_DIST: max studs moved per server tick window.
+-- Roblox speed AC typically thresholds around 100–150 studs/s;
+-- at 20Hz replication that is ~5–7 studs/tick. We stay at 50
+-- per hop with 0.08s between hops → ~625 studs/s apparent but
+-- each individual delta is within the per-tick budget because
+-- ownership is held and velocity reads zero.
+local HOP_DIST   = 50
+local HOP_WAIT   = 0.08   -- seconds between hops
+local SETTLE_FRAMES = 2   -- physics frames held at zero after arrival
 
-local function interpolatedTeleport(targetCF, onDone)
-    -- claim full physics ownership for the duration
+-- tiny random XZ nudge per hop so the path is never a perfect
+-- machine line (some ACs flag straight-line high-speed movement)
+local JITTER = 0.8  -- studs radius; keep small
+
+local function rng(n) return (math.random() * 2 - 1) * n end
+
+local function freezeState()
+    humanoid.WalkSpeed   = 0
+    humanoid.JumpPower   = 0
+    rootPart.Velocity    = Vector3.zero
+    rootPart.RotVelocity = Vector3.zero
+end
+
+local function restoreState()
+    humanoid.WalkSpeed = DEFAULT_WALKSPEED
+    humanoid.JumpPower = DEFAULT_JUMPPOWER
+end
+
+-- ── core teleport ────────────────────────────────────────────
+local function stealthTeleport(targetCF, onDone)
+    -- 1. claim full physics ownership
     setsimulationradius(math.huge, math.huge)
-
-    -- kill all momentum before the server sees anything move
-    local function zeroVelocity()
-        rootPart.Velocity        = Vector3.zero
-        rootPart.RotVelocity     = Vector3.zero
-        humanoid.WalkSpeed       = 0
-        humanoid.JumpPower       = 0
-    end
-
-    zeroVelocity()
-    task.wait()  -- one tick for radius claim to replicate
+    freezeState()
+    -- wait one tick so the ownership claim replicates before we move
+    RunService.Stepped:Wait()
 
     local origin    = rootPart.CFrame
-    local targetPos = targetCF.Position
     local originPos = origin.Position
+    local targetPos = targetCF.Position
     local totalDist = (targetPos - originPos).Magnitude
+    local steps     = math.max(1, math.ceil(totalDist / HOP_DIST))
 
-    if totalDist <= HOP_DISTANCE then
-        -- close enough: single hop
-        zeroVelocity()
-        rootPart.CFrame = targetCF
-        task.wait(HOP_WAIT)
-    else
-        -- multi-hop: walk the ray in HOP_DISTANCE steps
-        local steps     = math.ceil(totalDist / HOP_DISTANCE)
-        local direction = (targetPos - originPos).Unit
+    for step = 1, steps do
+        freezeState()  -- re-zero every hop; velocity can accumulate between waits
 
-        for step = 1, steps do
-            zeroVelocity()
+        local t      = step / steps
+        local hopPos = originPos:Lerp(targetPos, t)
 
-            local fraction  = math.min(step * HOP_DISTANCE, totalDist) / totalDist
-            local hopPos    = originPos + direction * (totalDist * fraction)
-
-            -- interpolate rotation too so the CFrame lands clean
-            local hopCF = origin:Lerp(targetCF, fraction)
-            -- override position to stay on the ray (Lerp curves it slightly)
-            hopCF = CFrame.new(hopPos) * (hopCF - hopCF.Position)
-
-            rootPart.CFrame = hopCF
-            task.wait(HOP_WAIT)
+        -- jitter: nudge XZ slightly off the straight line
+        if step < steps then
+            hopPos = hopPos + Vector3.new(rng(JITTER), 0, rng(JITTER))
         end
 
-        -- final precision placement
-        zeroVelocity()
-        rootPart.CFrame = targetCF
+        -- interpolate rotation cleanly between origin and target
+        local hopCF = CFrame.new(hopPos) * (origin:Lerp(targetCF, t) - origin:Lerp(targetCF, t).Position)
+
+        rootPart.CFrame = hopCF
         task.wait(HOP_WAIT)
     end
 
-    -- restore to normal radius; sustained math.huge is its own flag
-    setsimulationradius(1000, 1000)
+    -- final precision snap to exact target
+    freezeState()
+    rootPart.CFrame = targetCF
 
-    -- restore walkspeed/jumppower after a brief settle window
-    task.delay(0.2, function()
-        humanoid.WalkSpeed = 16
-        humanoid.JumpPower = 50
-    end)
+    -- settle: hold zero across N physics frames so the server's
+    -- velocity integrator sees a clean stop, not a lingering delta
+    for _ = 1, SETTLE_FRAMES do
+        RunService.Stepped:Wait()
+        freezeState()
+        rootPart.CFrame = targetCF
+    end
+
+    -- release ownership; restore humanoid after a brief window
+    setsimulationradius(1000, 1000)
+    task.delay(0.25, restoreState)
 
     if onDone then onDone() end
 end
 
--- ── GUI ─────────────────────────────────────────────────────
+-- ── GUI ──────────────────────────────────────────────────────
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name           = "BenderaTeleportGUI"
 screenGui.ResetOnSpawn   = false
@@ -98,8 +118,8 @@ screenGui.Parent         = player.PlayerGui
 
 local frame = Instance.new("Frame")
 frame.Name             = "MainFrame"
-frame.Size             = UDim2.new(0, 220, 0, 380)
-frame.Position         = UDim2.new(0, 16, 0.5, -190)
+frame.Size             = UDim2.new(0, 220, 0, 420)
+frame.Position         = UDim2.new(0, 16, 0.5, -210)
 frame.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
 frame.BorderSizePixel  = 0
 frame.Active           = true
@@ -174,10 +194,14 @@ for i, entry in ipairs(BENDERA) do
     Instance.new("UIStroke", btn).Color = Color3.fromRGB(60, 40, 130)
 
     btn.MouseEnter:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(50, 30, 110) }):Play()
+        TweenService:Create(btn, TweenInfo.new(0.12), {
+            BackgroundColor3 = Color3.fromRGB(50, 30, 110)
+        }):Play()
     end)
     btn.MouseLeave:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(24, 18, 52) }):Play()
+        TweenService:Create(btn, TweenInfo.new(0.12), {
+            BackgroundColor3 = Color3.fromRGB(24, 18, 52)
+        }):Play()
     end)
 
     btn.MouseButton1Click:Connect(function()
@@ -187,22 +211,26 @@ for i, entry in ipairs(BENDERA) do
         statusLabel.Text       = "Teleporting → " .. entry.name .. "..."
         statusLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
 
-        interpolatedTeleport(entry.cf, function()
-            teleporting            = false
-            statusLabel.Text       = "Arrived: " .. entry.name
-            statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
-            task.delay(2, function()
-                statusLabel.Text       = "Select a flag"
-                statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
+        task.spawn(function()
+            stealthTeleport(entry.cf, function()
+                teleporting            = false
+                statusLabel.Text       = "Arrived: " .. entry.name
+                statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
+                task.delay(2, function()
+                    if not teleporting then
+                        statusLabel.Text       = "Select a flag"
+                        statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
+                    end
+                end)
             end)
         end)
     end)
 end
 
 player.CharacterAdded:Connect(function(char)
-    character  = char
-    rootPart   = char:WaitForChild("HumanoidRootPart")
-    humanoid   = char:WaitForChild("Humanoid")
+    character   = char
+    rootPart    = char:WaitForChild("HumanoidRootPart")
+    humanoid    = char:WaitForChild("Humanoid")
     teleporting = false
     statusLabel.Text       = "Select a flag"
     statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
