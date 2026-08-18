@@ -5,7 +5,9 @@ local RunService   = game:GetService("RunService")
 local player    = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local rootPart  = character:WaitForChild("HumanoidRootPart")
+local humanoid  = character:WaitForChild("Humanoid")
 
+-- Updated Bendera positions
 local BENDERA = {
     { name = "Bendera 1",  cf = CFrame.new(22012.752, 291.610, -40320.789, -0.109, 0.000, 0.994, -0.000, 1.000, -0.000, -0.994, -0.000, -0.109) },
     { name = "Bendera 2",  cf = CFrame.new(-10680.044, -147.972,  36229.938,  0.197,  0.000,  0.980,  0.000, 1.000, -0.000, -0.980,  0.000,  0.197) },
@@ -29,56 +31,75 @@ local NPC_QUEST = {
     cf   = CFrame.new(25987.922, 220.577, -18501.188, -0.999, 0.000, 0.046, -0.000, 1.000, -0.000, -0.046, -0.000, -0.999)
 }
 
--- ── Safe Pivot Movement (Bypasses Speed/Teleport Anti-Cheats) ──
-local function pivotTP(targetCF, onDone)
+local HOLD_TIME = 3.5
+
+-- ── Safe Waypoint Pivot Movement ──
+local function safePivotTo(targetCF, onDone)
     if not character or not character:Parent() then return end
     
     local startCF = character:GetPivot()
     local distance = (startCF.Position - targetCF.Position).Magnitude
     
-    -- Calculate steps dynamically: ~300 studs per step avoids instant delta-displacement triggers
-    local stepSize = 300
-    local steps = math.max(1, math.ceil(distance / stepSize))
-    
-    -- Temporarily disable physical collisions to prevent getting stuck in geometry mid-pivot
-    local noclipConnection = RunService.Stepped:Connect(function()
-        for _, part in ipairs(character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-            end
-        end
-    end)
+    -- Small step distance prevents high-speed server kicks
+    local stepDistance = 50
+    local steps = math.max(1, math.ceil(distance / stepDistance))
 
     task.spawn(function()
         for i = 1, steps do
+            if not character or not character:Parent() then break end
+            
             local alpha = i / steps
             local nextCF = startCF:Lerp(targetCF, alpha)
             
-            -- Primary PivotTo call for modern Roblox model movement
             character:PivotTo(nextCF)
             
-            -- Reset physics assembly velocity to prevent fall-damage or momentum checks
             if rootPart then
                 rootPart.AssemblyLinearVelocity = Vector3.zero
                 rootPart.AssemblyAngularVelocity = Vector3.zero
             end
             
+            -- Pacing frame timing keeps speed within natural movement parameters
             RunService.Heartbeat:Wait()
         end
         
-        -- Final alignment guarantee
         character:PivotTo(targetCF)
         if rootPart then
             rootPart.AssemblyLinearVelocity = Vector3.zero
             rootPart.AssemblyAngularVelocity = Vector3.zero
         end
         
-        noclipConnection:Disconnect()
         if onDone then onDone() end
     end)
 end
 
--- ── GUI Implementation ──────────────────────────────────────
+-- ── ProximityPrompt Trigger ──
+local function triggerNearbyPrompts(radius)
+    if not rootPart then return end
+    local origin = rootPart.Position
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") then
+            local parent = obj.Parent
+            local pos = parent:IsA("BasePart") and parent.Position 
+                     or (parent:IsA("Model") and parent:GetPivot().Position)
+            
+            if pos and (pos - origin).Magnitude <= (radius or 25) then
+                pcall(function()
+                    if fireproximityprompt then
+                        fireproximityprompt(obj)
+                    else
+                        -- Simulates continuous holding for prompts with HoldDuration
+                        obj:InputHoldBegin()
+                        task.wait(obj.HoldDuration > 0 and obj.HoldDuration or HOLD_TIME)
+                        obj:InputHoldEnd()
+                    end
+                end)
+            end
+        end
+    end
+end
+
+-- ── GUI Implementation ──
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name           = "BenderaTeleportGUI"
 screenGui.ResetOnSpawn   = false
@@ -161,9 +182,9 @@ local listLayout = Instance.new("UIListLayout", scroll)
 listLayout.Padding   = UDim.new(0, 5)
 listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
-local teleporting = false
+local isMoving = false
 
-local function makeBtn(entry, index)
+local function createDestinationButton(entry, index)
     local btn = Instance.new("TextButton")
     btn.Size             = UDim2.new(1, 0, 0, 30)
     btn.BackgroundColor3 = Color3.fromRGB(24, 18, 52)
@@ -180,28 +201,25 @@ local function makeBtn(entry, index)
     Instance.new("UIStroke", btn).Color = Color3.fromRGB(60, 40, 130)
 
     btn.MouseEnter:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.12), {
-            BackgroundColor3 = Color3.fromRGB(50, 30, 110)
-        }):Play()
+        TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(50, 30, 110) }):Play()
     end)
     btn.MouseLeave:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.12), {
-            BackgroundColor3 = Color3.fromRGB(24, 18, 52)
-        }):Play()
+        TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(24, 18, 52) }):Play()
     end)
 
     btn.MouseButton1Click:Connect(function()
-        if teleporting then return end
-        teleporting = true
-        statusLabel.Text       = "Moving → " .. entry.name .. "..."
+        if isMoving then return end
+        isMoving = true
+        statusLabel.Text       = "Moving → " .. entry.name
         statusLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
         
-        pivotTP(entry.cf, function()
-            teleporting            = false
+        safePivotTo(entry.cf, function()
+            triggerNearbyPrompts(25)
+            isMoving               = false
             statusLabel.Text       = "Arrived: " .. entry.name
             statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
             task.delay(2, function()
-                if not teleporting then
+                if not isMoving then
                     statusLabel.Text       = "Select a destination"
                     statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
                 end
@@ -211,31 +229,28 @@ local function makeBtn(entry, index)
 end
 
 for i, entry in ipairs(BENDERA) do
-    makeBtn(entry, i)
+    createDestinationButton(entry, i)
 end
 
 npcBtn.MouseEnter:Connect(function()
-    TweenService:Create(npcBtn, TweenInfo.new(0.12), {
-        BackgroundColor3 = Color3.fromRGB(70, 40, 120)
-    }):Play()
+    TweenService:Create(npcBtn, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(70, 40, 120) }):Play()
 end)
 npcBtn.MouseLeave:Connect(function()
-    TweenService:Create(npcBtn, TweenInfo.new(0.12), {
-        BackgroundColor3 = Color3.fromRGB(40, 20, 80)
-    }):Play()
+    TweenService:Create(npcBtn, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(40, 20, 80) }):Play()
 end)
 npcBtn.MouseButton1Click:Connect(function()
-    if teleporting then return end
-    teleporting = true
-    statusLabel.Text       = "Moving → NPC Quest..."
+    if isMoving then return end
+    isMoving = true
+    statusLabel.Text       = "Moving → NPC Quest"
     statusLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
     
-    pivotTP(NPC_QUEST.cf, function()
-        teleporting            = false
+    safePivotTo(NPC_QUEST.cf, function()
+        triggerNearbyPrompts(25)
+        isMoving               = false
         statusLabel.Text       = "Arrived: NPC Quest"
         statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
         task.delay(2, function()
-            if not teleporting then
+            if not isMoving then
                 statusLabel.Text       = "Select a destination"
                 statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
             end
@@ -246,7 +261,8 @@ end)
 player.CharacterAdded:Connect(function(char)
     character   = char
     rootPart    = char:WaitForChild("HumanoidRootPart")
-    teleporting = false
+    humanoid    = char:WaitForChild("Humanoid")
+    isMoving    = false
     statusLabel.Text       = "Select a destination"
     statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
 end)
