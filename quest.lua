@@ -31,9 +31,10 @@ local NPC_QUEST = {
     cf   = CFrame.new(25987.922, 220.577, -18501.188, -0.999, 0.000, 0.046, -0.000, 1.000, -0.000, -0.046, -0.000, -0.999)
 }
 
-local HOLD_TIME = 3.5
+local HOLD_TIME  = 3.5
+local TWEEN_SPEED = 250 -- Studs per second (Adjust if rubberbanding occurs)
 
--- ── Fixed Movement Function ──
+-- ── Tween Movement Engine ──
 local function safePivotTo(targetCF, onDone)
     character = player.Character or player.CharacterAdded:Wait()
     rootPart  = character:WaitForChild("HumanoidRootPart")
@@ -41,38 +42,49 @@ local function safePivotTo(targetCF, onDone)
     
     if not character or not rootPart then return end
     
-    -- Unseat and unanchor character to allow movement
     if humanoid then humanoid.Sit = false end
     rootPart.Anchored = false
     
-    local startCF = rootPart.CFrame
-    local distance = (startCF.Position - targetCF.Position).Magnitude
-    
-    -- Set movement speed (studs per step)
-    local stepDistance = 150
-    local steps = math.max(1, math.ceil(distance / stepDistance))
+    local distance = (rootPart.Position - targetCF.Position).Magnitude
+    local duration = distance / TWEEN_SPEED
 
-    task.spawn(function()
-        for i = 1, steps do
-            if not character or not character:Parent() or not rootPart then break end
-            
-            local alpha = i / steps
-            local nextCF = startCF:Lerp(targetCF, alpha)
-            
-            -- Move rootPart and update velocities safely
-            rootPart.CFrame = nextCF
-            rootPart.AssemblyLinearVelocity = Vector3.zero
-            rootPart.AssemblyAngularVelocity = Vector3.zero
-            
-            task.wait(0.03) -- Yield ensures position updates register properly
+    -- Active physics damping and collision disable
+    local stepConnection
+    stepConnection = RunService.Stepped:Connect(function()
+        if not character or not character:Parent() then return end
+        for _, part in ipairs(character:GetChildren()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+        rootPart.AssemblyLinearVelocity = Vector3.zero
+        rootPart.AssemblyAngularVelocity = Vector3.zero
+    end)
+
+    local tweenInfo = TweenInfo.new(
+        duration,
+        Enum.EasingStyle.Linear,
+        Enum.EasingDirection.Out
+    )
+
+    local tween = TweenService:Create(rootPart, tweenInfo, { CFrame = targetCF })
+    tween:Play()
+
+    tween.Completed:Connect(function()
+        if stepConnection then 
+            stepConnection:Disconnect() 
         end
         
-        if rootPart then
-            rootPart.CFrame = targetCF
+        if character and character:Parent() then
+            for _, part in ipairs(character:GetChildren()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
             rootPart.AssemblyLinearVelocity = Vector3.zero
             rootPart.AssemblyAngularVelocity = Vector3.zero
         end
-        
+
         if onDone then onDone() end
     end)
 end
