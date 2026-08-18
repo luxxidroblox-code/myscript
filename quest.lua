@@ -1,6 +1,5 @@
 local Rayfield     = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Players      = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
 local RunService   = game:GetService("RunService")
 
 local player    = Players.LocalPlayer
@@ -26,20 +25,12 @@ local BENDERA = {
     { name = "Bendera 15", cf = CFrame.new(27850.434,   129.072,  -3485.787,  0.978, -0.000,  0.210,  0.000, 1.000,  0.000, -0.210, -0.000,  0.978) },
 }
 
-local NPC_QUEST_CF = CFrame.new(25987.922, 220.577, -18501.188, -0.999, 0.000, 0.046, -0.000, 1.000, -0.000, -0.046, -0.000, -0.999)
-
--- ── transit config ────────────────────────────────────────────
--- Uses character:PivotTo() — identical to what the bus script's
--- World Teleport button does; that section never triggers the AC.
--- Three-phase underground path:
---   1. sink vertically to Y=-4000 (pure Y, no XZ delta)
---   2. translate XZ at depth (no ground-level sample possible)
---   3. surface vertically to target Y (pure Y, no XZ delta)
--- No setsimulationradius, no rootPart.CFrame write.
+local NPC_QUEST_CF  = CFrame.new(25987.922, 220.577, -18501.188, -0.999, 0.000, 0.046, -0.000, 1.000, -0.000, -0.046, -0.000, -0.999)
 local UNDERGROUND_Y = -4000
 local FLAG_DELAY    = 20
+local HOLD_DURATION = 3
 
-_G.AutoFlag = false
+_G.CycleRunning = false
 
 local function freeze()
     humanoid.WalkSpeed   = 0
@@ -54,7 +45,6 @@ local function restore()
 end
 
 local function stealthTP(targetCF)
-    -- rebind in case of respawn between calls
     character = player.Character
     if not character then return end
     rootPart  = character:WaitForChild("HumanoidRootPart")
@@ -63,23 +53,19 @@ local function stealthTP(targetCF)
     freeze()
     RunService.Stepped:Wait()
 
-    -- phase 1: sink — pure vertical, no XZ movement
     local cur = character:GetPivot()
     character:PivotTo(CFrame.new(cur.X, UNDERGROUND_Y, cur.Z))
     freeze()
     RunService.Stepped:Wait()
 
-    -- phase 2: XZ translate underground
     local tPos = targetCF.Position
     character:PivotTo(CFrame.new(tPos.X, UNDERGROUND_Y, tPos.Z))
     freeze()
     RunService.Stepped:Wait()
 
-    -- phase 3: surface — pure vertical to target, rotation applied
     character:PivotTo(targetCF)
     freeze()
 
-    -- settle
     for _ = 1, 3 do
         RunService.Stepped:Wait()
         character:PivotTo(targetCF)
@@ -90,15 +76,20 @@ local function stealthTP(targetCF)
     task.delay(0.25, restore)
 end
 
-local function fireNearbyPrompts(radius)
-    radius = radius or 12
+local function holdNearbyPrompts(radius)
     local origin = rootPart.Position
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj:IsA("ProximityPrompt") then
             local part = obj.Parent
             if part and part:IsA("BasePart") then
                 if (part.Position - origin).Magnitude <= radius then
-                    pcall(function() fireproximityprompt(obj) end)
+                    pcall(function()
+                        if holdproximityprompt then
+                            holdproximityprompt(obj, HOLD_DURATION)
+                        else
+                            fireproximityprompt(obj)
+                        end
+                    end)
                 end
             end
         end
@@ -115,50 +106,52 @@ local Window = Rayfield:CreateWindow({
     KeySystem       = false,
 })
 
-local MainTab    = Window:CreateTab("Main", "flag")
+local MainTab = Window:CreateTab("Main", "flag")
 local StatusLabel
 
 MainTab:CreateSection("Auto Flag Farm")
 StatusLabel = MainTab:CreateLabel("Status: Idle", "activity")
 
-MainTab:CreateToggle({
-    Name         = "Auto Find Flag (1–15)",
-    CurrentValue = false,
-    Callback     = function(Value)
-        _G.AutoFlag = Value
-
-        if not Value then
-            StatusLabel:Set("Status: Stopped")
-            restore()
+MainTab:CreateButton({
+    Name     = "▶  Start Auto Find Flag (1 Cycle)",
+    Callback = function()
+        if _G.CycleRunning then
+            Rayfield:Notify({
+                Title    = "Already Running",
+                Content  = "Cycle in progress — wait for it to finish.",
+                Duration = 3,
+                Image    = "alert-triangle",
+            })
             return
         end
 
         task.spawn(function()
-            while _G.AutoFlag do
-                for i, entry in ipairs(BENDERA) do
-                    if not _G.AutoFlag then break end
+            _G.CycleRunning = true
+            StatusLabel:Set("Status: Cycle started...")
 
-                    StatusLabel:Set("Status: Moving → " .. entry.name)
-                    stealthTP(entry.cf)
+            for i, entry in ipairs(BENDERA) do
+                StatusLabel:Set("Status: Moving → " .. entry.name .. " (" .. i .. "/15)")
+                stealthTP(entry.cf)
 
-                    if not _G.AutoFlag then break end
+                task.wait(0.5)
+                StatusLabel:Set("Status: Holding prompt — " .. entry.name)
+                holdNearbyPrompts(12)
 
-                    task.wait(0.5)
-                    fireNearbyPrompts(12)
-                    StatusLabel:Set("Status: Arrived " .. entry.name)
-
-                    for t = FLAG_DELAY, 1, -1 do
-                        if not _G.AutoFlag then break end
-                        StatusLabel:Set("Status: [" .. entry.name .. "] next in " .. t .. "s")
-                        task.wait(1)
-                    end
-                end
-
-                if _G.AutoFlag then
-                    StatusLabel:Set("Status: Cycle complete — restarting...")
-                    task.wait(2)
+                -- interruptible delay between flags
+                for t = FLAG_DELAY, 1, -1 do
+                    StatusLabel:Set("Status: [" .. entry.name .. "] " .. i .. "/15 — next in " .. t .. "s")
+                    task.wait(1)
                 end
             end
+
+            _G.CycleRunning = false
+            StatusLabel:Set("Status: ✓ Cycle complete (15/15)")
+            Rayfield:Notify({
+                Title    = "Done",
+                Content  = "All 15 flags visited.",
+                Duration = 5,
+                Image    = "check-circle",
+            })
         end)
     end,
 })
@@ -168,12 +161,22 @@ MainTab:CreateSection("NPC Quest")
 MainTab:CreateButton({
     Name     = "Teleport to NPC Quest",
     Callback = function()
+        if _G.CycleRunning then
+            Rayfield:Notify({
+                Title    = "Cycle Running",
+                Content  = "Wait for the flag cycle to finish first.",
+                Duration = 3,
+                Image    = "alert-triangle",
+            })
+            return
+        end
         StatusLabel:Set("Status: Moving → NPC Quest...")
         task.spawn(function()
             stealthTP(NPC_QUEST_CF)
             task.wait(0.5)
-            fireNearbyPrompts(12)
-            StatusLabel:Set("Status: Arrived NPC Quest")
+            StatusLabel:Set("Status: Holding NPC prompt...")
+            holdNearbyPrompts(12)
+            StatusLabel:Set("Status: NPC Quest done")
         end)
     end,
 })
@@ -190,12 +193,20 @@ MainTab:CreateSlider({
     end,
 })
 
+MainTab:CreateSlider({
+    Name         = "Prompt Hold Duration (seconds)",
+    Range        = {1, 10},
+    Increment    = 0.5,
+    CurrentValue = HOLD_DURATION,
+    Callback     = function(Value)
+        HOLD_DURATION = Value
+    end,
+})
+
 player.CharacterAdded:Connect(function(char)
-    character = char
-    rootPart  = char:WaitForChild("HumanoidRootPart")
-    humanoid  = char:WaitForChild("Humanoid")
-    _G.AutoFlag = false
-    if StatusLabel then
-        StatusLabel:Set("Status: Respawned")
-    end
+    character       = char
+    rootPart        = char:WaitForChild("HumanoidRootPart")
+    humanoid        = char:WaitForChild("Humanoid")
+    _G.CycleRunning = false
+    if StatusLabel then StatusLabel:Set("Status: Respawned") end
 end)
