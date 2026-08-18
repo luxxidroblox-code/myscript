@@ -1,6 +1,8 @@
 local Rayfield     = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Players      = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
 local RunService   = game:GetService("RunService")
+local PhysicsService = game:GetService("PhysicsService")
 
 local player    = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -25,78 +27,145 @@ local BENDERA = {
     { name = "Bendera 15", cf = CFrame.new(27850.434,   129.072,  -3485.787,  0.978, -0.000,  0.210,  0.000, 1.000,  0.000, -0.210, -0.000,  0.978) },
 }
 
-local NPC_QUEST_CF  = CFrame.new(25987.922, 220.577, -18501.188, -0.999, 0.000, 0.046, -0.000, 1.000, -0.000, -0.046, -0.000, -0.999)
-local UNDERGROUND_Y = -4000
-local FLAG_DELAY    = 20
-local HOLD_DURATION = 3
+local NPC_QUEST_CF = CFrame.new(25987.922, 220.577, -18501.188, -0.999, 0.000, 0.046, -0.000, 1.000, -0.000, -0.046, -0.000, -0.999)
 
-_G.CycleRunning = false
+local DESCENT_TIME = 3.5
+local FLAG_DELAY   = 20
+_G.AutoFlag        = false
 
-local function freeze()
-    humanoid.WalkSpeed   = 0
-    humanoid.JumpPower   = 0
-    rootPart.Velocity    = Vector3.zero
-    rootPart.RotVelocity = Vector3.zero
-end
+-- ── raycast ground resolver ───────────────────────────────────
+local RAY_PARAMS = RaycastParams.new()
+RAY_PARAMS.FilterType = Enum.RaycastFilterType.Exclude
 
-local function restore()
-    humanoid.WalkSpeed = 16
-    humanoid.JumpPower = 50
-end
-
-local function stealthTP(targetCF)
-    character = player.Character
-    if not character then return end
-    rootPart  = character:WaitForChild("HumanoidRootPart")
-    humanoid  = character:WaitForChild("Humanoid")
-
-    freeze()
-    RunService.Stepped:Wait()
-
-    local cur = character:GetPivot()
-    character:PivotTo(CFrame.new(cur.X, UNDERGROUND_Y, cur.Z))
-    freeze()
-    RunService.Stepped:Wait()
-
-    local tPos = targetCF.Position
-    character:PivotTo(CFrame.new(tPos.X, UNDERGROUND_Y, tPos.Z))
-    freeze()
-    RunService.Stepped:Wait()
-
-    character:PivotTo(targetCF)
-    freeze()
-
-    for _ = 1, 3 do
-        RunService.Stepped:Wait()
-        character:PivotTo(targetCF)
-        rootPart.Velocity    = Vector3.zero
-        rootPart.RotVelocity = Vector3.zero
+local function resolveGroundY(targetCF)
+    RAY_PARAMS.FilterDescendantsInstances = { character }
+    local origin = Vector3.new(targetCF.X, targetCF.Y + 600, targetCF.Z)
+    local result = workspace:Raycast(origin, Vector3.new(0, -1200, 0), RAY_PARAMS)
+    if result then
+        return result.Position.Y + 3.2  -- hip offset
     end
-
-    task.delay(0.25, restore)
+    return targetCF.Y
 end
 
-local function holdNearbyPrompts(radius)
+-- ── ownership pulse ───────────────────────────────────────────
+-- claim in short bursts: sustained math.huge flags some anticheats
+local function claimOwnership()
+    setsimulationradius(1e6, 1e6)
+end
+local function releaseOwnership()
+    task.delay(0.08, function()
+        setsimulationradius(1000, 2000)
+    end)
+end
+
+-- ── spoof freefall velocity ───────────────────────────────────
+-- server expects downward velocity during a fall;
+-- inject plausible Y velocity so the arrival looks like a jump arc
+local function spoofFallVelocity(targetCF, elapsed)
+    -- simulate v = g*t capped at terminal ~100 st/s
+    local fallV = math.min(workspace.Gravity * elapsed, 100)
+    rootPart.Velocity = Vector3.new(
+        (targetCF.X - rootPart.Position.X) * 0.4,
+        -fallV,
+        (targetCF.Z - rootPart.Position.Z) * 0.4
+    )
+end
+
+-- ── hardened aerial teleport ─────────────────────────────────
+local AERIAL_HEIGHT = 900  -- lower than before: less time in "fly" state
+
+local function aerialTP(targetCF)
+    -- resolve real ground Y at destination
+    local groundY  = resolveGroundY(targetCF)
+    local landingCF = CFrame.new(
+        Vector3.new(targetCF.X, groundY, targetCF.Z)
+    ) * CFrame.fromMatrix(Vector3.zero, targetCF.XVector, targetCF.YVector, targetCF.ZVector)
+
+    humanoid.WalkSpeed = 0
+    humanoid.JumpPower = 0
+
+    -- claim before any position write
+    claimOwnership()
+    RunService.Stepped:Wait()
+
+    -- lift: keep gravity ON, just reposition — looks like a jump to server
+    local liftPos = rootPart.CFrame + Vector3.new(0, AERIAL_HEIGHT, 0)
+    rootPart.CFrame   = liftPos
+    rootPart.Velocity = Vector3.new(0, 50, 0)  -- upward momentum, not zero
+    RunService.Stepped:Wait()
+
+    -- lateral snap above target while still "in air"
+    rootPart.CFrame   = landingCF + Vector3.new(0, AERIAL_HEIGHT, 0)
+    rootPart.Velocity = Vector3.new(0, 20, 0)
+    RunService.Stepped:Wait()
+
+    -- tween descent — gravity stays ON the whole way
+    local cfVal   = Instance.new("CFrameValue")
+    cfVal.Value   = rootPart.CFrame
+    local elapsed = 0
+
+    local heartConn = RunService.Heartbeat:Connect(function(dt)
+        elapsed = elapsed + dt
+        -- keep ownership pulsed every ~0.25s, not sustained
+        if math.floor(elapsed / 0.25) % 2 == 0 then
+            setsimulationradius(1e6, 1e6)
+        else
+            setsimulationradius(1000, 2000)
+        end
+        -- inject realistic fall velocity
+        spoofFallVelocity(landingCF, elapsed)
+    end)
+
+    local posConn = cfVal.Changed:Connect(function()
+        rootPart.CFrame = cfVal.Value
+    end)
+
+    local tween = TweenService:Create(
+        cfVal,
+        TweenInfo.new(DESCENT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+        { Value = landingCF }
+    )
+    tween:Play()
+    tween.Completed:Wait()
+
+    heartConn:Disconnect()
+    posConn:Disconnect()
+    cfVal:Destroy()
+
+    -- precision landing snap
+    claimOwnership()
+    rootPart.CFrame   = landingCF
+    rootPart.Velocity = Vector3.zero  -- dead stop on ground — normal landing
+    RunService.Stepped:Wait()
+    rootPart.CFrame   = landingCF
+    rootPart.Velocity = Vector3.zero
+
+    releaseOwnership()
+
+    -- restore movement after brief settle
+    task.delay(0.35, function()
+        humanoid.WalkSpeed = 16
+        humanoid.JumpPower = 50
+    end)
+end
+
+-- ── fire proximity prompts near current position ──────────────
+local function fireNearbyPrompts(radius)
+    radius = radius or 15
     local origin = rootPart.Position
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj:IsA("ProximityPrompt") then
             local part = obj.Parent
             if part and part:IsA("BasePart") then
                 if (part.Position - origin).Magnitude <= radius then
-                    pcall(function()
-                        if holdproximityprompt then
-                            holdproximityprompt(obj, HOLD_DURATION)
-                        else
-                            fireproximityprompt(obj)
-                        end
-                    end)
+                    pcall(function() fireproximityprompt(obj) end)
                 end
             end
         end
     end
 end
 
--- ── Rayfield ──────────────────────────────────────────────────
+-- ── Rayfield window ───────────────────────────────────────────
 local Window = Rayfield:CreateWindow({
     Name            = "Auto find flag by .projectsion",
     LoadingTitle    = "Auto Find Flag",
@@ -106,56 +175,46 @@ local Window = Rayfield:CreateWindow({
     KeySystem       = false,
 })
 
-local MainTab = Window:CreateTab("Main", "flag")
+local MainTab   = Window:CreateTab("Main", "flag")
 local StatusLabel
 
 MainTab:CreateSection("Auto Flag Farm")
 StatusLabel = MainTab:CreateLabel("Status: Idle", "activity")
 
--- cycle: TP flag 1 → hold → delay → TP flag 2 → hold → delay → ... → flag 15 → done
-MainTab:CreateButton({
-    Name     = "▶  Start Auto Find Flag (1 Cycle)",
-    Callback = function()
-        if _G.CycleRunning then
-            Rayfield:Notify({
-                Title    = "Already Running",
-                Content  = "Cycle in progress.",
-                Duration = 3,
-                Image    = "alert-triangle",
-            })
+MainTab:CreateToggle({
+    Name         = "Auto Find Flag (1–15)",
+    CurrentValue = false,
+    Callback     = function(Value)
+        _G.AutoFlag = Value
+        if not Value then
+            StatusLabel:Set("Status: Stopped")
             return
         end
 
         task.spawn(function()
-            _G.CycleRunning = true
+            while _G.AutoFlag do
+                for i, entry in ipairs(BENDERA) do
+                    if not _G.AutoFlag then break end
 
-            for i, entry in ipairs(BENDERA) do
-                -- 1. teleport to flag
-                StatusLabel:Set("Status: Moving → " .. entry.name .. " (" .. i .. "/15)")
-                stealthTP(entry.cf)
-                task.wait(0.5)
+                    StatusLabel:Set("Status: Flying → " .. entry.name)
+                    aerialTP(entry.cf)
+                    if not _G.AutoFlag then break end
 
-                -- 2. hold the prompt
-                StatusLabel:Set("Status: Holding — " .. entry.name)
-                holdNearbyPrompts(12)
+                    fireNearbyPrompts(15)
+                    StatusLabel:Set("Status: Arrived " .. entry.name)
 
-                -- 3. delay before next flag (skip delay after last)
-                if i < #BENDERA then
                     for t = FLAG_DELAY, 1, -1 do
-                        StatusLabel:Set("Status: [" .. i .. "/15] next flag in " .. t .. "s")
+                        if not _G.AutoFlag then break end
+                        StatusLabel:Set("Status: [" .. entry.name .. "] next in " .. t .. "s")
                         task.wait(1)
                     end
                 end
-            end
 
-            _G.CycleRunning = false
-            StatusLabel:Set("Status: ✓ All 15 flags done")
-            Rayfield:Notify({
-                Title    = "Cycle Complete",
-                Content  = "All 15 flags collected.",
-                Duration = 5,
-                Image    = "check-circle",
-            })
+                if _G.AutoFlag then
+                    StatusLabel:Set("Status: Cycle complete — restarting...")
+                    task.wait(2)
+                end
+            end
         end)
     end,
 })
@@ -165,22 +224,12 @@ MainTab:CreateSection("NPC Quest")
 MainTab:CreateButton({
     Name     = "Teleport to NPC Quest",
     Callback = function()
-        if _G.CycleRunning then
-            Rayfield:Notify({
-                Title    = "Cycle Running",
-                Content  = "Wait for the flag cycle to finish.",
-                Duration = 3,
-                Image    = "alert-triangle",
-            })
-            return
-        end
+        StatusLabel:Set("Status: Flying → NPC Quest...")
         task.spawn(function()
-            StatusLabel:Set("Status: Moving → NPC Quest...")
-            stealthTP(NPC_QUEST_CF)
+            aerialTP(NPC_QUEST_CF)
             task.wait(0.5)
-            StatusLabel:Set("Status: Holding NPC prompt...")
-            holdNearbyPrompts(12)
-            StatusLabel:Set("Status: NPC Quest done")
+            fireNearbyPrompts(15)
+            StatusLabel:Set("Status: Arrived NPC Quest")
         end)
     end,
 })
@@ -188,29 +237,28 @@ MainTab:CreateButton({
 MainTab:CreateSection("Settings")
 
 MainTab:CreateSlider({
-    Name         = "Delay Between Flags (seconds)",
-    Range        = {5, 60},
-    Increment    = 1,
-    CurrentValue = FLAG_DELAY,
-    Callback     = function(Value)
-        FLAG_DELAY = Value
-    end,
+    Name         = "Descent Time (seconds)",
+    Range        = {1, 8},
+    Increment    = 0.5,
+    CurrentValue = DESCENT_TIME,
+    Callback     = function(Value) DESCENT_TIME = Value end,
 })
 
 MainTab:CreateSlider({
-    Name         = "Prompt Hold Duration (seconds)",
-    Range        = {1, 10},
-    Increment    = 0.5,
-    CurrentValue = HOLD_DURATION,
-    Callback     = function(Value)
-        HOLD_DURATION = Value
-    end,
+    Name         = "Flag Delay (seconds)",
+    Range        = {5, 60},
+    Increment    = 1,
+    CurrentValue = FLAG_DELAY,
+    Callback     = function(Value) FLAG_DELAY = Value end,
 })
 
+-- ── respawn rebind ────────────────────────────────────────────
 player.CharacterAdded:Connect(function(char)
-    character       = char
-    rootPart        = char:WaitForChild("HumanoidRootPart")
-    humanoid        = char:WaitForChild("Humanoid")
-    _G.CycleRunning = false
-    if StatusLabel then StatusLabel:Set("Status: Respawned") end
+    character = char
+    rootPart  = char:WaitForChild("HumanoidRootPart")
+    humanoid  = char:WaitForChild("Humanoid")
+    RAY_PARAMS.FilterDescendantsInstances = { character }
+    if StatusLabel then
+        StatusLabel:Set("Status: Respawned — " .. (_G.AutoFlag and "resuming..." or "Idle"))
+    end
 end)
