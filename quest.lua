@@ -33,37 +33,42 @@ local NPC_QUEST = {
 
 local HOLD_TIME = 3.5
 
--- ── Safe Waypoint Pivot Movement ──
+-- ── Fixed Movement Function ──
 local function safePivotTo(targetCF, onDone)
-    if not character or not character:Parent() then return end
+    character = player.Character or player.CharacterAdded:Wait()
+    rootPart  = character:WaitForChild("HumanoidRootPart")
+    humanoid  = character:WaitForChild("Humanoid")
     
-    local startCF = character:GetPivot()
+    if not character or not rootPart then return end
+    
+    -- Unseat and unanchor character to allow movement
+    if humanoid then humanoid.Sit = false end
+    rootPart.Anchored = false
+    
+    local startCF = rootPart.CFrame
     local distance = (startCF.Position - targetCF.Position).Magnitude
     
-    -- Small step distance prevents high-speed server kicks
-    local stepDistance = 50
+    -- Set movement speed (studs per step)
+    local stepDistance = 150
     local steps = math.max(1, math.ceil(distance / stepDistance))
 
     task.spawn(function()
         for i = 1, steps do
-            if not character or not character:Parent() then break end
+            if not character or not character:Parent() or not rootPart then break end
             
             local alpha = i / steps
             local nextCF = startCF:Lerp(targetCF, alpha)
             
-            character:PivotTo(nextCF)
+            -- Move rootPart and update velocities safely
+            rootPart.CFrame = nextCF
+            rootPart.AssemblyLinearVelocity = Vector3.zero
+            rootPart.AssemblyAngularVelocity = Vector3.zero
             
-            if rootPart then
-                rootPart.AssemblyLinearVelocity = Vector3.zero
-                rootPart.AssemblyAngularVelocity = Vector3.zero
-            end
-            
-            -- Pacing frame timing keeps speed within natural movement parameters
-            RunService.Heartbeat:Wait()
+            task.wait(0.03) -- Yield ensures position updates register properly
         end
         
-        character:PivotTo(targetCF)
         if rootPart then
+            rootPart.CFrame = targetCF
             rootPart.AssemblyLinearVelocity = Vector3.zero
             rootPart.AssemblyAngularVelocity = Vector3.zero
         end
@@ -88,7 +93,6 @@ local function triggerNearbyPrompts(radius)
                     if fireproximityprompt then
                         fireproximityprompt(obj)
                     else
-                        -- Simulates continuous holding for prompts with HoldDuration
                         obj:InputHoldBegin()
                         task.wait(obj.HoldDuration > 0 and obj.HoldDuration or HOLD_TIME)
                         obj:InputHoldEnd()
@@ -104,7 +108,7 @@ local screenGui = Instance.new("ScreenGui")
 screenGui.Name           = "BenderaTeleportGUI"
 screenGui.ResetOnSpawn   = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent         = player.PlayerGui
+screenGui.Parent         = player:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
 frame.Name             = "MainFrame"
