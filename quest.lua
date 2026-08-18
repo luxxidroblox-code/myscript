@@ -26,75 +26,72 @@ local BENDERA = {
     { name = "Bendera 15", cf = CFrame.new(27850.434,   129.072,  -3485.787,  0.978, -0.000,  0.210,  0.000, 1.000,  0.000, -0.210, -0.000,  0.978) },
 }
 
--- NPC quest CFrame — proximity prompt fired after teleport
 local NPC_QUEST_CF = CFrame.new(25987.922, 220.577, -18501.188, -0.999, 0.000, 0.046, -0.000, 1.000, -0.000, -0.046, -0.000, -0.999)
 
-local AERIAL_HEIGHT = 1200
-local DESCENT_TIME  = 3.5
-local FLAG_DELAY    = 20   -- seconds between flags
+-- ── underground transit depth ─────────────────────────────────
+-- AC fly check: samples Y velocity and sustained Y > ground.
+-- AC speed check: samples XZ delta per tick at ground level.
+-- Solution: sink to Y=-4000 (below map mesh, outside both
+-- sampling volumes), translate XZ instantly underground,
+-- surface in one frame. Zero vertical velocity throughout.
+-- setsimulationradius(math.huge) claims physics ownership so
+-- the server accepts our CFrame writes as ground truth.
+local UNDERGROUND_Y = -4000
+local FLAG_DELAY    = 20
 
 _G.AutoFlag = false
 
--- ── aerial teleport (same method as bus script) ───────────────
-local function aerialTP(targetCF)
-    workspace.Gravity    = 0
+local function freeze()
     humanoid.WalkSpeed   = 0
     humanoid.JumpPower   = 0
     rootPart.Velocity    = Vector3.zero
     rootPart.RotVelocity = Vector3.zero
-
-    RunService.Stepped:Wait()
-
-    -- lift
-    rootPart.CFrame = rootPart.CFrame + Vector3.new(0, AERIAL_HEIGHT, 0)
-    RunService.Stepped:Wait()
-
-    -- lateral translate above target
-    rootPart.CFrame = targetCF + Vector3.new(0, AERIAL_HEIGHT, 0)
-    RunService.Stepped:Wait()
-
-    -- heartbeat-driven descent
-    local cfVal = Instance.new("CFrameValue")
-    cfVal.Value = rootPart.CFrame
-
-    local conn = cfVal.Changed:Connect(function()
-        rootPart.CFrame      = cfVal.Value
-        rootPart.Velocity    = Vector3.zero
-        rootPart.RotVelocity = Vector3.zero
-    end)
-
-    local tween = TweenService:Create(
-        cfVal,
-        TweenInfo.new(DESCENT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut),
-        { Value = targetCF }
-    )
-    tween:Play()
-    tween.Completed:Wait()
-
-    conn:Disconnect()
-    cfVal:Destroy()
-
-    -- precision snap + settle
-    rootPart.CFrame      = targetCF
-    rootPart.Velocity    = Vector3.zero
-    rootPart.RotVelocity = Vector3.zero
-    RunService.Stepped:Wait()
-    rootPart.CFrame   = targetCF
-    rootPart.Velocity = Vector3.zero
-    RunService.Stepped:Wait()
-    rootPart.CFrame   = targetCF
-    rootPart.Velocity = Vector3.zero
-
-    workspace.Gravity = 196.2
-    task.delay(0.3, function()
-        humanoid.WalkSpeed = 16
-        humanoid.JumpPower = 50
-    end)
 end
 
--- ── fire all proximity prompts within radius of current pos ──
+local function restore()
+    humanoid.WalkSpeed = 16
+    humanoid.JumpPower = 50
+end
+
+local function stealthTP(targetCF)
+    -- claim physics ownership
+    setsimulationradius(math.huge, math.huge)
+    freeze()
+    RunService.Stepped:Wait()
+
+    -- phase 1: sink straight down to underground Y
+    -- purely vertical move, XZ unchanged — no speed delta
+    local pos = rootPart.Position
+    rootPart.CFrame = CFrame.new(pos.X, UNDERGROUND_Y, pos.Z)
+    freeze()
+    RunService.Stepped:Wait()
+
+    -- phase 2: translate XZ underground to above the target XZ
+    -- both moves happen at Y=-4000, never at ground level
+    local tPos = targetCF.Position
+    rootPart.CFrame = CFrame.new(tPos.X, UNDERGROUND_Y, tPos.Z)
+    freeze()
+    RunService.Stepped:Wait()
+
+    -- phase 3: surface directly to target in one frame
+    -- purely vertical move upward, XZ already correct
+    rootPart.CFrame = targetCF
+    freeze()
+
+    -- settle across 3 physics frames
+    for _ = 1, 3 do
+        RunService.Stepped:Wait()
+        rootPart.CFrame   = targetCF
+        rootPart.Velocity = Vector3.zero
+    end
+
+    -- release ownership
+    setsimulationradius(1000, 1000)
+    task.delay(0.25, restore)
+end
+
 local function fireNearbyPrompts(radius)
-    radius = radius or 15
+    radius = radius or 12
     local origin = rootPart.Position
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj:IsA("ProximityPrompt") then
@@ -108,21 +105,20 @@ local function fireNearbyPrompts(radius)
     end
 end
 
--- ── Rayfield window ───────────────────────────────────────────
+-- ── Rayfield ──────────────────────────────────────────────────
 local Window = Rayfield:CreateWindow({
-    Name             = "Auto find flag by .projectsion",
-    LoadingTitle     = "Auto Find Flag",
-    LoadingSubtitle  = "by .projectsion",
-    Theme            = "Bloom",
+    Name            = "Auto find flag by .projectsion",
+    LoadingTitle    = "Auto Find Flag",
+    LoadingSubtitle = "by .projectsion",
+    Theme           = "Bloom",
     ConfigurationSaving = { Enabled = false },
-    KeySystem        = false,
+    KeySystem       = false,
 })
 
 local MainTab = Window:CreateTab("Main", "flag")
 local StatusLabel
 
 MainTab:CreateSection("Auto Flag Farm")
-
 StatusLabel = MainTab:CreateLabel("Status: Idle", "activity")
 
 MainTab:CreateToggle({
@@ -141,16 +137,14 @@ MainTab:CreateToggle({
                 for i, entry in ipairs(BENDERA) do
                     if not _G.AutoFlag then break end
 
-                    StatusLabel:Set("Status: Flying → " .. entry.name)
-                    aerialTP(entry.cf)
+                    StatusLabel:Set("Status: Transit → " .. entry.name)
+                    stealthTP(entry.cf)
 
                     if not _G.AutoFlag then break end
 
-                    -- hold and fire any prompt at the flag location
-                    fireNearbyPrompts(15)
-                    StatusLabel:Set("Status: Arrived " .. entry.name .. " — waiting " .. FLAG_DELAY .. "s")
+                    fireNearbyPrompts(12)
+                    StatusLabel:Set("Status: Arrived " .. entry.name)
 
-                    -- interruptible delay
                     for t = FLAG_DELAY, 1, -1 do
                         if not _G.AutoFlag then break end
                         StatusLabel:Set("Status: [" .. entry.name .. "] next in " .. t .. "s")
@@ -172,11 +166,11 @@ MainTab:CreateSection("NPC Quest")
 MainTab:CreateButton({
     Name     = "Teleport to NPC Quest",
     Callback = function()
-        StatusLabel:Set("Status: Flying → NPC Quest...")
+        StatusLabel:Set("Status: Transit → NPC Quest...")
         task.spawn(function()
-            aerialTP(NPC_QUEST_CF)
-            task.wait(0.5)
-            fireNearbyPrompts(15)
+            stealthTP(NPC_QUEST_CF)
+            task.wait(0.3)
+            fireNearbyPrompts(12)
             StatusLabel:Set("Status: Arrived NPC Quest")
         end)
     end,
@@ -185,32 +179,22 @@ MainTab:CreateButton({
 MainTab:CreateSection("Settings")
 
 MainTab:CreateSlider({
-    Name    = "Descent Time (seconds)",
-    Range   = {1, 8},
-    Increment = 0.5,
-    CurrentValue = DESCENT_TIME,
-    Callback = function(Value)
-        DESCENT_TIME = Value
-    end,
-})
-
-MainTab:CreateSlider({
-    Name    = "Flag Delay (seconds)",
-    Range   = {5, 60},
-    Increment = 1,
+    Name         = "Flag Delay (seconds)",
+    Range        = {5, 60},
+    Increment    = 1,
     CurrentValue = FLAG_DELAY,
-    Callback = function(Value)
+    Callback     = function(Value)
         FLAG_DELAY = Value
     end,
 })
 
--- ── character respawn rebind ──────────────────────────────────
 player.CharacterAdded:Connect(function(char)
     character   = char
     rootPart    = char:WaitForChild("HumanoidRootPart")
     humanoid    = char:WaitForChild("Humanoid")
     workspace.Gravity = 196.2
+    _G.AutoFlag = false
     if StatusLabel then
-        StatusLabel:Set("Status: Respawned — " .. (_G.AutoFlag and "resuming..." or "Idle"))
+        StatusLabel:Set("Status: Respawned")
     end
 end)
