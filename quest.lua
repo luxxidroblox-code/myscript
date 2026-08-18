@@ -1,3 +1,5 @@
+-- Lua 5.1 / Roblox executor  |  bendera_tp.lua  |  Arceus X / Delta
+
 local Players      = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 
@@ -29,31 +31,59 @@ local NPC_QUEST = {
     cf   = CFrame.new(25987.922, 220.577, -18501.188, -0.999, 0.000, 0.046, -0.000, 1.000, -0.000, -0.046, -0.000, -0.999)
 }
 
--- ── Sit bypass teleport ───────────────────────────────────────
-local function sitTP(targetCF, onDone)
-    -- fabricate a temporary seat at origin so Animate/seat state fires
-    local seat = Instance.new("Seat")
-    seat.CFrame        = rootPart.CFrame
-    seat.Anchored      = true
-    seat.CanCollide    = false
-    seat.Transparency  = 1
-    seat.Parent        = workspace
+-- ============================================================
+-- AERIAL_HEIGHT : studs above current position before translate.
+--   Moves happen at sky height — server never sees a ground jump.
+-- DESCENT_TIME  : seconds for the heartbeat-driven tween down.
+--   CFrameValue.Changed fires every frame → velocity cleared every frame.
+-- ============================================================
+local AERIAL_HEIGHT = 800
+local DESCENT_TIME  = 2.5   -- tune: shorter = snappier, longer = safer
 
-    humanoid.Sit = true
-    task.wait()                          -- let the sit state register
+-- ============================================================
+-- AerialTP  (character variant — rootPart instead of bus:PivotTo)
+--   1. Zero gravity, clear velocity
+--   2. Instant lift to current + AERIAL_HEIGHT
+--   3. Instant lateral translate to target + AERIAL_HEIGHT
+--   4. Heartbeat-driven CFrameValue tween descent to target
+--   5. Restore gravity, call onDone
+-- ============================================================
+local function AerialTP(targetCF, onDone)
+    local prevGravity           = workspace.Gravity
+    workspace.Gravity           = 0
 
-    -- hammer network ownership so the server accepts the CFrame write
-    rootPart:SetNetworkOwner(player)
+    rootPart.AssemblyLinearVelocity  = Vector3.zero
+    rootPart.AssemblyAngularVelocity = Vector3.zero
 
-    rootPart.CFrame = targetCF
+    -- lift
+    rootPart.CFrame = rootPart.CFrame + Vector3.new(0, AERIAL_HEIGHT, 0)
     task.wait()
-    rootPart.CFrame = targetCF           -- double-tap; first write sometimes dropped
 
-    humanoid.Sit = false
-    seat:Destroy()
+    -- lateral snap above target
+    rootPart.CFrame = targetCF + Vector3.new(0, AERIAL_HEIGHT, 0)
+    task.wait()
 
-    task.wait(0.1)
-    rootPart.CFrame = targetCF           -- re-anchor after unsit bounce
+    -- heartbeat descent via CFrameValue tween
+    local cfVal  = Instance.new("CFrameValue")
+    cfVal.Value  = rootPart.CFrame
+
+    local tweenInfo = TweenInfo.new(DESCENT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local conn = cfVal.Changed:Connect(function(newCF)
+        rootPart.CFrame                  = newCF
+        rootPart.AssemblyLinearVelocity  = Vector3.zero
+        rootPart.AssemblyAngularVelocity = Vector3.zero
+    end)
+
+    local tween = TweenService:Create(cfVal, tweenInfo, { Value = targetCF })
+    tween:Play()
+    tween.Completed:Wait()
+
+    conn:Disconnect()
+    cfVal:Destroy()
+
+    -- hard-snap landing
+    rootPart.CFrame = targetCF
+    workspace.Gravity = prevGravity
 
     if onDone then onDone() end
 end
@@ -145,11 +175,11 @@ local teleporting = false
 
 local function fireTP(entry)
     if teleporting then return end
-    teleporting = true
-    statusLabel.Text       = "Teleporting → " .. entry.name .. "..."
+    teleporting            = true
+    statusLabel.Text       = "Aerial → " .. entry.name .. "..."
     statusLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
     task.spawn(function()
-        sitTP(entry.cf, function()
+        AerialTP(entry.cf, function()
             teleporting            = false
             statusLabel.Text       = "Arrived: " .. entry.name
             statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
@@ -213,6 +243,7 @@ player.CharacterAdded:Connect(function(char)
     rootPart    = char:WaitForChild("HumanoidRootPart")
     humanoid    = char:WaitForChild("Humanoid")
     teleporting = false
+    workspace.Gravity      = 196.2   -- safety: reset if respawn mid-tween
     statusLabel.Text       = "Select a destination"
     statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
 end)
