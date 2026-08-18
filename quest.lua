@@ -112,13 +112,14 @@ local StatusLabel
 MainTab:CreateSection("Auto Flag Farm")
 StatusLabel = MainTab:CreateLabel("Status: Idle", "activity")
 
+-- cycle: TP flag 1 → hold → delay → TP flag 2 → hold → delay → ... → flag 15 → done
 MainTab:CreateButton({
     Name     = "▶  Start Auto Find Flag (1 Cycle)",
     Callback = function()
         if _G.CycleRunning then
             Rayfield:Notify({
                 Title    = "Already Running",
-                Content  = "Cycle in progress — wait for it to finish.",
+                Content  = "Cycle in progress.",
                 Duration = 3,
                 Image    = "alert-triangle",
             })
@@ -127,28 +128,31 @@ MainTab:CreateButton({
 
         task.spawn(function()
             _G.CycleRunning = true
-            StatusLabel:Set("Status: Cycle started...")
 
             for i, entry in ipairs(BENDERA) do
+                -- 1. teleport to flag
                 StatusLabel:Set("Status: Moving → " .. entry.name .. " (" .. i .. "/15)")
                 stealthTP(entry.cf)
-
                 task.wait(0.5)
-                StatusLabel:Set("Status: Holding prompt — " .. entry.name)
+
+                -- 2. hold the prompt
+                StatusLabel:Set("Status: Holding — " .. entry.name)
                 holdNearbyPrompts(12)
 
-                -- interruptible delay between flags
-                for t = FLAG_DELAY, 1, -1 do
-                    StatusLabel:Set("Status: [" .. entry.name .. "] " .. i .. "/15 — next in " .. t .. "s")
-                    task.wait(1)
+                -- 3. delay before next flag (skip delay after last)
+                if i < #BENDERA then
+                    for t = FLAG_DELAY, 1, -1 do
+                        StatusLabel:Set("Status: [" .. i .. "/15] next flag in " .. t .. "s")
+                        task.wait(1)
+                    end
                 end
             end
 
             _G.CycleRunning = false
-            StatusLabel:Set("Status: ✓ Cycle complete (15/15)")
+            StatusLabel:Set("Status: ✓ All 15 flags done")
             Rayfield:Notify({
-                Title    = "Done",
-                Content  = "All 15 flags visited.",
+                Title    = "Cycle Complete",
+                Content  = "All 15 flags collected.",
                 Duration = 5,
                 Image    = "check-circle",
             })
@@ -164,14 +168,14 @@ MainTab:CreateButton({
         if _G.CycleRunning then
             Rayfield:Notify({
                 Title    = "Cycle Running",
-                Content  = "Wait for the flag cycle to finish first.",
+                Content  = "Wait for the flag cycle to finish.",
                 Duration = 3,
                 Image    = "alert-triangle",
             })
             return
         end
-        StatusLabel:Set("Status: Moving → NPC Quest...")
         task.spawn(function()
+            StatusLabel:Set("Status: Moving → NPC Quest...")
             stealthTP(NPC_QUEST_CF)
             task.wait(0.5)
             StatusLabel:Set("Status: Holding NPC prompt...")
@@ -184,7 +188,7 @@ MainTab:CreateButton({
 MainTab:CreateSection("Settings")
 
 MainTab:CreateSlider({
-    Name         = "Flag Delay (seconds)",
+    Name         = "Delay Between Flags (seconds)",
     Range        = {5, 60},
     Increment    = 1,
     CurrentValue = FLAG_DELAY,
