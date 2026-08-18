@@ -38,7 +38,7 @@ local NPC_QUEST = {
 --   CFrameValue.Changed fires every frame → velocity cleared every frame.
 -- ============================================================
 local AERIAL_HEIGHT = 800
-local DESCENT_TIME  = 2.5   -- tune: shorter = snappier, longer = safer
+local DESCENT_TIME  = 7   -- tune: shorter = snappier, longer = safer
 
 -- ============================================================
 -- AerialTP  (character variant — rootPart instead of bus:PivotTo)
