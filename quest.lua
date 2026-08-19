@@ -28,16 +28,25 @@ local BENDERA = {
 
 local NPC_QUEST_CF = CFrame.new(25987.922, 220.577, -18501.188, -0.999, 0.000, 0.046, -0.000, 1.000, -0.000, -0.046, -0.000, -0.999)
 
-local FLAG_DELAY  = 20
-local HOLD_TIME   = 3
-local BATCH_SIZE  = 4          -- reset spawn every N flags
-local SPAWN_WAIT  = 3          -- seconds to wait after respawn settles
-_G.AutoFlag       = false
+local FLAG_DELAY = 20
+local HOLD_TIME  = 3
+local BATCH_SIZE = 4
+_G.AutoFlag      = false
 
 local RAY_PARAMS = RaycastParams.new()
 RAY_PARAMS.FilterType = Enum.RaycastFilterType.Exclude
 
--- ── Instant snap: ground-resolve then single CFrame write ──
+-- ── Refresh live character refs (call after any respawn) ──
+local function refreshRefs()
+    character = player.Character or player.CharacterAdded:Wait()
+    rootPart  = character:WaitForChild("HumanoidRootPart")
+    humanoid  = character:WaitForChild("Humanoid")
+    -- wait until humanoid is fully alive before proceeding
+    while humanoid.Health <= 0 do task.wait(0.1) end
+    RAY_PARAMS.FilterDescendantsInstances = { character }
+end
+
+-- ── Ground resolve ──
 local function resolveGroundY(targetCF)
     RAY_PARAMS.FilterDescendantsInstances = { character }
     local offsets = {
@@ -56,27 +65,32 @@ local function resolveGroundY(targetCF)
     return minY + 3.2
 end
 
+-- ── Ownership-forced instant snap ──
 local function snapTP(targetCF)
-    local groundY    = resolveGroundY(targetCF)
+    local groundY     = resolveGroundY(targetCF)
     local destination = CFrame.new(targetCF.X, groundY, targetCF.Z) * targetCF.Rotation
-    rootPart.CFrame                = destination
-    rootPart.AssemblyLinearVelocity = Vector3.zero
+
+    if setsimulationradius then setsimulationradius(math.huge, math.huge) end
+
+    humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    rootPart.CFrame                  = destination
+    rootPart.AssemblyLinearVelocity  = Vector3.zero
+    rootPart.AssemblyAngularVelocity = Vector3.zero
     RunService.Stepped:Wait()
+    rootPart.CFrame                  = destination
+    rootPart.AssemblyLinearVelocity  = Vector3.zero
+    RunService.Stepped:Wait()
+    humanoid:ChangeState(Enum.HumanoidStateType.Running)
 end
 
--- ── Respawn-to-spawn reset ──
+-- ── Spawn reset — kills character, awaits fresh refs ──
 local function resetToSpawn()
-    local spawnLocation = workspace:FindFirstChildOfClass("SpawnLocation")
-    if spawnLocation then
-        rootPart.CFrame = spawnLocation.CFrame + Vector3.new(0, 5, 0)
-        rootPart.AssemblyLinearVelocity = Vector3.zero
-    else
-        -- fallback: kill character to force respawn
-        humanoid.Health = 0
-        task.wait(SPAWN_WAIT)
-        -- CharacterAdded handler below updates refs
-    end
-    task.wait(1)
+    humanoid.Health = 0
+    -- wait for old character to leave, then grab the new one
+    local oldChar = character
+    repeat task.wait(0.1) until player.Character ~= oldChar and player.Character ~= nil
+    task.wait(1) -- let spawn animation settle
+    refreshRefs()
 end
 
 -- ── Proximity prompt trigger ──
@@ -114,7 +128,7 @@ local Window = Rayfield:CreateWindow({
     KeySystem       = false,
 })
 
-local MainTab    = Window:CreateTab("Main", "flag")
+local MainTab = Window:CreateTab("Main", "flag")
 local StatusLabel
 local cycleToggleRef
 
@@ -138,7 +152,6 @@ cycleToggleRef = MainTab:CreateToggle({
             while i <= total and _G.AutoFlag do
                 local batchEnd = math.min(i + BATCH_SIZE - 1, total)
 
-                -- ── Teleport batch ──
                 for j = i, batchEnd do
                     if not _G.AutoFlag then break end
                     local entry = BENDERA[j]
@@ -155,7 +168,6 @@ cycleToggleRef = MainTab:CreateToggle({
 
                     if not _G.AutoFlag then break end
 
-                    -- Per-flag cooldown countdown
                     for t = FLAG_DELAY, 1, -1 do
                         if not _G.AutoFlag then break end
                         StatusLabel:Set(string.format("Status: [%s] next in %ds", entry.name, t))
@@ -165,10 +177,13 @@ cycleToggleRef = MainTab:CreateToggle({
 
                 i = batchEnd + 1
 
-                -- ── Reset to spawn between batches (skip after final batch) ──
                 if i <= total and _G.AutoFlag then
                     StatusLabel:Set("Status: Resetting to spawn...")
                     resetToSpawn()
+                    -- snap immediately to first flag of next batch so
+                    -- prompts fire from the correct live rootPart position
+                    StatusLabel:Set("Status: Resuming after reset...")
+                    task.wait(0.5)
                 end
             end
 
