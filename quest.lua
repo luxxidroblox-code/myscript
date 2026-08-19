@@ -1,7 +1,7 @@
--- Lua 5.1 / Roblox executor  |  bendera_tp.lua  |  Arceus X / Delta
-
-local Players      = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
+-- --- auto_flag_farm.lua ---
+local Rayfield   = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Players    = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local player    = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -9,7 +9,7 @@ local rootPart  = character:WaitForChild("HumanoidRootPart")
 local humanoid  = character:WaitForChild("Humanoid")
 
 local BENDERA = {
-    { name = "Bendera 1",  cf = CFrame.new(22010.752,   291.610, -40318.680,  0.660, -0.000,  0.751,  0.000, 1.000,  0.000, -0.751, -0.000,  0.660) },
+    { name = "Bendera 1",  cf = CFrame.new(22012.752, 291.610, -40320.789, -0.109, 0.000, 0.994, -0.000, 1.000, -0.000, -0.994, -0.000, -0.109) },
     { name = "Bendera 2",  cf = CFrame.new(-10680.044, -147.972,  36229.938,  0.197,  0.000,  0.980,  0.000, 1.000, -0.000, -0.980,  0.000,  0.197) },
     { name = "Bendera 3",  cf = CFrame.new(24321.625,   216.564, -23175.205, -0.987,  0.000, -0.161,  0.000, 1.000,  0.000,  0.161,  0.000, -0.987) },
     { name = "Bendera 4",  cf = CFrame.new(25919.605,   220.652, -18256.594, -0.953, -0.000, -0.304, -0.000, 1.000,  0.000,  0.304,  0.000, -0.953) },
@@ -26,224 +26,198 @@ local BENDERA = {
     { name = "Bendera 15", cf = CFrame.new(27850.434,   129.072,  -3485.787,  0.978, -0.000,  0.210,  0.000, 1.000,  0.000, -0.210, -0.000,  0.978) },
 }
 
-local NPC_QUEST = {
-    name = "NPC Quest",
-    cf   = CFrame.new(25987.922, 220.577, -18501.188, -0.999, 0.000, 0.046, -0.000, 1.000, -0.000, -0.046, -0.000, -0.999)
-}
+local NPC_QUEST_CF = CFrame.new(25987.922, 220.577, -18501.188, -0.999, 0.000, 0.046, -0.000, 1.000, -0.000, -0.046, -0.000, -0.999)
 
--- ============================================================
--- AERIAL_HEIGHT : studs above current position before translate.
---   Moves happen at sky height — server never sees a ground jump.
--- DESCENT_TIME  : seconds for the heartbeat-driven tween down.
---   CFrameValue.Changed fires every frame → velocity cleared every frame.
--- ============================================================
-local AERIAL_HEIGHT = 800
-local DESCENT_TIME  = 7   -- tune: shorter = snappier, longer = safer
+local FLAG_DELAY  = 20
+local HOLD_TIME   = 3
+local BATCH_SIZE  = 4          -- reset spawn every N flags
+local SPAWN_WAIT  = 3          -- seconds to wait after respawn settles
+_G.AutoFlag       = false
 
--- ============================================================
--- AerialTP  (character variant — rootPart instead of bus:PivotTo)
---   1. Zero gravity, clear velocity
---   2. Instant lift to current + AERIAL_HEIGHT
---   3. Instant lateral translate to target + AERIAL_HEIGHT
---   4. Heartbeat-driven CFrameValue tween descent to target
---   5. Restore gravity, call onDone
--- ============================================================
-local function AerialTP(targetCF, onDone)
-    local prevGravity           = workspace.Gravity
-    workspace.Gravity           = 0
+local RAY_PARAMS = RaycastParams.new()
+RAY_PARAMS.FilterType = Enum.RaycastFilterType.Exclude
 
-    rootPart.AssemblyLinearVelocity  = Vector3.zero
-    rootPart.AssemblyAngularVelocity = Vector3.zero
-
-    -- lift
-    rootPart.CFrame = rootPart.CFrame + Vector3.new(0, AERIAL_HEIGHT, 0)
-    task.wait()
-
-    -- lateral snap above target
-    rootPart.CFrame = targetCF + Vector3.new(0, AERIAL_HEIGHT, 0)
-    task.wait()
-
-    -- heartbeat descent via CFrameValue tween
-    local cfVal  = Instance.new("CFrameValue")
-    cfVal.Value  = rootPart.CFrame
-
-    local tweenInfo = TweenInfo.new(DESCENT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-    local conn = cfVal.Changed:Connect(function(newCF)
-        rootPart.CFrame                  = newCF
-        rootPart.AssemblyLinearVelocity  = Vector3.zero
-        rootPart.AssemblyAngularVelocity = Vector3.zero
-    end)
-
-    local tween = TweenService:Create(cfVal, tweenInfo, { Value = targetCF })
-    tween:Play()
-    tween.Completed:Wait()
-
-    conn:Disconnect()
-    cfVal:Destroy()
-
-    -- hard-snap landing
-    rootPart.CFrame = targetCF
-    workspace.Gravity = prevGravity
-
-    if onDone then onDone() end
+-- ── Instant snap: ground-resolve then single CFrame write ──
+local function resolveGroundY(targetCF)
+    RAY_PARAMS.FilterDescendantsInstances = { character }
+    local offsets = {
+        Vector3.new(0,0,0), Vector3.new(2,0,0), Vector3.new(-2,0,0),
+        Vector3.new(0,0,2), Vector3.new(0,0,-2),
+    }
+    local hits = {}
+    for _, off in ipairs(offsets) do
+        local origin = Vector3.new(targetCF.X + off.X, targetCF.Y + 600, targetCF.Z + off.Z)
+        local result = workspace:Raycast(origin, Vector3.new(0, -1200, 0), RAY_PARAMS)
+        if result then table.insert(hits, result.Position.Y) end
+    end
+    if #hits == 0 then return targetCF.Y end
+    local minY = hits[1]
+    for _, y in ipairs(hits) do if y < minY then minY = y end end
+    return minY + 3.2
 end
 
--- ── GUI ──────────────────────────────────────────────────────
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name           = "BenderaTeleportGUI"
-screenGui.ResetOnSpawn   = false
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent         = player.PlayerGui
+local function snapTP(targetCF)
+    local groundY    = resolveGroundY(targetCF)
+    local destination = CFrame.new(targetCF.X, groundY, targetCF.Z) * targetCF.Rotation
+    rootPart.CFrame                = destination
+    rootPart.AssemblyLinearVelocity = Vector3.zero
+    RunService.Stepped:Wait()
+end
 
-local frame = Instance.new("Frame")
-frame.Name             = "MainFrame"
-frame.Size             = UDim2.new(0, 220, 0, 480)
-frame.Position         = UDim2.new(0, 16, 0.5, -240)
-frame.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
-frame.BorderSizePixel  = 0
-frame.Active           = true
-frame.Draggable        = true
-frame.Parent           = screenGui
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
+-- ── Respawn-to-spawn reset ──
+local function resetToSpawn()
+    local spawnLocation = workspace:FindFirstChildOfClass("SpawnLocation")
+    if spawnLocation then
+        rootPart.CFrame = spawnLocation.CFrame + Vector3.new(0, 5, 0)
+        rootPart.AssemblyLinearVelocity = Vector3.zero
+    else
+        -- fallback: kill character to force respawn
+        humanoid.Health = 0
+        task.wait(SPAWN_WAIT)
+        -- CharacterAdded handler below updates refs
+    end
+    task.wait(1)
+end
 
-local stroke = Instance.new("UIStroke", frame)
-stroke.Color     = Color3.fromRGB(80, 60, 180)
-stroke.Thickness = 1.5
+-- ── Proximity prompt trigger ──
+local function fireHoldPrompt(prompt, duration)
+    if not prompt or not prompt:IsA("ProximityPrompt") then return end
+    pcall(function()
+        if fireproximityprompt then fireproximityprompt(prompt) end
+        prompt:InputHoldBegin()
+        task.wait(duration or prompt.HoldDuration)
+        prompt:InputHoldEnd()
+    end)
+end
 
-local header = Instance.new("Frame")
-header.Size             = UDim2.new(1, 0, 0, 38)
-header.BackgroundColor3 = Color3.fromRGB(22, 14, 48)
-header.BorderSizePixel  = 0
-header.Parent           = frame
-Instance.new("UICorner", header).CornerRadius = UDim.new(0, 10)
+local function holdNearbyPrompts(radius)
+    local origin = rootPart.Position
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") then
+            local part = obj.Parent
+            local pos  = part:IsA("BasePart") and part.Position
+                      or (part:IsA("Model") and part:GetPivot().Position)
+            if pos and (pos - origin).Magnitude <= (radius or 20) then
+                fireHoldPrompt(obj, HOLD_TIME)
+            end
+        end
+    end
+end
 
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size                   = UDim2.new(1, -10, 1, 0)
-titleLabel.Position               = UDim2.new(0, 10, 0, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text                   = "⚑  BENDERA TELEPORT"
-titleLabel.TextColor3             = Color3.fromRGB(160, 120, 255)
-titleLabel.Font                   = Enum.Font.GothamBold
-titleLabel.TextSize               = 13
-titleLabel.TextXAlignment         = Enum.TextXAlignment.Left
-titleLabel.Parent                 = header
+-- ── UI ──
+local Window = Rayfield:CreateWindow({
+    Name            = "Auto find flag by .projectsion",
+    LoadingTitle    = "Auto Find Flag",
+    LoadingSubtitle = "by .projectsion",
+    Theme           = "Bloom",
+    ConfigurationSaving = { Enabled = false },
+    KeySystem       = false,
+})
 
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size                   = UDim2.new(1, -20, 0, 16)
-statusLabel.Position               = UDim2.new(0, 10, 0, 42)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Text                   = "Select a destination"
-statusLabel.TextColor3             = Color3.fromRGB(120, 100, 200)
-statusLabel.Font                   = Enum.Font.Gotham
-statusLabel.TextSize               = 11
-statusLabel.TextXAlignment         = Enum.TextXAlignment.Left
-statusLabel.Parent                 = frame
+local MainTab    = Window:CreateTab("Main", "flag")
+local StatusLabel
+local cycleToggleRef
 
-local npcBtn = Instance.new("TextButton")
-npcBtn.Size             = UDim2.new(1, -16, 0, 30)
-npcBtn.Position         = UDim2.new(0, 8, 0, 62)
-npcBtn.BackgroundColor3 = Color3.fromRGB(40, 20, 80)
-npcBtn.BorderSizePixel  = 0
-npcBtn.Text             = "  🧭  NPC Quest"
-npcBtn.TextColor3       = Color3.fromRGB(255, 210, 100)
-npcBtn.Font             = Enum.Font.GothamBold
-npcBtn.TextSize         = 12
-npcBtn.TextXAlignment   = Enum.TextXAlignment.Left
-npcBtn.AutoButtonColor  = false
-npcBtn.Parent           = frame
-Instance.new("UICorner", npcBtn).CornerRadius = UDim.new(0, 6)
-local npcStroke = Instance.new("UIStroke", npcBtn)
-npcStroke.Color     = Color3.fromRGB(180, 120, 50)
-npcStroke.Thickness = 1.2
+MainTab:CreateSection("Auto Flag Farm")
+StatusLabel = MainTab:CreateLabel("Status: Idle", "activity")
 
-local scroll = Instance.new("ScrollingFrame")
-scroll.Size                   = UDim2.new(1, -16, 1, -104)
-scroll.Position               = UDim2.new(0, 8, 0, 100)
-scroll.BackgroundTransparency = 1
-scroll.ScrollBarThickness     = 3
-scroll.ScrollBarImageColor3   = Color3.fromRGB(80, 60, 180)
-scroll.CanvasSize             = UDim2.new(0, 0, 0, 0)
-scroll.AutomaticCanvasSize    = Enum.AutomaticSize.Y
-scroll.BorderSizePixel        = 0
-scroll.Parent                 = frame
+cycleToggleRef = MainTab:CreateToggle({
+    Name         = "Auto Find Flag (1–15)",
+    CurrentValue = false,
+    Callback     = function(Value)
+        _G.AutoFlag = Value
+        if not Value then
+            StatusLabel:Set("Status: Stopped")
+            return
+        end
 
-local listLayout = Instance.new("UIListLayout", scroll)
-listLayout.Padding   = UDim.new(0, 5)
-listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        task.spawn(function()
+            local total = #BENDERA
+            local i     = 1
 
-local teleporting = false
+            while i <= total and _G.AutoFlag do
+                local batchEnd = math.min(i + BATCH_SIZE - 1, total)
 
-local function fireTP(entry)
-    if teleporting then return end
-    teleporting            = true
-    statusLabel.Text       = "Aerial → " .. entry.name .. "..."
-    statusLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
-    task.spawn(function()
-        AerialTP(entry.cf, function()
-            teleporting            = false
-            statusLabel.Text       = "Arrived: " .. entry.name
-            statusLabel.TextColor3 = Color3.fromRGB(100, 255, 160)
-            task.delay(2, function()
-                if not teleporting then
-                    statusLabel.Text       = "Select a destination"
-                    statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
+                -- ── Teleport batch ──
+                for j = i, batchEnd do
+                    if not _G.AutoFlag then break end
+                    local entry = BENDERA[j]
+
+                    StatusLabel:Set("Status: Snap → " .. entry.name)
+                    snapTP(entry.cf)
+                    task.wait(0.3)
+
+                    if not _G.AutoFlag then break end
+
+                    StatusLabel:Set("Status: Holding @ " .. entry.name)
+                    holdNearbyPrompts(20)
+                    task.wait(0.2)
+
+                    if not _G.AutoFlag then break end
+
+                    -- Per-flag cooldown countdown
+                    for t = FLAG_DELAY, 1, -1 do
+                        if not _G.AutoFlag then break end
+                        StatusLabel:Set(string.format("Status: [%s] next in %ds", entry.name, t))
+                        task.wait(1)
+                    end
                 end
-            end)
+
+                i = batchEnd + 1
+
+                -- ── Reset to spawn between batches (skip after final batch) ──
+                if i <= total and _G.AutoFlag then
+                    StatusLabel:Set("Status: Resetting to spawn...")
+                    resetToSpawn()
+                end
+            end
+
+            _G.AutoFlag = false
+            StatusLabel:Set("Status: Cycle complete ✓")
+            if cycleToggleRef then cycleToggleRef:Set(false) end
         end)
-    end)
-end
+    end,
+})
 
-local function makeBtn(entry, index)
-    local btn = Instance.new("TextButton")
-    btn.Size             = UDim2.new(1, 0, 0, 30)
-    btn.BackgroundColor3 = Color3.fromRGB(24, 18, 52)
-    btn.BorderSizePixel  = 0
-    btn.Text             = string.format("  ⚑  %s", entry.name)
-    btn.TextColor3       = Color3.fromRGB(200, 180, 255)
-    btn.Font             = Enum.Font.Gotham
-    btn.TextSize         = 12
-    btn.TextXAlignment   = Enum.TextXAlignment.Left
-    btn.AutoButtonColor  = false
-    btn.LayoutOrder      = index
-    btn.Parent           = scroll
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-    Instance.new("UIStroke", btn).Color = Color3.fromRGB(60, 40, 130)
+MainTab:CreateSection("NPC Quest")
 
-    btn.MouseEnter:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.12), {
-            BackgroundColor3 = Color3.fromRGB(50, 30, 110)
-        }):Play()
-    end)
-    btn.MouseLeave:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.12), {
-            BackgroundColor3 = Color3.fromRGB(24, 18, 52)
-        }):Play()
-    end)
-    btn.MouseButton1Click:Connect(function() fireTP(entry) end)
-end
+MainTab:CreateButton({
+    Name     = "Teleport to NPC Quest",
+    Callback = function()
+        StatusLabel:Set("Status: Snap → NPC Quest...")
+        task.spawn(function()
+            snapTP(NPC_QUEST_CF)
+            task.wait(0.3)
+            holdNearbyPrompts(20)
+            StatusLabel:Set("Status: NPC Quest done")
+        end)
+    end,
+})
 
-for i, entry in ipairs(BENDERA) do
-    makeBtn(entry, i)
-end
+MainTab:CreateSection("Settings")
 
-npcBtn.MouseEnter:Connect(function()
-    TweenService:Create(npcBtn, TweenInfo.new(0.12), {
-        BackgroundColor3 = Color3.fromRGB(70, 40, 120)
-    }):Play()
-end)
-npcBtn.MouseLeave:Connect(function()
-    TweenService:Create(npcBtn, TweenInfo.new(0.12), {
-        BackgroundColor3 = Color3.fromRGB(40, 20, 80)
-    }):Play()
-end)
-npcBtn.MouseButton1Click:Connect(function() fireTP(NPC_QUEST) end)
+MainTab:CreateSlider({
+    Name         = "Flag Delay (seconds)",
+    Range        = {5, 60},
+    Increment    = 1,
+    CurrentValue = FLAG_DELAY,
+    Callback     = function(Value) FLAG_DELAY = Value end,
+})
+
+MainTab:CreateSlider({
+    Name         = "Hold Duration (seconds)",
+    Range        = {1, 6},
+    Increment    = 0.5,
+    CurrentValue = HOLD_TIME,
+    Callback     = function(Value) HOLD_TIME = Value end,
+})
 
 player.CharacterAdded:Connect(function(char)
-    character   = char
-    rootPart    = char:WaitForChild("HumanoidRootPart")
-    humanoid    = char:WaitForChild("Humanoid")
-    teleporting = false
-    workspace.Gravity      = 196.2   -- safety: reset if respawn mid-tween
-    statusLabel.Text       = "Select a destination"
-    statusLabel.TextColor3 = Color3.fromRGB(120, 100, 200)
+    character = char
+    rootPart  = char:WaitForChild("HumanoidRootPart")
+    humanoid  = char:WaitForChild("Humanoid")
+    RAY_PARAMS.FilterDescendantsInstances = { character }
+    if StatusLabel then
+        StatusLabel:Set("Status: Respawned — " .. (_G.AutoFlag and "resuming..." or "Idle"))
+    end
 end)
