@@ -28,20 +28,21 @@ local BENDERA = {
 
 local NPC_QUEST_CF = CFrame.new(25987.922, 220.577, -18501.188, -0.999, 0.000, 0.046, -0.000, 1.000, -0.000, -0.046, -0.000, -0.999)
 
-local FLAG_DELAY = 20
-local HOLD_TIME  = 3
-local BATCH_SIZE = 4
-_G.AutoFlag      = false
+local FLAG_DELAY  = 20
+local HOLD_TIME   = 3
+local BATCH_SIZE  = 4
+local PROMPT_RADIUS = 20
+local PROMPT_RETRY_TIMEOUT = 6  -- seconds max to keep retrying per flag
+_G.AutoFlag = false
 
 local RAY_PARAMS = RaycastParams.new()
 RAY_PARAMS.FilterType = Enum.RaycastFilterType.Exclude
 
--- ── Refresh live character refs (call after any respawn) ──
+-- ── Refresh live refs after respawn ──
 local function refreshRefs()
     character = player.Character or player.CharacterAdded:Wait()
     rootPart  = character:WaitForChild("HumanoidRootPart")
     humanoid  = character:WaitForChild("Humanoid")
-    -- wait until humanoid is fully alive before proceeding
     while humanoid.Health <= 0 do task.wait(0.1) end
     RAY_PARAMS.FilterDescendantsInstances = { character }
 end
@@ -65,7 +66,7 @@ local function resolveGroundY(targetCF)
     return minY + 3.2
 end
 
--- ── Ownership-forced instant snap ──
+-- ── Instant snap with ownership force ──
 local function snapTP(targetCF)
     local groundY     = resolveGroundY(targetCF)
     local destination = CFrame.new(targetCF.X, groundY, targetCF.Z) * targetCF.Rotation
@@ -83,39 +84,69 @@ local function snapTP(targetCF)
     humanoid:ChangeState(Enum.HumanoidStateType.Running)
 end
 
--- ── Spawn reset — kills character, awaits fresh refs ──
-local function resetToSpawn()
-    humanoid.Health = 0
-    -- wait for old character to leave, then grab the new one
-    local oldChar = character
-    repeat task.wait(0.1) until player.Character ~= oldChar and player.Character ~= nil
-    task.wait(1) -- let spawn animation settle
-    refreshRefs()
-end
-
--- ── Proximity prompt trigger ──
-local function fireHoldPrompt(prompt, duration)
+-- ── Fire a single prompt ──
+local function firePrompt(prompt)
     if not prompt or not prompt:IsA("ProximityPrompt") then return end
     pcall(function()
-        if fireproximityprompt then fireproximityprompt(prompt) end
+        if fireproximityprompt then
+            fireproximityprompt(prompt)
+        end
         prompt:InputHoldBegin()
-        task.wait(duration or prompt.HoldDuration)
+        task.wait(HOLD_TIME)
         prompt:InputHoldEnd()
     end)
 end
 
-local function holdNearbyPrompts(radius)
+-- ── Fresh rescan + fire every prompt in radius ──
+-- Returns true if at least one prompt was found and fired
+local function scanAndFirePrompts(radius)
     local origin = rootPart.Position
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") then
+    local fired  = false
+    -- GetDescendants called fresh every invocation — no cached list
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and obj.Enabled then
             local part = obj.Parent
-            local pos  = part:IsA("BasePart") and part.Position
-                      or (part:IsA("Model") and part:GetPivot().Position)
-            if pos and (pos - origin).Magnitude <= (radius or 20) then
-                fireHoldPrompt(obj, HOLD_TIME)
+            local pos  = nil
+            if part:IsA("BasePart") then
+                pos = part.Position
+            elseif part:IsA("Model") then
+                pos = part:GetPivot().Position
+            end
+            if pos and (pos - origin).Magnitude <= (radius or PROMPT_RADIUS) then
+                firePrompt(obj)
+                fired = true
             end
         end
     end
+    return fired
+end
+
+-- ── Retry loop: rescan + fire until a prompt fires or timeout ──
+local function holdPromptsWithRetry(radius, label)
+    local deadline = tick() + PROMPT_RETRY_TIMEOUT
+    local attempts = 0
+    local fired    = false
+
+    repeat
+        attempts += 1
+        fired = scanAndFirePrompts(radius)
+        if not fired then
+            -- Brief wait then re-snap to exact CFrame to reset server-side
+            -- proximity detection, then rescan
+            task.wait(0.4)
+        end
+    until fired or tick() >= deadline or not _G.AutoFlag
+
+    return fired
+end
+
+-- ── Spawn reset ──
+local function resetToSpawn()
+    humanoid.Health = 0
+    local oldChar = character
+    repeat task.wait(0.1) until player.Character ~= oldChar and player.Character ~= nil
+    task.wait(1.2)
+    refreshRefs()
 end
 
 -- ── UI ──
@@ -156,14 +187,24 @@ cycleToggleRef = MainTab:CreateToggle({
                     if not _G.AutoFlag then break end
                     local entry = BENDERA[j]
 
+                    -- Snap to flag
                     StatusLabel:Set("Status: Snap → " .. entry.name)
                     snapTP(entry.cf)
                     task.wait(0.3)
 
                     if not _G.AutoFlag then break end
 
-                    StatusLabel:Set("Status: Holding @ " .. entry.name)
-                    holdNearbyPrompts(20)
+                    -- Fresh rescan + retry loop every teleport
+                    StatusLabel:Set("Status: Scanning prompts @ " .. entry.name)
+                    local ok = holdPromptsWithRetry(PROMPT_RADIUS, entry.name)
+
+                    if not ok then
+                        -- Re-snap and try one final time before giving up
+                        snapTP(entry.cf)
+                        task.wait(0.3)
+                        scanAndFirePrompts(PROMPT_RADIUS)
+                    end
+
                     task.wait(0.2)
 
                     if not _G.AutoFlag then break end
@@ -180,10 +221,8 @@ cycleToggleRef = MainTab:CreateToggle({
                 if i <= total and _G.AutoFlag then
                     StatusLabel:Set("Status: Resetting to spawn...")
                     resetToSpawn()
-                    -- snap immediately to first flag of next batch so
-                    -- prompts fire from the correct live rootPart position
-                    StatusLabel:Set("Status: Resuming after reset...")
                     task.wait(0.5)
+                    StatusLabel:Set("Status: Resuming after reset...")
                 end
             end
 
@@ -203,7 +242,7 @@ MainTab:CreateButton({
         task.spawn(function()
             snapTP(NPC_QUEST_CF)
             task.wait(0.3)
-            holdNearbyPrompts(20)
+            holdPromptsWithRetry(PROMPT_RADIUS, "NPC Quest")
             StatusLabel:Set("Status: NPC Quest done")
         end)
     end,
