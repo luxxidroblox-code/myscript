@@ -28,17 +28,14 @@ local BENDERA = {
 
 local NPC_QUEST_CF = CFrame.new(25987.922, 220.577, -18501.188, -0.999, 0.000, 0.046, -0.000, 1.000, -0.000, -0.046, -0.000, -0.999)
 
-local FLAG_DELAY  = 20
-local HOLD_TIME   = 3
-local BATCH_SIZE  = 4
-local PROMPT_RADIUS = 20
-local PROMPT_RETRY_TIMEOUT = 6  -- seconds max to keep retrying per flag
-_G.AutoFlag = false
+local FLAG_DELAY = 20
+local HOLD_TIME  = 3
+_G.AutoFlag      = false
 
 local RAY_PARAMS = RaycastParams.new()
 RAY_PARAMS.FilterType = Enum.RaycastFilterType.Exclude
 
--- ── Refresh live refs after respawn ──
+-- ── Refresh refs after every respawn ──
 local function refreshRefs()
     character = player.Character or player.CharacterAdded:Wait()
     rootPart  = character:WaitForChild("HumanoidRootPart")
@@ -66,7 +63,7 @@ local function resolveGroundY(targetCF)
     return minY + 3.2
 end
 
--- ── Instant snap with ownership force ──
+-- ── Ownership-forced instant snap ──
 local function snapTP(targetCF)
     local groundY     = resolveGroundY(targetCF)
     local destination = CFrame.new(targetCF.X, groundY, targetCF.Z) * targetCF.Rotation
@@ -84,69 +81,42 @@ local function snapTP(targetCF)
     humanoid:ChangeState(Enum.HumanoidStateType.Running)
 end
 
--- ── Fire a single prompt ──
+-- ── Kill + await fresh character ──
+local function resetToSpawn()
+    local oldChar = character
+    humanoid.Health = 0
+    repeat task.wait(0.1) until player.Character ~= oldChar and player.Character ~= nil
+    task.wait(1.5)
+    refreshRefs()
+end
+
+-- ── Fire single prompt ──
 local function firePrompt(prompt)
     if not prompt or not prompt:IsA("ProximityPrompt") then return end
     pcall(function()
-        if fireproximityprompt then
-            fireproximityprompt(prompt)
-        end
+        if fireproximityprompt then fireproximityprompt(prompt) end
         prompt:InputHoldBegin()
         task.wait(HOLD_TIME)
         prompt:InputHoldEnd()
     end)
 end
 
--- ── Fresh rescan + fire every prompt in radius ──
--- Returns true if at least one prompt was found and fired
+-- ── Fresh workspace scan every call — no cache ──
 local function scanAndFirePrompts(radius)
     local origin = rootPart.Position
     local fired  = false
-    -- GetDescendants called fresh every invocation — no cached list
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("ProximityPrompt") and obj.Enabled then
             local part = obj.Parent
-            local pos  = nil
-            if part:IsA("BasePart") then
-                pos = part.Position
-            elseif part:IsA("Model") then
-                pos = part:GetPivot().Position
-            end
-            if pos and (pos - origin).Magnitude <= (radius or PROMPT_RADIUS) then
+            local pos  = part:IsA("BasePart") and part.Position
+                      or (part:IsA("Model") and part:GetPivot().Position)
+            if pos and (pos - origin).Magnitude <= (radius or 20) then
                 firePrompt(obj)
                 fired = true
             end
         end
     end
     return fired
-end
-
--- ── Retry loop: rescan + fire until a prompt fires or timeout ──
-local function holdPromptsWithRetry(radius, label)
-    local deadline = tick() + PROMPT_RETRY_TIMEOUT
-    local attempts = 0
-    local fired    = false
-
-    repeat
-        attempts += 1
-        fired = scanAndFirePrompts(radius)
-        if not fired then
-            -- Brief wait then re-snap to exact CFrame to reset server-side
-            -- proximity detection, then rescan
-            task.wait(0.4)
-        end
-    until fired or tick() >= deadline or not _G.AutoFlag
-
-    return fired
-end
-
--- ── Spawn reset ──
-local function resetToSpawn()
-    humanoid.Health = 0
-    local oldChar = character
-    repeat task.wait(0.1) until player.Character ~= oldChar and player.Character ~= nil
-    task.wait(1.2)
-    refreshRefs()
 end
 
 -- ── UI ──
@@ -177,52 +147,46 @@ cycleToggleRef = MainTab:CreateToggle({
         end
 
         task.spawn(function()
-            local total = #BENDERA
-            local i     = 1
+            for i, entry in ipairs(BENDERA) do
+                if not _G.AutoFlag then break end
 
-            while i <= total and _G.AutoFlag do
-                local batchEnd = math.min(i + BATCH_SIZE - 1, total)
+                -- 1. Snap to flag
+                StatusLabel:Set("Status: Snap → " .. entry.name)
+                snapTP(entry.cf)
+                task.wait(0.4)
 
-                for j = i, batchEnd do
-                    if not _G.AutoFlag then break end
-                    local entry = BENDERA[j]
+                if not _G.AutoFlag then break end
 
-                    -- Snap to flag
-                    StatusLabel:Set("Status: Snap → " .. entry.name)
+                -- 2. Fire prompts fresh every flag
+                StatusLabel:Set("Status: Firing @ " .. entry.name)
+                local fired = scanAndFirePrompts(20)
+                if not fired then
+                    -- Re-snap and retry once if nothing found
+                    task.wait(0.3)
                     snapTP(entry.cf)
                     task.wait(0.3)
-
-                    if not _G.AutoFlag then break end
-
-                    -- Fresh rescan + retry loop every teleport
-                    StatusLabel:Set("Status: Scanning prompts @ " .. entry.name)
-                    local ok = holdPromptsWithRetry(PROMPT_RADIUS, entry.name)
-
-                    if not ok then
-                        -- Re-snap and try one final time before giving up
-                        snapTP(entry.cf)
-                        task.wait(0.3)
-                        scanAndFirePrompts(PROMPT_RADIUS)
-                    end
-
-                    task.wait(0.2)
-
-                    if not _G.AutoFlag then break end
-
-                    for t = FLAG_DELAY, 1, -1 do
-                        if not _G.AutoFlag then break end
-                        StatusLabel:Set(string.format("Status: [%s] next in %ds", entry.name, t))
-                        task.wait(1)
-                    end
+                    scanAndFirePrompts(20)
                 end
 
-                i = batchEnd + 1
+                task.wait(0.2)
 
-                if i <= total and _G.AutoFlag then
-                    StatusLabel:Set("Status: Resetting to spawn...")
+                if not _G.AutoFlag then break end
+
+                -- 3. Countdown
+                for t = FLAG_DELAY, 1, -1 do
+                    if not _G.AutoFlag then break end
+                    StatusLabel:Set(string.format("Status: [%s] next in %ds", entry.name, t))
+                    task.wait(1)
+                end
+
+                if not _G.AutoFlag then break end
+
+                -- 4. Reset after every flag (skip after last one)
+                if i < #BENDERA then
+                    StatusLabel:Set("Status: Resetting after " .. entry.name .. "...")
                     resetToSpawn()
-                    task.wait(0.5)
-                    StatusLabel:Set("Status: Resuming after reset...")
+                    StatusLabel:Set("Status: Ready for " .. BENDERA[i + 1].name)
+                    task.wait(0.3)
                 end
             end
 
@@ -242,7 +206,7 @@ MainTab:CreateButton({
         task.spawn(function()
             snapTP(NPC_QUEST_CF)
             task.wait(0.3)
-            holdPromptsWithRetry(PROMPT_RADIUS, "NPC Quest")
+            scanAndFirePrompts(20)
             StatusLabel:Set("Status: NPC Quest done")
         end)
     end,
