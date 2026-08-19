@@ -35,7 +35,7 @@ _G.AutoFlag      = false
 local RAY_PARAMS = RaycastParams.new()
 RAY_PARAMS.FilterType = Enum.RaycastFilterType.Exclude
 
--- ── Refresh refs after every respawn ──
+-- ── Refresh refs after respawn ──
 local function refreshRefs()
     character = player.Character or player.CharacterAdded:Wait()
     rootPart  = character:WaitForChild("HumanoidRootPart")
@@ -63,21 +63,26 @@ local function resolveGroundY(targetCF)
     return minY + 3.2
 end
 
--- ── Ownership-forced instant snap ──
+-- ── Instant snap — passive state, no jump impulse ──
 local function snapTP(targetCF)
     local groundY     = resolveGroundY(targetCF)
     local destination = CFrame.new(targetCF.X, groundY, targetCF.Z) * targetCF.Rotation
 
     if setsimulationradius then setsimulationradius(math.huge, math.huge) end
 
-    humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    -- GettingUp: physics-passive, no vertical impulse, no roof clip
+    humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+
     rootPart.CFrame                  = destination
     rootPart.AssemblyLinearVelocity  = Vector3.zero
     rootPart.AssemblyAngularVelocity = Vector3.zero
     RunService.Stepped:Wait()
+
+    -- Second write absorbs any server correction that lands in that frame
     rootPart.CFrame                  = destination
     rootPart.AssemblyLinearVelocity  = Vector3.zero
     RunService.Stepped:Wait()
+
     humanoid:ChangeState(Enum.HumanoidStateType.Running)
 end
 
@@ -150,18 +155,17 @@ cycleToggleRef = MainTab:CreateToggle({
             for i, entry in ipairs(BENDERA) do
                 if not _G.AutoFlag then break end
 
-                -- 1. Snap to flag
+                -- 1. Snap
                 StatusLabel:Set("Status: Snap → " .. entry.name)
                 snapTP(entry.cf)
                 task.wait(0.4)
 
                 if not _G.AutoFlag then break end
 
-                -- 2. Fire prompts fresh every flag
+                -- 2. Fire prompts
                 StatusLabel:Set("Status: Firing @ " .. entry.name)
                 local fired = scanAndFirePrompts(20)
                 if not fired then
-                    -- Re-snap and retry once if nothing found
                     task.wait(0.3)
                     snapTP(entry.cf)
                     task.wait(0.3)
@@ -181,7 +185,7 @@ cycleToggleRef = MainTab:CreateToggle({
 
                 if not _G.AutoFlag then break end
 
-                -- 4. Reset after every flag (skip after last one)
+                -- 4. Reset after every flag except the last
                 if i < #BENDERA then
                     StatusLabel:Set("Status: Resetting after " .. entry.name .. "...")
                     resetToSpawn()
