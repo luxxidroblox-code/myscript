@@ -2,34 +2,38 @@
 -- Executor: Arceus X / Delta
 -- Runtime: Roblox Luau
 
-local Rayfield     = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
-local Players      = game:GetService("Players")
-local RunService   = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
-local RepStorage   = game:GetService("ReplicatedStorage")
+local Rayfield   = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+local Players    = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local RepStorage = game:GetService("ReplicatedStorage")
 
 local player    = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local rootPart  = character:WaitForChild("HumanoidRootPart")
 local humanoid  = character:WaitForChild("Humanoid")
 
--- ── CFrames: Minigame ─────────────────────────────────────────────
+-- ── Config ────────────────────────────────────────────────────────
+local cfg = {
+    miniRunning = false,
+    miniSpeed   = 30,
+    miniReset   = 1.5,
+    flagRunning = false,
+    flagDelay   = 20,
+    holdTime    = 3,
+}
+
+-- ── Raycast params ────────────────────────────────────────────────
+local RAY_PARAMS = RaycastParams.new()
+RAY_PARAMS.FilterType = Enum.RaycastFilterType.Exclude
+RAY_PARAMS.FilterDescendantsInstances = { character }
+
+-- ── Minigame CFrame ───────────────────────────────────────────────
 local CF_START = CFrame.new(-10583.440, -148.798, 36687.500,
     -0.901, 0.000, -0.434,
      0.000, 1.000,  0.000,
      0.434, 0.000, -0.901)
 
-local CF_END = CFrame.new(-10375.147, -148.798, 36590.812,
-     0.351,-0.000, -0.937,
-     0.000, 1.000, -0.000,
-     0.937, 0.000,  0.351)
-
-local CF_RETURN = CFrame.new(-10583.391, -148.798, 36654.738,
-    -0.270, 0.000,  0.963,
-     0.000, 1.000, -0.000,
-    -0.963,-0.000, -0.270)
-
--- ── CFrames: Bendera ──────────────────────────────────────────────
+-- ── Bendera CFrames ───────────────────────────────────────────────
 local BENDERA = {
     { name = "Bendera 1",  cf = CFrame.new(22012.752, 291.610, -40320.789, -0.109, 0.000, 0.994, -0.000, 1.000, -0.000, -0.994, -0.000, -0.109) },
     { name = "Bendera 2",  cf = CFrame.new(-10680.044, -147.972, 36229.938,  0.197,  0.000,  0.980,  0.000, 1.000, -0.000, -0.980,  0.000,  0.197) },
@@ -51,22 +55,7 @@ local BENDERA = {
 local NPC_QUEST_CF = CFrame.new(25987.922, 220.577, -18501.188,
     -0.999, 0.000, 0.046, -0.000, 1.000, -0.000, -0.046, -0.000, -0.999)
 
--- ── Config ────────────────────────────────────────────────────────
-local cfg = {
-    miniRunning = false,
-    miniSpeed   = 30,
-    miniReset   = 1.5,
-    flagRunning = false,
-    flagDelay   = 20,
-    holdTime    = 3,
-}
-
--- ── Raycast params ────────────────────────────────────────────────
-local RAY_PARAMS = RaycastParams.new()
-RAY_PARAMS.FilterType = Enum.RaycastFilterType.Exclude
-RAY_PARAMS.FilterDescendantsInstances = { character }
-
--- ── Shared ref refresh ────────────────────────────────────────────
+-- ── Refs ──────────────────────────────────────────────────────────
 local function refreshRefs()
     character = player.Character or player.CharacterAdded:Wait()
     rootPart  = character:WaitForChild("HumanoidRootPart")
@@ -94,7 +83,7 @@ local function resolveGroundY(targetCF)
     return minY + 3.2
 end
 
--- ── Snap teleport (GettingUp passive state) ───────────────────────
+-- ── Snap teleport ─────────────────────────────────────────────────
 local function snapTP(targetCF)
     local groundY     = resolveGroundY(targetCF)
     local destination = CFrame.new(targetCF.X, groundY, targetCF.Z) * targetCF.Rotation
@@ -104,51 +93,22 @@ local function snapTP(targetCF)
     rootPart.AssemblyLinearVelocity  = Vector3.zero
     rootPart.AssemblyAngularVelocity = Vector3.zero
     RunService.Stepped:Wait()
-    rootPart.CFrame                 = destination
-    rootPart.AssemblyLinearVelocity = Vector3.zero
+    rootPart.CFrame                  = destination
+    rootPart.AssemblyLinearVelocity  = Vector3.zero
     RunService.Stepped:Wait()
     humanoid:ChangeState(Enum.HumanoidStateType.Running)
 end
 
--- ── Smooth tween move (minigame legs) ────────────────────────────
-local function smoothMove(targetCF, speed)
-    local hrp = rootPart
-    if not hrp then return end
-    local dist = (targetCF.Position - hrp.CFrame.Position).Magnitude
-    local dur  = math.max(dist / (speed * 10), 0.5)
-    local val  = Instance.new("CFrameValue")
-    val.Value  = hrp.CFrame
-    local tween = TweenService:Create(val,
-        TweenInfo.new(dur, Enum.EasingStyle.Linear),
-        { Value = targetCF })
-    local conn = val:GetPropertyChangedSignal("Value"):Connect(function()
-        if rootPart then rootPart.CFrame = val.Value end
-    end)
-    tween:Play()
-    tween.Completed:Wait()
-    conn:Disconnect()
-    val:Destroy()
-end
-
--- ── Reset: kill → respawn → refresh ──────────────────────────────
-local function resetToSpawn()
+-- ── Reset ─────────────────────────────────────────────────────────
+local function resetToSpawn(delay)
     local oldChar = character
     humanoid.Health = 0
     repeat task.wait(0.1) until player.Character ~= oldChar and player.Character ~= nil
-    task.wait(cfg.miniReset)
+    task.wait(delay or 1.5)
     refreshRefs()
 end
 
--- ── Reset (flag variant uses same reset delay) ────────────────────
-local function resetToSpawnFlag()
-    local oldChar = character
-    humanoid.Health = 0
-    repeat task.wait(0.1) until player.Character ~= oldChar and player.Character ~= nil
-    task.wait(1.5)
-    refreshRefs()
-end
-
--- ── Proximity prompt fire ─────────────────────────────────────────
+-- ── Prompt fire ───────────────────────────────────────────────────
 local function firePrompt(prompt)
     if not prompt or not prompt:IsA("ProximityPrompt") then return end
     pcall(function()
@@ -176,9 +136,75 @@ local function scanAndFirePrompts(radius)
     return fired
 end
 
--- ── Rayfield Window ───────────────────────────────────────────────
+-- ════════════════════════════════════════════════════════════════
+-- HRP HEARTBEAT WALKER
+-- MULAI  → lock forward dir, walk forward at 30 stud/s
+-- BALIK  → reverse locked dir, walk back
+-- SELESAI → stop, reset, snap back to CF_START
+-- ════════════════════════════════════════════════════════════════
+local miniPhase = "idle"
+local walkConn  = nil
+local lockedDir = nil
+local MiniStatus
+
+local function stopWalk()
+    if walkConn then
+        walkConn:Disconnect()
+        walkConn = nil
+    end
+end
+
+local function startWalk(dir)
+    stopWalk()
+    lockedDir = dir
+    walkConn  = RunService.Heartbeat:Connect(function(dt)
+        if not rootPart then stopWalk(); return end
+        local cur  = rootPart.CFrame
+        local step = lockedDir * cfg.miniSpeed * dt
+        rootPart.CFrame = CFrame.new(
+            cur.X + step.X,
+            cur.Y,
+            cur.Z + step.Z
+        ) * CFrame.fromMatrix(Vector3.zero, cur.XVector, cur.YVector, cur.ZVector)
+    end)
+end
+
+-- Persistent listener — gate is cfg.miniRunning
+local MiniEvent = RepStorage["17Agustus"].ShowInfoMessage
+MiniEvent.OnClientEvent:Connect(function(msg)
+    if not cfg.miniRunning then return end
+    local text = tostring(msg):upper()
+
+    if text:find("MULAI") and miniPhase == "idle" then
+        miniPhase = "forward"
+        if MiniStatus then MiniStatus:Set("Status: MULAI — walking forward") end
+        local fwd = Vector3.new(rootPart.CFrame.LookVector.X, 0, rootPart.CFrame.LookVector.Z).Unit
+        startWalk(fwd)
+
+    elseif (text:find("PUTER") or text:find("BALIK") or text:find("KEMBALI")) and miniPhase == "forward" then
+        miniPhase = "returning"
+        if MiniStatus then MiniStatus:Set("Status: Balik — walking back") end
+        startWalk(-lockedDir)
+
+    elseif (text:find("SELESAI") or text:find("FINISH")) and miniPhase ~= "idle" then
+        stopWalk()
+        miniPhase = "idle"
+        if MiniStatus then MiniStatus:Set("Status: Done — resetting...") end
+        task.spawn(function()
+            if not cfg.miniRunning then return end
+            resetToSpawn(cfg.miniReset)
+            if not cfg.miniRunning then return end
+            snapTP(CF_START)
+            if MiniStatus then MiniStatus:Set("Status: Waiting for MULAI...") end
+        end)
+    end
+end)
+
+-- ════════════════════════════════════════════════════════════════
+-- RAYFIELD
+-- ════════════════════════════════════════════════════════════════
 local Window = Rayfield:CreateWindow({
-    Name            = "17Agustus Farm",
+    Name            = "Bxi Event",
     LoadingTitle    = "Projectsion",
     LoadingSubtitle = "by .projectsion",
     Theme           = "Bloom",
@@ -186,67 +212,25 @@ local Window = Rayfield:CreateWindow({
     KeySystem       = false,
 })
 
--- ════════════════════════════════════════════════════════════════
--- TAB 1 — MINIGAME
--- ════════════════════════════════════════════════════════════════
+-- ── Tab 1: Minigame ───────────────────────────────────────────────
 local MiniTab = Window:CreateTab("Minigame", "zap")
-
 MiniTab:CreateSection("Auto Minigame")
-local MiniStatus = MiniTab:CreateLabel("Status: Idle")
-
--- Persistent listener — bound on load, gate is cfg.miniRunning
-local MiniEvent = RepStorage["17Agustus"].ShowInfoMessage
-MiniEvent.OnClientEvent:Connect(function(msg)
-    if not cfg.miniRunning then return end
-    if not tostring(msg):upper():find("MULAI") then return end
-
-    task.spawn(function()
-        humanoid.WalkSpeed = cfg.miniSpeed
-        MiniStatus:Set("Status: Running → End")
-
-        smoothMove(CF_END, cfg.miniSpeed)
-        if not cfg.miniRunning then return end
-
-        MiniStatus:Set("Status: Running → Return")
-        smoothMove(CF_RETURN, cfg.miniSpeed)
-        if not cfg.miniRunning then return end
-
-        MiniStatus:Set("Status: Resetting...")
-        resetToSpawn()
-        if not cfg.miniRunning then return end
-
-        snapTP(CF_START)
-        humanoid.WalkSpeed = cfg.miniSpeed
-        MiniStatus:Set("Status: Waiting for MULAI...")
-    end)
-end)
+MiniStatus = MiniTab:CreateLabel("Status: Idle")
 
 MiniTab:CreateToggle({
     Name         = "Auto Minigame",
     CurrentValue = false,
-    Flag         = "AutoMini",
     Callback     = function(state)
         cfg.miniRunning = state
-        if state then
-            snapTP(CF_START)
-            humanoid.WalkSpeed = cfg.miniSpeed
-            MiniStatus:Set("Status: Waiting for MULAI...")
-        else
+        if not state then
+            stopWalk()
+            miniPhase = "idle"
             MiniStatus:Set("Status: Stopped")
+        else
+            miniPhase = "idle"
+            snapTP(CF_START)
+            MiniStatus:Set("Status: Waiting for MULAI...")
         end
-    end,
-})
-
-MiniTab:CreateSlider({
-    Name         = "Move Speed",
-    Range        = { 16, 100 },
-    Increment    = 1,
-    Suffix       = "stud/s",
-    CurrentValue = cfg.miniSpeed,
-    Flag         = "MiniSpeed",
-    Callback     = function(val)
-        cfg.miniSpeed = val
-        if cfg.miniRunning then humanoid.WalkSpeed = val end
     end,
 })
 
@@ -256,17 +240,13 @@ MiniTab:CreateSlider({
     Increment    = 0.5,
     Suffix       = "s",
     CurrentValue = cfg.miniReset,
-    Flag         = "MiniReset",
     Callback     = function(val) cfg.miniReset = val end,
 })
 
--- ════════════════════════════════════════════════════════════════
--- TAB 2 — AUTO FLAG
--- ════════════════════════════════════════════════════════════════
+-- ── Tab 2: Auto Flag ──────────────────────────────────────────────
 local FlagTab = Window:CreateTab("Auto Flag", "flag")
-
 FlagTab:CreateSection("Auto Flag Farm")
-local FlagStatus   = FlagTab:CreateLabel("Status: Idle")
+local FlagStatus  = FlagTab:CreateLabel("Status: Idle")
 local flagToggleRef
 
 flagToggleRef = FlagTab:CreateToggle({
@@ -274,10 +254,7 @@ flagToggleRef = FlagTab:CreateToggle({
     CurrentValue = false,
     Callback     = function(state)
         cfg.flagRunning = state
-        if not state then
-            FlagStatus:Set("Status: Stopped")
-            return
-        end
+        if not state then FlagStatus:Set("Status: Stopped"); return end
 
         task.spawn(function()
             for i, entry in ipairs(BENDERA) do
@@ -292,9 +269,7 @@ flagToggleRef = FlagTab:CreateToggle({
                 FlagStatus:Set("Status: Firing @ " .. entry.name)
                 local fired = scanAndFirePrompts(20)
                 if not fired then
-                    task.wait(0.3)
-                    snapTP(entry.cf)
-                    task.wait(0.3)
+                    task.wait(0.3); snapTP(entry.cf); task.wait(0.3)
                     scanAndFirePrompts(20)
                 end
 
@@ -311,7 +286,7 @@ flagToggleRef = FlagTab:CreateToggle({
 
                 if i < #BENDERA then
                     FlagStatus:Set("Status: Resetting after " .. entry.name .. "...")
-                    resetToSpawnFlag()
+                    resetToSpawn(1.5)
                     FlagStatus:Set("Status: Ready for " .. BENDERA[i + 1].name)
                     task.wait(0.3)
                 end
@@ -325,7 +300,6 @@ flagToggleRef = FlagTab:CreateToggle({
 })
 
 FlagTab:CreateSection("NPC Quest")
-
 FlagTab:CreateButton({
     Name     = "Teleport to NPC Quest",
     Callback = function()
@@ -340,7 +314,6 @@ FlagTab:CreateButton({
 })
 
 FlagTab:CreateSection("Settings")
-
 FlagTab:CreateSlider({
     Name         = "Flag Delay (seconds)",
     Range        = { 5, 60 },
@@ -348,7 +321,6 @@ FlagTab:CreateSlider({
     CurrentValue = cfg.flagDelay,
     Callback     = function(val) cfg.flagDelay = val end,
 })
-
 FlagTab:CreateSlider({
     Name         = "Hold Duration (seconds)",
     Range        = { 1, 6 },
@@ -357,12 +329,14 @@ FlagTab:CreateSlider({
     Callback     = function(val) cfg.holdTime = val end,
 })
 
--- ── Shared CharacterAdded rebind ──────────────────────────────────
+-- ── CharacterAdded rebind ─────────────────────────────────────────
 player.CharacterAdded:Connect(function(char)
     character = char
     rootPart  = char:WaitForChild("HumanoidRootPart")
     humanoid  = char:WaitForChild("Humanoid")
     RAY_PARAMS.FilterDescendantsInstances = { character }
-    MiniStatus:Set("Status: Respawned — " .. (cfg.miniRunning and "resuming..." or "Idle"))
+    stopWalk()
+    miniPhase = "idle"
+    MiniStatus:Set("Status: Respawned — " .. (cfg.miniRunning and "Waiting for MULAI..." or "Idle"))
     FlagStatus:Set("Status: Respawned — " .. (cfg.flagRunning and "resuming..." or "Idle"))
 end)
