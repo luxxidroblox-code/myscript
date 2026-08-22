@@ -1,4 +1,4 @@
--- [[ 17Agustus Combined Farm ]]
+-- [[ 17Agustus Combined Farm - Fixed Ladder & Position 8 Reset ]]
 -- Executor: Arceus X / Delta
 -- Runtime: Roblox Luau
 
@@ -14,15 +14,13 @@ local humanoid  = character:WaitForChild("Humanoid")
 
 -- ── Config ────────────────────────────────────────────────────────
 local cfg = {
-    miniRunning  = false,
-    miniSpeed    = 30,
-    miniReset    = 1.5,
-    flagRunning  = false,
-    flagDelay    = 20,
-    holdTime     = 3,
+    miniRunning = false,
+    miniSpeed   = 30,
+    miniReset   = 1.5,
+    flagRunning = false,
+    flagDelay   = 20,
+    holdTime    = 3,
 }
-
-local BASE_WALKSPEED = 16 -- restored on stopWalk
 
 -- ── Raycast params ────────────────────────────────────────────────
 local RAY_PARAMS = RaycastParams.new()
@@ -139,10 +137,9 @@ local function scanAndFirePrompts(radius)
 end
 
 -- ════════════════════════════════════════════════════════════════
--- HRP HEARTBEAT WALKER — physics-native, ladder-compatible
--- No CFrame writes during walk. WalkSpeed drives movement speed.
--- Humanoid:Move() feeds direction every Heartbeat — engine handles
--- ground, ladder, and air transitions natively.
+-- HRP HEARTBEAT WALKER — ladder-aware
+-- Raycast checks ahead for Truss/Ladder objects and applies upward vector
+-- Stops when self or position 8 finishes, waiting for full reset signal
 -- ════════════════════════════════════════════════════════════════
 local miniPhase = "idle"
 local walkConn  = nil
@@ -154,20 +151,68 @@ local function stopWalk()
         walkConn:Disconnect()
         walkConn = nil
     end
-    pcall(function()
-        humanoid:Move(Vector3.zero, false)
-        humanoid.WalkSpeed = BASE_WALKSPEED
-    end)
+    if humanoid then
+        pcall(function() humanoid:Move(Vector3.zero, false) end)
+    end
+end
+
+local function checkLadderAhead(dir)
+    if not rootPart then return false end
+    local rayOrigin = rootPart.Position
+    local rayDir = dir * 3.5
+    local result = workspace:Raycast(rayOrigin, rayDir, RAY_PARAMS)
+    if result and result.Instance then
+        local inst = result.Instance
+        if inst:IsA("TrussPart") or inst.Name:lower():find("ladder") or inst.Name:lower():find("tangga") then
+            return true
+        end
+    end
+    return false
 end
 
 local function startWalk(dir)
     stopWalk()
-    lockedDir            = dir
-    humanoid.WalkSpeed   = cfg.miniSpeed
-    walkConn = RunService.Heartbeat:Connect(function()
-        if not humanoid or not rootPart then stopWalk(); return end
-        -- Feed direction every frame — engine owns all physics including ladder climb
-        humanoid:Move(lockedDir, false)
+    lockedDir = dir
+    walkConn  = RunService.Heartbeat:Connect(function(dt)
+        if not rootPart or not humanoid then stopWalk(); return end
+
+        local state = humanoid:GetState()
+        local isLadder = checkLadderAhead(lockedDir)
+
+        -- Force climbing state or native input when touching/approaching a ladder
+        if isLadder or state == Enum.HumanoidStateType.Climbing then
+            humanoid:ChangeState(Enum.HumanoidStateType.Climbing)
+            humanoid:Move(Vector3.new(lockedDir.X, 1, lockedDir.Z), false)
+            return
+        end
+
+        if state == Enum.HumanoidStateType.Freefall or state == Enum.HumanoidStateType.Jumping then
+            humanoid:Move(lockedDir, false)
+            return
+        end
+
+        -- Ground: CFrame-translate X/Z, preserve engine Y.
+        local cur  = rootPart.CFrame
+        local step = lockedDir * cfg.miniSpeed * dt
+        rootPart.CFrame = CFrame.new(
+            cur.X + step.X,
+            cur.Y,
+            cur.Z + step.Z
+        ) * CFrame.fromMatrix(Vector3.zero, cur.XVector, cur.YVector, cur.ZVector)
+    end)
+end
+
+local function performFinishReset()
+    stopWalk()
+    miniPhase = "waiting_reset"
+    if MiniStatus then MiniStatus:Set("Status: Finished — resetting to minigame CFrame...") end
+    task.spawn(function()
+        if not cfg.miniRunning then return end
+        resetToSpawn(cfg.miniReset)
+        if not cfg.miniRunning then return end
+        snapTP(CF_START)
+        miniPhase = "idle"
+        if MiniStatus then MiniStatus:Set("Status: Waiting for MULAI...") end
     end)
 end
 
@@ -177,7 +222,20 @@ MiniEvent.OnClientEvent:Connect(function(msg)
     if not cfg.miniRunning then return end
     local text = tostring(msg):upper()
 
-    if text:find("MULAI") and miniPhase == "idle" then
+    -- Check if local player finished or game announced final position (pos 8)
+    if text:find(player.Name:upper()) and (text:find("FINIS") or text:find("FINISH")) then
+        stopWalk()
+        miniPhase = "finished_self"
+        if MiniStatus then MiniStatus:Set("Status: You finished! Waiting for match end...") end
+        return
+    end
+
+    if text:find("POSISI KE-8") or text:find("POSISI 8") then
+        performFinishReset()
+        return
+    end
+
+    if text:find("MULAI") and (miniPhase == "idle" or miniPhase == "waiting_reset") then
         miniPhase = "forward"
         if MiniStatus then MiniStatus:Set("Status: MULAI — walking forward") end
         local fwd = Vector3.new(rootPart.CFrame.LookVector.X, 0, rootPart.CFrame.LookVector.Z).Unit
@@ -188,17 +246,8 @@ MiniEvent.OnClientEvent:Connect(function(msg)
         if MiniStatus then MiniStatus:Set("Status: Balik — walking back") end
         startWalk(-lockedDir)
 
-    elseif (text:find("SELESAI") or text:find("FINISH") or text:find("FINIS")) and miniPhase ~= "idle" then
-        stopWalk()
-        miniPhase = "idle"
-        if MiniStatus then MiniStatus:Set("Status: Done — resetting...") end
-        task.spawn(function()
-            if not cfg.miniRunning then return end
-            resetToSpawn(cfg.miniReset)
-            if not cfg.miniRunning then return end
-            snapTP(CF_START)
-            if MiniStatus then MiniStatus:Set("Status: Waiting for MULAI...") end
-        end)
+    elseif (text:find("SELESAI") or text:find("FINISH")) and miniPhase ~= "idle" and miniPhase ~= "waiting_reset" then
+        performFinishReset()
     end
 end)
 
