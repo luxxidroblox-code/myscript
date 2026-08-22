@@ -137,10 +137,9 @@ local function scanAndFirePrompts(radius)
 end
 
 -- ════════════════════════════════════════════════════════════════
--- HRP HEARTBEAT WALKER
--- MULAI  → lock forward dir, walk forward at 30 stud/s
--- BALIK  → reverse locked dir, walk back
--- SELESAI → stop, reset, snap back to CF_START
+-- HRP HEARTBEAT WALKER — ladder-aware
+-- Climbing / Freefall / Jumping → yield CFrame, use Humanoid:Move()
+-- Ground / Running              → CFrame X/Z translate, engine owns Y
 -- ════════════════════════════════════════════════════════════════
 local miniPhase = "idle"
 local walkConn  = nil
@@ -152,13 +151,29 @@ local function stopWalk()
         walkConn:Disconnect()
         walkConn = nil
     end
+    -- Release any residual Humanoid:Move() intent
+    if humanoid then
+        pcall(function() humanoid:Move(Vector3.zero, false) end)
+    end
 end
 
 local function startWalk(dir)
     stopWalk()
     lockedDir = dir
     walkConn  = RunService.Heartbeat:Connect(function(dt)
-        if not rootPart then stopWalk(); return end
+        if not rootPart or not humanoid then stopWalk(); return end
+
+        local state = humanoid:GetState()
+
+        -- Ladder / air: engine handles Y — just feed the direction intent.
+        if state == Enum.HumanoidStateType.Climbing
+        or state == Enum.HumanoidStateType.Freefall
+        or state == Enum.HumanoidStateType.Jumping then
+            humanoid:Move(lockedDir, false)
+            return
+        end
+
+        -- Ground: CFrame-translate X/Z, preserve engine Y.
         local cur  = rootPart.CFrame
         local step = lockedDir * cfg.miniSpeed * dt
         rootPart.CFrame = CFrame.new(
@@ -169,7 +184,7 @@ local function startWalk(dir)
     end)
 end
 
--- Persistent listener — gate is cfg.miniRunning
+-- ── Persistent listener — gate is cfg.miniRunning ─────────────────
 local MiniEvent = RepStorage["17Agustus"].ShowInfoMessage
 MiniEvent.OnClientEvent:Connect(function(msg)
     if not cfg.miniRunning then return end
