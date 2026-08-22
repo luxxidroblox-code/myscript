@@ -1,4 +1,4 @@
--- [[ 17Agustus Combined Farm — Face-Turn + Ladder Fix + Full Build ]]
+-- [[ 17Agustus Combined Farm — Full Build ]]
 -- Executor: Arceus X / Delta
 -- Runtime:  Roblox Luau
 
@@ -192,7 +192,6 @@ local function stopWalk()
     end
 end
 
--- ── Face direction — snaps rotation to match walk dir ─────────────
 local function faceDirection(dir)
     if not rootPart or dir.Magnitude < 0.01 then return end
     local flatDir = Vector3.new(dir.X, 0, dir.Z).Unit
@@ -209,17 +208,15 @@ local function startWalk(dir)
     walkConn = RunService.Heartbeat:Connect(function(dt)
         if not rootPart or not humanoid then stopWalk(); return end
 
-        local state      = humanoid:GetState()
+        local state                  = humanoid:GetState()
         local ladderPart, ladderDist = findNearbyLadder()
-        local onLadder   = state == Enum.HumanoidStateType.Climbing
+        local onLadder               = state == Enum.HumanoidStateType.Climbing
 
-        -- ── Climbing: let engine handle Y, feed XZ + upward ──────
         if onLadder then
             humanoid:Move(Vector3.new(lockedDir.X, LADDER_STEER_Y, lockedDir.Z), false)
             return
         end
 
-        -- ── Ladder nearby but not yet climbing: steer into truss ──
         if ladderPart and ladderDist <= LADDER_APPROACH then
             local steerDir = steerToward(ladderPart)
             if steerDir then
@@ -237,14 +234,12 @@ local function startWalk(dir)
             end
         end
 
-        -- ── Airborne: directional input only ──────────────────────
         if state == Enum.HumanoidStateType.Freefall
         or state == Enum.HumanoidStateType.Jumping then
             humanoid:Move(lockedDir, false)
             return
         end
 
-        -- ── Ground: CFrame-translate X/Z, preserve engine Y ──────
         local cur  = rootPart.CFrame
         local step = lockedDir * cfg.miniSpeed * dt
         rootPart.CFrame = CFrame.new(
@@ -259,7 +254,7 @@ end
 local function performFinishReset()
     stopWalk()
     miniPhase = "waiting_reset"
-    if MiniStatus then MiniStatus:Set("Status: Finished — resetting to minigame CFrame...") end
+    if MiniStatus then MiniStatus:Set("Status: Resetting to minigame CFrame...") end
     task.spawn(function()
         if not cfg.miniRunning then return end
         resetToSpawn(cfg.miniReset)
@@ -276,15 +271,21 @@ MiniEvent.OnClientEvent:Connect(function(msg)
     if not cfg.miniRunning then return end
     local text = tostring(msg):upper()
 
+    -- Player personally finished — stop walking, wait for posisi ke-8
     if text:find(player.Name:upper()) and (text:find("FINIS") or text:find("FINISH")) then
         stopWalk()
         miniPhase = "finished_self"
-        if MiniStatus then MiniStatus:Set("Status: You finished! Waiting for match end...") end
+        if MiniStatus then MiniStatus:Set("Status: Finished — waiting for Posisi 8...") end
         return
     end
 
+    -- Posisi ke-8 announced — only reset if we already finished or are still running
     if text:find("POSISI KE-8") or text:find("POSISI 8") then
-        performFinishReset()
+        if miniPhase == "finished_self"
+        or miniPhase == "forward"
+        or miniPhase == "returning" then
+            performFinishReset()
+        end
         return
     end
 
@@ -303,7 +304,7 @@ MiniEvent.OnClientEvent:Connect(function(msg)
         task.wait(0.05)
         startWalk(returnDir)
 
-    elseif (text:find("SELESAI") or text:find("FINISH")) and miniPhase ~= "idle" and miniPhase ~= "waiting_reset" then
+    elseif (text:find("SELESAI") or text:find("FINISH")) and miniPhase ~= "idle" and miniPhase ~= "waiting_reset" and miniPhase ~= "finished_self" then
         performFinishReset()
     end
 end)
