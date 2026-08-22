@@ -1,6 +1,6 @@
--- [[ 17Agustus Combined Farm - Fixed Ladder & Position 8 Reset ]]
+-- [[ 17Agustus Combined Farm — Face-Turn + Ladder Fix + Full Build ]]
 -- Executor: Arceus X / Delta
--- Runtime: Roblox Luau
+-- Runtime:  Roblox Luau
 
 local Rayfield   = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 local Players    = game:GetService("Players")
@@ -22,6 +22,11 @@ local cfg = {
     holdTime    = 3,
 }
 
+-- ── Ladder tuning ─────────────────────────────────────────────────
+local LADDER_RADIUS   = 8
+local LADDER_APPROACH = 6
+local LADDER_STEER_Y  = 1
+
 -- ── Raycast params ────────────────────────────────────────────────
 local RAY_PARAMS = RaycastParams.new()
 RAY_PARAMS.FilterType = Enum.RaycastFilterType.Exclude
@@ -35,21 +40,21 @@ local CF_START = CFrame.new(-10583.440, -148.798, 36687.500,
 
 -- ── Bendera CFrames ───────────────────────────────────────────────
 local BENDERA = {
-    { name = "Bendera 1",  cf = CFrame.new(22012.752, 291.610, -40320.789, -0.109, 0.000, 0.994, -0.000, 1.000, -0.000, -0.994, -0.000, -0.109) },
-    { name = "Bendera 2",  cf = CFrame.new(-10680.044, -147.972, 36229.938,  0.197,  0.000,  0.980,  0.000, 1.000, -0.000, -0.980,  0.000,  0.197) },
-    { name = "Bendera 3",  cf = CFrame.new(24321.625,   216.564, -23175.205, -0.987,  0.000, -0.161,  0.000, 1.000,  0.000,  0.161,  0.000, -0.987) },
-    { name = "Bendera 4",  cf = CFrame.new(25919.605,   220.652, -18256.594, -0.953, -0.000, -0.304, -0.000, 1.000,  0.000,  0.304,  0.000, -0.953) },
-    { name = "Bendera 5",  cf = CFrame.new(22864.131,   300.992, -39667.996,  0.629,  0.000, -0.777,  0.000, 1.000,  0.000,  0.777, -0.000,  0.629) },
-    { name = "Bendera 6",  cf = CFrame.new(-11895.996, -194.369, 29305.900,  0.676,  0.000, -0.737, -0.000, 1.000,  0.000,  0.737, -0.000,  0.676) },
-    { name = "Bendera 7",  cf = CFrame.new(12264.988,   -29.009,  12884.489,  0.527,  0.000,  0.850,  0.000, 1.000, -0.000, -0.850,  0.000,  0.527) },
-    { name = "Bendera 8",  cf = CFrame.new(15358.921,   -64.393,  16893.139,  0.770, -0.000,  0.638,  0.000, 1.000,  0.000, -0.638, -0.000,  0.770) },
-    { name = "Bendera 9",  cf = CFrame.new(-2173.090,  -148.266,  29692.879, -0.875,  0.000,  0.484,  0.000, 1.000,  0.000, -0.484,  0.000, -0.875) },
-    { name = "Bendera 10", cf = CFrame.new(-22241.518, -186.630,  31077.883, -0.776, -0.000,  0.631, -0.000, 1.000,  0.000, -0.631,  0.000, -0.776) },
-    { name = "Bendera 11", cf = CFrame.new(21908.070,   291.163, -39988.266,  0.742, -0.000,  0.670,  0.000, 1.000,  0.000, -0.670, -0.000,  0.742) },
-    { name = "Bendera 12", cf = CFrame.new(19992.523,   265.478, -27978.184,  0.997,  0.000, -0.077, -0.000, 1.000,  0.000,  0.077, -0.000,  0.997) },
-    { name = "Bendera 13", cf = CFrame.new(23871.199,   222.195, -16860.410,  0.152,  0.000, -0.988,  0.000, 1.000,  0.000,  0.988, -0.000,  0.152) },
-    { name = "Bendera 14", cf = CFrame.new(-21253.691, -219.169,  35107.188,  0.898,  0.000, -0.440, -0.000, 1.000, -0.000,  0.440,  0.000,  0.898) },
-    { name = "Bendera 15", cf = CFrame.new(27850.434,   129.072,  -3485.787,  0.978, -0.000,  0.210,  0.000, 1.000,  0.000, -0.210, -0.000,  0.978) },
+    { name = "Bendera 1",  cf = CFrame.new(22012.752,   291.610, -40320.789, -0.109, 0.000,  0.994, -0.000, 1.000, -0.000, -0.994, -0.000, -0.109) },
+    { name = "Bendera 2",  cf = CFrame.new(-10680.044, -147.972,  36229.938,  0.197, 0.000,  0.980,  0.000, 1.000, -0.000, -0.980,  0.000,  0.197) },
+    { name = "Bendera 3",  cf = CFrame.new(24321.625,   216.564, -23175.205, -0.987, 0.000, -0.161,  0.000, 1.000,  0.000,  0.161,  0.000, -0.987) },
+    { name = "Bendera 4",  cf = CFrame.new(25919.605,   220.652, -18256.594, -0.953,-0.000, -0.304, -0.000, 1.000,  0.000,  0.304,  0.000, -0.953) },
+    { name = "Bendera 5",  cf = CFrame.new(22864.131,   300.992, -39667.996,  0.629, 0.000, -0.777,  0.000, 1.000,  0.000,  0.777, -0.000,  0.629) },
+    { name = "Bendera 6",  cf = CFrame.new(-11895.996, -194.369,  29305.900,  0.676, 0.000, -0.737, -0.000, 1.000,  0.000,  0.737, -0.000,  0.676) },
+    { name = "Bendera 7",  cf = CFrame.new(12264.988,   -29.009,  12884.489,  0.527, 0.000,  0.850,  0.000, 1.000, -0.000, -0.850,  0.000,  0.527) },
+    { name = "Bendera 8",  cf = CFrame.new(15358.921,   -64.393,  16893.139,  0.770,-0.000,  0.638,  0.000, 1.000,  0.000, -0.638, -0.000,  0.770) },
+    { name = "Bendera 9",  cf = CFrame.new(-2173.090,  -148.266,  29692.879, -0.875, 0.000,  0.484,  0.000, 1.000,  0.000, -0.484,  0.000, -0.875) },
+    { name = "Bendera 10", cf = CFrame.new(-22241.518, -186.630,  31077.883, -0.776,-0.000,  0.631, -0.000, 1.000,  0.000, -0.631,  0.000, -0.776) },
+    { name = "Bendera 11", cf = CFrame.new(21908.070,   291.163, -39988.266,  0.742,-0.000,  0.670,  0.000, 1.000,  0.000, -0.670, -0.000,  0.742) },
+    { name = "Bendera 12", cf = CFrame.new(19992.523,   265.478, -27978.184,  0.997, 0.000, -0.077, -0.000, 1.000,  0.000,  0.077, -0.000,  0.997) },
+    { name = "Bendera 13", cf = CFrame.new(23871.199,   222.195, -16860.410,  0.152, 0.000, -0.988,  0.000, 1.000,  0.000,  0.988, -0.000,  0.152) },
+    { name = "Bendera 14", cf = CFrame.new(-21253.691, -219.169,  35107.188,  0.898, 0.000, -0.440, -0.000, 1.000, -0.000,  0.440,  0.000,  0.898) },
+    { name = "Bendera 15", cf = CFrame.new(27850.434,   129.072,  -3485.787,  0.978,-0.000,  0.210,  0.000, 1.000,  0.000, -0.210, -0.000,  0.978) },
 }
 
 local NPC_QUEST_CF = CFrame.new(25987.922, 220.577, -18501.188,
@@ -137,9 +142,40 @@ local function scanAndFirePrompts(radius)
 end
 
 -- ════════════════════════════════════════════════════════════════
--- HRP HEARTBEAT WALKER — ladder-aware
--- Raycast checks ahead for Truss/Ladder objects and applies upward vector
--- Stops when self or position 8 finishes, waiting for full reset signal
+-- LADDER DETECTION — sphere scan
+-- ════════════════════════════════════════════════════════════════
+local function findNearbyLadder()
+    if not rootPart then return nil, math.huge end
+    local origin = rootPart.Position
+    local nearest, nearestDist = nil, LADDER_RADIUS
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("TrussPart")
+            or (obj:IsA("BasePart") and (
+                obj.Name:lower():find("ladder")
+                or obj.Name:lower():find("tangga")
+                or obj.Name:lower():find("truss")
+            ))
+        then
+            local dist = (obj.Position - origin).Magnitude
+            if dist < nearestDist then
+                nearest     = obj
+                nearestDist = dist
+            end
+        end
+    end
+    return nearest, nearestDist
+end
+
+local function steerToward(part)
+    local delta = part.Position - rootPart.Position
+    local xz    = Vector3.new(delta.X, 0, delta.Z)
+    if xz.Magnitude < 0.01 then return nil end
+    return xz.Unit
+end
+
+-- ════════════════════════════════════════════════════════════════
+-- HRP HEARTBEAT WALKER
 -- ════════════════════════════════════════════════════════════════
 local miniPhase = "idle"
 local walkConn  = nil
@@ -156,42 +192,59 @@ local function stopWalk()
     end
 end
 
-local function checkLadderAhead(dir)
-    if not rootPart then return false end
-    local rayOrigin = rootPart.Position
-    local rayDir = dir * 3.5
-    local result = workspace:Raycast(rayOrigin, rayDir, RAY_PARAMS)
-    if result and result.Instance then
-        local inst = result.Instance
-        if inst:IsA("TrussPart") or inst.Name:lower():find("ladder") or inst.Name:lower():find("tangga") then
-            return true
-        end
-    end
-    return false
+-- ── Face direction — snaps rotation to match walk dir ─────────────
+local function faceDirection(dir)
+    if not rootPart or dir.Magnitude < 0.01 then return end
+    local flatDir = Vector3.new(dir.X, 0, dir.Z).Unit
+    local newCF   = CFrame.lookAt(rootPart.Position, rootPart.Position + flatDir)
+    rootPart.CFrame                  = newCF
+    rootPart.AssemblyLinearVelocity  = Vector3.zero
+    rootPart.AssemblyAngularVelocity = Vector3.zero
 end
 
 local function startWalk(dir)
     stopWalk()
     lockedDir = dir
-    walkConn  = RunService.Heartbeat:Connect(function(dt)
+
+    walkConn = RunService.Heartbeat:Connect(function(dt)
         if not rootPart or not humanoid then stopWalk(); return end
 
-        local state = humanoid:GetState()
-        local isLadder = checkLadderAhead(lockedDir)
+        local state      = humanoid:GetState()
+        local ladderPart, ladderDist = findNearbyLadder()
+        local onLadder   = state == Enum.HumanoidStateType.Climbing
 
-        -- Force climbing state or native input when touching/approaching a ladder
-        if isLadder or state == Enum.HumanoidStateType.Climbing then
-            humanoid:ChangeState(Enum.HumanoidStateType.Climbing)
-            humanoid:Move(Vector3.new(lockedDir.X, 1, lockedDir.Z), false)
+        -- ── Climbing: let engine handle Y, feed XZ + upward ──────
+        if onLadder then
+            humanoid:Move(Vector3.new(lockedDir.X, LADDER_STEER_Y, lockedDir.Z), false)
             return
         end
 
-        if state == Enum.HumanoidStateType.Freefall or state == Enum.HumanoidStateType.Jumping then
+        -- ── Ladder nearby but not yet climbing: steer into truss ──
+        if ladderPart and ladderDist <= LADDER_APPROACH then
+            local steerDir = steerToward(ladderPart)
+            if steerDir then
+                humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                local step = steerDir * cfg.miniSpeed * dt
+                local cur  = rootPart.CFrame
+                rootPart.CFrame = CFrame.new(
+                    cur.X + step.X,
+                    cur.Y,
+                    cur.Z + step.Z
+                ) * CFrame.fromMatrix(Vector3.zero, cur.XVector, cur.YVector, cur.ZVector)
+                rootPart.AssemblyLinearVelocity = Vector3.zero
+                humanoid:Move(steerDir, false)
+                return
+            end
+        end
+
+        -- ── Airborne: directional input only ──────────────────────
+        if state == Enum.HumanoidStateType.Freefall
+        or state == Enum.HumanoidStateType.Jumping then
             humanoid:Move(lockedDir, false)
             return
         end
 
-        -- Ground: CFrame-translate X/Z, preserve engine Y.
+        -- ── Ground: CFrame-translate X/Z, preserve engine Y ──────
         local cur  = rootPart.CFrame
         local step = lockedDir * cfg.miniSpeed * dt
         rootPart.CFrame = CFrame.new(
@@ -199,6 +252,7 @@ local function startWalk(dir)
             cur.Y,
             cur.Z + step.Z
         ) * CFrame.fromMatrix(Vector3.zero, cur.XVector, cur.YVector, cur.ZVector)
+        rootPart.AssemblyLinearVelocity = Vector3.zero
     end)
 end
 
@@ -216,13 +270,12 @@ local function performFinishReset()
     end)
 end
 
--- ── Persistent listener — gate is cfg.miniRunning ─────────────────
+-- ── Persistent listener ───────────────────────────────────────────
 local MiniEvent = RepStorage["17Agustus"].ShowInfoMessage
 MiniEvent.OnClientEvent:Connect(function(msg)
     if not cfg.miniRunning then return end
     local text = tostring(msg):upper()
 
-    -- Check if local player finished or game announced final position (pos 8)
     if text:find(player.Name:upper()) and (text:find("FINIS") or text:find("FINISH")) then
         stopWalk()
         miniPhase = "finished_self"
@@ -239,12 +292,16 @@ MiniEvent.OnClientEvent:Connect(function(msg)
         miniPhase = "forward"
         if MiniStatus then MiniStatus:Set("Status: MULAI — walking forward") end
         local fwd = Vector3.new(rootPart.CFrame.LookVector.X, 0, rootPart.CFrame.LookVector.Z).Unit
+        faceDirection(fwd)
         startWalk(fwd)
 
     elseif (text:find("PUTER") or text:find("BALIK") or text:find("KEMBALI")) and miniPhase == "forward" then
         miniPhase = "returning"
         if MiniStatus then MiniStatus:Set("Status: Balik — walking back") end
-        startWalk(-lockedDir)
+        local returnDir = -lockedDir
+        faceDirection(returnDir)
+        task.wait(0.05)
+        startWalk(returnDir)
 
     elseif (text:find("SELESAI") or text:find("FINISH")) and miniPhase ~= "idle" and miniPhase ~= "waiting_reset" then
         performFinishReset()
@@ -252,7 +309,7 @@ MiniEvent.OnClientEvent:Connect(function(msg)
 end)
 
 -- ════════════════════════════════════════════════════════════════
--- RAYFIELD
+-- RAYFIELD UI
 -- ════════════════════════════════════════════════════════════════
 local Window = Rayfield:CreateWindow({
     Name            = "Bxi Event",
@@ -295,9 +352,9 @@ MiniTab:CreateSlider({
 })
 
 -- ── Tab 2: Auto Flag ──────────────────────────────────────────────
-local FlagTab = Window:CreateTab("Auto Flag", "flag")
+local FlagTab  = Window:CreateTab("Auto Flag", "flag")
 FlagTab:CreateSection("Auto Flag Farm")
-local FlagStatus  = FlagTab:CreateLabel("Status: Idle")
+local FlagStatus   = FlagTab:CreateLabel("Status: Idle")
 local flagToggleRef
 
 flagToggleRef = FlagTab:CreateToggle({
