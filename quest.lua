@@ -14,13 +14,15 @@ local humanoid  = character:WaitForChild("Humanoid")
 
 -- ── Config ────────────────────────────────────────────────────────
 local cfg = {
-    miniRunning = false,
-    miniSpeed   = 30,
-    miniReset   = 1.5,
-    flagRunning = false,
-    flagDelay   = 20,
-    holdTime    = 3,
+    miniRunning  = false,
+    miniSpeed    = 30,
+    miniReset    = 1.5,
+    flagRunning  = false,
+    flagDelay    = 20,
+    holdTime     = 3,
 }
+
+local BASE_WALKSPEED = 16 -- restored on stopWalk
 
 -- ── Raycast params ────────────────────────────────────────────────
 local RAY_PARAMS = RaycastParams.new()
@@ -137,9 +139,10 @@ local function scanAndFirePrompts(radius)
 end
 
 -- ════════════════════════════════════════════════════════════════
--- HRP HEARTBEAT WALKER — ladder-aware
--- Climbing / Freefall / Jumping → yield CFrame, use Humanoid:Move()
--- Ground / Running              → CFrame X/Z translate, engine owns Y
+-- HRP HEARTBEAT WALKER — physics-native, ladder-compatible
+-- No CFrame writes during walk. WalkSpeed drives movement speed.
+-- Humanoid:Move() feeds direction every Heartbeat — engine handles
+-- ground, ladder, and air transitions natively.
 -- ════════════════════════════════════════════════════════════════
 local miniPhase = "idle"
 local walkConn  = nil
@@ -151,36 +154,20 @@ local function stopWalk()
         walkConn:Disconnect()
         walkConn = nil
     end
-    -- Release any residual Humanoid:Move() intent
-    if humanoid then
-        pcall(function() humanoid:Move(Vector3.zero, false) end)
-    end
+    pcall(function()
+        humanoid:Move(Vector3.zero, false)
+        humanoid.WalkSpeed = BASE_WALKSPEED
+    end)
 end
 
 local function startWalk(dir)
     stopWalk()
-    lockedDir = dir
-    walkConn  = RunService.Heartbeat:Connect(function(dt)
-        if not rootPart or not humanoid then stopWalk(); return end
-
-        local state = humanoid:GetState()
-
-        -- Ladder / air: engine handles Y — just feed the direction intent.
-        if state == Enum.HumanoidStateType.Climbing
-        or state == Enum.HumanoidStateType.Freefall
-        or state == Enum.HumanoidStateType.Jumping then
-            humanoid:Move(lockedDir, false)
-            return
-        end
-
-        -- Ground: CFrame-translate X/Z, preserve engine Y.
-        local cur  = rootPart.CFrame
-        local step = lockedDir * cfg.miniSpeed * dt
-        rootPart.CFrame = CFrame.new(
-            cur.X + step.X,
-            cur.Y,
-            cur.Z + step.Z
-        ) * CFrame.fromMatrix(Vector3.zero, cur.XVector, cur.YVector, cur.ZVector)
+    lockedDir            = dir
+    humanoid.WalkSpeed   = cfg.miniSpeed
+    walkConn = RunService.Heartbeat:Connect(function()
+        if not humanoid or not rootPart then stopWalk(); return end
+        -- Feed direction every frame — engine owns all physics including ladder climb
+        humanoid:Move(lockedDir, false)
     end)
 end
 
@@ -201,7 +188,7 @@ MiniEvent.OnClientEvent:Connect(function(msg)
         if MiniStatus then MiniStatus:Set("Status: Balik — walking back") end
         startWalk(-lockedDir)
 
-    elseif (text:find("SELESAI") or text:find("FINISH")) and miniPhase ~= "idle" then
+    elseif (text:find("SELESAI") or text:find("FINISH") or text:find("FINIS")) and miniPhase ~= "idle" then
         stopWalk()
         miniPhase = "idle"
         if MiniStatus then MiniStatus:Set("Status: Done — resetting...") end
