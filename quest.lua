@@ -113,11 +113,25 @@ local function resetToSpawn(delay)
     refreshRefs()
 end
 
--- ── Prompt fire ───────────────────────────────────────────────────
+-- ── Prompt fire (jump-refresh fallback) ───────────────────────────
 local function firePrompt(prompt)
     if not prompt or not prompt:IsA("ProximityPrompt") then return end
+
+    -- primary: executor API
+    local ok = pcall(function()
+        if not fireproximityprompt then error("unavailable") end
+        fireproximityprompt(prompt)
+    end)
+
+    if ok then return end
+
+    -- fallback: jump to unstick physics, then manual hold
     pcall(function()
-        if fireproximityprompt then fireproximityprompt(prompt) end
+        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        task.wait(0.35)
+        humanoid:ChangeState(Enum.HumanoidStateType.Running)
+        task.wait(0.15)
+
         prompt:InputHoldBegin()
         task.wait(cfg.holdTime)
         prompt:InputHoldEnd()
@@ -271,7 +285,6 @@ MiniEvent.OnClientEvent:Connect(function(msg)
     if not cfg.miniRunning then return end
     local text = tostring(msg):upper()
 
-    -- Player personally finished — stop walking, wait for posisi ke-8
     if text:find(player.Name:upper()) and (text:find("FINIS") or text:find("FINISH")) then
         stopWalk()
         miniPhase = "finished_self"
@@ -279,7 +292,6 @@ MiniEvent.OnClientEvent:Connect(function(msg)
         return
     end
 
-    -- Posisi ke-8 announced — only reset if we already finished or are still running
     if text:find("POSISI KE-8") or text:find("POSISI 8") then
         if miniPhase == "finished_self"
         or miniPhase == "forward"
