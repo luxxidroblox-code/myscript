@@ -90,6 +90,55 @@ local missionsCompleted = 0
 local AnchoredPartsList = {}
 local ActiveMissions    = Workspace:WaitForChild("ActiveMissions", 10)
 
+-- ─── Building whitelist — anything whose name matches stays alive ─────────────
+local BuildingWhitelist = {
+    "Terrain", "Camera", "Baseplate", "SpawnLocation",
+    "BaristaJob", "Livrason", "ActiveMissions", "PoliceJob",
+    "Players", "ReplicatedStorage", "StarterGui", "StarterPack",
+    "Lighting", "CoreGui", "CorePackages", "RobloxGui",
+}
+
+local function IsWhitelisted(name)
+    for _, w in ipairs(BuildingWhitelist) do
+        if name == w then return true end
+    end
+    return false
+end
+
+local function DeleteBuildings()
+    for _, obj in ipairs(Workspace:GetChildren()) do
+        if obj:IsA("Model") or obj:IsA("Folder") then
+            if not IsWhitelisted(obj.Name) then
+                -- skip player characters
+                local isChar = false
+                for _, plr in ipairs(Players:GetPlayers()) do
+                    if plr.Character == obj then isChar = true break end
+                end
+                if not isChar then
+                    pcall(function() obj:Destroy() end)
+                end
+            end
+        end
+    end
+end
+
+DeleteBuildings()
+
+-- ─── Delivery platform — 60×1×60 anchored slab, lives only during delivery ───
+local function SpawnDeliveryPlatform(atCFrame)
+    local platform = Instance.new("Part")
+    platform.Name         = "DeliveryPlatform_" .. generateRandomName and generateRandomName() or tostring(math.random(1e6))
+    platform.Size         = Vector3.new(60, 1, 60)
+    platform.CFrame       = CFrame.new(atCFrame.Position - Vector3.new(0, 1, 0))
+    platform.Anchored     = true
+    platform.CanCollide   = true
+    platform.Transparency = 0.6
+    platform.BrickColor   = BrickColor.new("Bright blue")
+    platform.Material     = Enum.Material.SmoothPlastic
+    platform.Parent       = Workspace
+    return platform
+end
+
 local function generateRandomName()
     local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     local length = math.random(12, 24)
@@ -144,7 +193,7 @@ local function RejoinServer()
     end)
 end
 
--- ─── Courier 79m cap — triggers only on CourierEarned, guarded by RejoinTriggered
+-- ─── Courier 79m cap — CourierEarned only, guarded by RejoinTriggered ─────────
 task.spawn(function()
     task.wait(10)
     while task.wait(2) do
@@ -502,25 +551,52 @@ task.spawn(function()
                     continue
                 end
 
-                Tween(TAKE_BOX_CFRAME, false)
+                -- Pickup: platform under box grab point, tween in, grab, destroy platform
+                local pickupCF    = TAKE_BOX_CFRAME
+                local pickupSlab  = Instance.new("Part")
+                pickupSlab.Size         = Vector3.new(60, 1, 60)
+                pickupSlab.CFrame       = CFrame.new(pickupCF.Position - Vector3.new(0, 1, 0))
+                pickupSlab.Anchored     = true
+                pickupSlab.CanCollide   = true
+                pickupSlab.Transparency = 0.6
+                pickupSlab.BrickColor   = BrickColor.new("Bright blue")
+                pickupSlab.Material     = Enum.Material.SmoothPlastic
+                pickupSlab.Parent       = Workspace
+
+                Tween(pickupCF, false)
                 task.wait(0.4)
                 if _G.AutofarmCourier and TAKE_PROMPT.Enabled then
                     fireproximityprompt(TAKE_PROMPT)
                     task.wait(1.5)
                 end
+                pcall(function() pickupSlab:Destroy() end)
             else
                 WaktuKosong = nil
 
                 if TargetBlock and TargetPrompt then
                     task.wait(math.random(0, 1))
 
-                    Tween(TargetBlock.CFrame * CFrame.new(0, 2, 0), false)
+                    local deliveryCF   = TargetBlock.CFrame * CFrame.new(0, 2, 0)
+
+                    -- Spawn platform at delivery point before tweening
+                    local deliverySlab = Instance.new("Part")
+                    deliverySlab.Size         = Vector3.new(60, 1, 60)
+                    deliverySlab.CFrame       = CFrame.new(deliveryCF.Position - Vector3.new(0, 1, 0))
+                    deliverySlab.Anchored     = true
+                    deliverySlab.CanCollide   = true
+                    deliverySlab.Transparency = 0.6
+                    deliverySlab.BrickColor   = BrickColor.new("Bright blue")
+                    deliverySlab.Material     = Enum.Material.SmoothPlastic
+                    deliverySlab.Parent       = Workspace
+
+                    Tween(deliveryCF, false)
                     task.wait(0.3)
                     AutoEquipBox()
 
                     if _G.AutofarmCourier and TargetPrompt.Enabled then
                         fireproximityprompt(TargetPrompt)
 
+                        -- Sit back on for next leg, then destroy slab
                         task.wait(0.5)
                         if Hum and _G.AutofarmCourier then
                             Hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
@@ -528,6 +604,8 @@ task.spawn(function()
                         end
                         task.wait(3)
                     end
+
+                    pcall(function() deliverySlab:Destroy() end)
                 end
             end
         else
@@ -1248,6 +1326,18 @@ HomeTab:CreateButton({
     Name = "Rejoin Server",
     Callback = function()
         RejoinServer()
+    end
+})
+
+HomeTab:CreateButton({
+    Name = "Delete Buildings",
+    Callback = function()
+        DeleteBuildings()
+        Rayfield:Notify({
+            Title    = "Projectsion",
+            Content  = "Buildings cleared.",
+            Duration = 3
+        })
     end
 })
 
