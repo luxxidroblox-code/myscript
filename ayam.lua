@@ -14,8 +14,8 @@ end
 local targetUrl1 = 'https://raw.githubusercontent.com/luxxidroblox-code/myscript.lua/refs/heads/main/adonis.lua'
 local targetUrl2 = 'https://sirius.menu/rayfield'
 
-if #targetUrl1 ~= 77 or #targetUrl2 ~= 28 then 
-    _crash() 
+if #targetUrl1 ~= 77 or #targetUrl2 ~= 28 then
+    _crash()
 end
 
 loadstring(game:HttpGet(targetUrl1))()
@@ -29,16 +29,16 @@ end)
 
 local Rayfield = loadstring(game:HttpGet(targetUrl2))()
 
-local HttpService        = game:GetService("HttpService")
-local ReplicatedStorage  = game:GetService("ReplicatedStorage")
-local TweenService       = game:GetService("TweenService")
-local Players            = game:GetService("Players")
-local LP                 = Players.LocalPlayer
-local RunService         = game:GetService("RunService")
-local PlayerData         = LP:WaitForChild("PlayerData")
-local UserInputService   = game:GetService("UserInputService")
-local Workspace          = game:GetService("Workspace")
-local TeleportService    = game:GetService("TeleportService")
+local HttpService       = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService      = game:GetService("TweenService")
+local Players           = game:GetService("Players")
+local LP                = Players.LocalPlayer
+local RunService        = game:GetService("RunService")
+local PlayerData        = LP:WaitForChild("PlayerData")
+local UserInputService  = game:GetService("UserInputService")
+local Workspace         = game:GetService("Workspace")
+local TeleportService   = game:GetService("TeleportService")
 
 local CourierSettings = require(ReplicatedStorage:WaitForChild("Delivery System"):WaitForChild("Settings"))
 local MachinePrompt   = workspace.BaristaJob.Interactions.MachinePart.MachinePart.MachinePrompt
@@ -58,14 +58,16 @@ _G.CourierSpeed         = 230
 _G.AutoFarmBarista      = false
 _G.BaristaSpeed         = 300
 _G.AutoPoliceEnabled    = false
+_G.blackscreen          = false
+_G.PermanentBlackscreen = false
 _G.RejoinTriggered      = false
 
 _G.AutoWebhook  = false
 _G.WebhookURL   = ""
 _G.TotalEarning = 0
 _G.CycleCount   = 0
-_G.StartTime    = os.time()
 LastActivity    = tick()
+
 local lastMoney     = PlayerData.RPValue.Value
 local pendingIncome = 0
 local isRunning     = false
@@ -75,6 +77,51 @@ local WaktuKosong   = nil
 _G.CourierEarned = 0
 _G.BaristaEarned = 0
 _G.PoliceEarned  = 0
+
+-- ─── Active-session timer ─────────────────────────────────────────────────────
+local _activeSeconds = 0      -- banked seconds from previous active windows
+local _farmTickStart = nil    -- tick() when any farm last went active
+
+local function _syncFarmTimer()
+    local anyActive = _G.AutofarmCourier or _G.AutoFarmBarista or _G.AutoPoliceEnabled
+    if anyActive and not _farmTickStart then
+        _farmTickStart = tick()
+    elseif not anyActive and _farmTickStart then
+        _activeSeconds = _activeSeconds + (tick() - _farmTickStart)
+        _farmTickStart = nil
+    end
+end
+
+local function getActiveSeconds()
+    if _farmTickStart then
+        return _activeSeconds + (tick() - _farmTickStart)
+    end
+    return _activeSeconds
+end
+
+local function getRunningTime()
+    local diff = math.floor(getActiveSeconds())
+    return string.format("%02d:%02d:%02d",
+        math.floor(diff / 3600),
+        math.floor((diff % 3600) / 60),
+        diff % 60)
+end
+
+local function formatRP(v)
+    local s         = string.format("%.0f", v)
+    local formatted = s:reverse():gsub("(%d%d%d)", "%1."):reverse():gsub("^%.", "")
+    return "RP. " .. formatted
+end
+
+local function formatPerHour(earned)
+    local hrs = getActiveSeconds() / 3600
+    if hrs < 0.001 then return "RP. 0/hr" end
+    local perHr = math.floor(earned / hrs)
+    local s     = string.format("%d", perHr)
+    local fmt   = s:reverse():gsub("(%d%d%d)", "%1."):reverse():gsub("^%.", "")
+    return "RP. " .. fmt .. "/hr"
+end
+-- ─────────────────────────────────────────────────────────────────────────────
 
 local AutoPoliceConfig = {
     TeleportSpeed    = {min = 200, max = 300},
@@ -89,55 +136,6 @@ local TeleportActive    = false
 local missionsCompleted = 0
 local AnchoredPartsList = {}
 local ActiveMissions    = Workspace:WaitForChild("ActiveMissions", 10)
-
--- ─── Building whitelist — anything whose name matches stays alive ─────────────
-local BuildingWhitelist = {
-    "Terrain", "Camera", "Baseplate", "SpawnLocation",
-    "BaristaJob", "Livrason", "ActiveMissions", "PoliceJob",
-    "Players", "ReplicatedStorage", "StarterGui", "StarterPack",
-    "Lighting", "CoreGui", "CorePackages", "RobloxGui",
-}
-
-local function IsWhitelisted(name)
-    for _, w in ipairs(BuildingWhitelist) do
-        if name == w then return true end
-    end
-    return false
-end
-
-local function DeleteBuildings()
-    for _, obj in ipairs(Workspace:GetChildren()) do
-        if obj:IsA("Model") or obj:IsA("Folder") then
-            if not IsWhitelisted(obj.Name) then
-                -- skip player characters
-                local isChar = false
-                for _, plr in ipairs(Players:GetPlayers()) do
-                    if plr.Character == obj then isChar = true break end
-                end
-                if not isChar then
-                    pcall(function() obj:Destroy() end)
-                end
-            end
-        end
-    end
-end
-
-DeleteBuildings()
-
--- ─── Delivery platform — 60×1×60 anchored slab, lives only during delivery ───
-local function SpawnDeliveryPlatform(atCFrame)
-    local platform = Instance.new("Part")
-    platform.Name         = "DeliveryPlatform_" .. generateRandomName and generateRandomName() or tostring(math.random(1e6))
-    platform.Size         = Vector3.new(60, 1, 60)
-    platform.CFrame       = CFrame.new(atCFrame.Position - Vector3.new(0, 1, 0))
-    platform.Anchored     = true
-    platform.CanCollide   = true
-    platform.Transparency = 0.6
-    platform.BrickColor   = BrickColor.new("Bright blue")
-    platform.Material     = Enum.Material.SmoothPlastic
-    platform.Parent       = Workspace
-    return platform
-end
 
 local function generateRandomName()
     local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -156,6 +154,7 @@ local function RejoinServer()
     _G.AutofarmCourier   = false
     _G.AutoFarmBarista   = false
     _G.AutoPoliceEnabled = false
+    _syncFarmTimer()
 
     Rayfield:Notify({
         Title    = "Projectsion",
@@ -170,11 +169,11 @@ local function RejoinServer()
                 game.Loaded:Wait()
             end
             task.wait(8)
-            pcall(function() 
-                loadstring(game:HttpGet("https://raw.githubusercontent.com/luxxidroblox-code/myscript.lua/refs/heads/main/adonis.lua"))() 
+            pcall(function()
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/luxxidroblox-code/myscript.lua/refs/heads/main/adonis.lua"))()
             end)
             task.wait(2)
-            pcall(function() 
+            pcall(function()
                 loadstring(game:HttpGet("https://raw.githubusercontent.com/luxxidroblox-code/myscript.lua/refs/heads/main/doc.lua"))()
             end)
             task.spawn(function()
@@ -193,7 +192,7 @@ local function RejoinServer()
     end)
 end
 
--- ─── Courier 79m cap — CourierEarned only, guarded by RejoinTriggered ─────────
+-- ─── Courier 79m cap ─────────────────────────────────────────────────────────
 task.spawn(function()
     task.wait(10)
     while task.wait(2) do
@@ -212,6 +211,61 @@ task.spawn(function()
     end
 end)
 
+local BlackScreen = Instance.new("ScreenGui")
+local Frame       = Instance.new("Frame")
+
+if gethui then
+    BlackScreen.Parent = gethui()
+else
+    BlackScreen.Parent = game:GetService("CoreGui") or LP.PlayerGui
+end
+
+BlackScreen.Name         = generateRandomName()
+Frame.Name               = generateRandomName()
+BlackScreen.DisplayOrder = -1
+BlackScreen.Enabled      = false
+
+Frame.Parent           = BlackScreen
+Frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+Frame.Size             = UDim2.new(1.5, 0, 1.5, 0)
+Frame.Position         = UDim2.new(-0.25, 0, -0.25, 0)
+Frame.BorderSizePixel  = 0
+
+Frame:GetPropertyChangedSignal("Size"):Connect(function()
+    if Frame.Size ~= UDim2.new(1.5, 0, 1.5, 0) then
+        Frame.Size = UDim2.new(1.5, 0, 1.5, 0)
+    end
+end)
+
+Frame:GetPropertyChangedSignal("BackgroundTransparency"):Connect(function()
+    if Frame.BackgroundTransparency ~= 0 then
+        Frame.BackgroundTransparency = 0
+    end
+end)
+
+Frame:GetPropertyChangedSignal("Visible"):Connect(function()
+    if Frame.Visible == false and _G.PermanentBlackscreen then
+        Frame.Visible = true
+    end
+end)
+
+local function updateBlackScreen()
+    verifyFunction(updateBlackScreen)
+    local isAnyFarmActive = (_G.AutofarmCourier or _G.AutoFarmBarista or _G.AutoPoliceEnabled)
+    _syncFarmTimer()
+    if isAnyFarmActive then
+        _G.blackscreen          = true
+        _G.PermanentBlackscreen = true
+    else
+        _G.blackscreen = false
+        if _G.PermanentBlackscreen then
+            BlackScreen.Enabled = true
+        end
+        return
+    end
+    BlackScreen.Enabled = _G.blackscreen
+end
+
 local function SwitchToCourier()
     local TeamRemote = ReplicatedStorage:FindFirstChild("TeamChangeRequest", true)
     if TeamRemote then
@@ -222,7 +276,6 @@ local function SwitchToCourier()
     end
 end
 
--- ─── Courier Tween — sit-gated, BodyGyro stabilized ──────────────────────────
 local function Tween(targetCFrame, keepSit)
     local Char = LP.Character
     local Root = Char and Char:FindFirstChild("HumanoidRootPart")
@@ -233,12 +286,12 @@ local function Tween(targetCFrame, keepSit)
     Hum.Sit = true
     task.wait(0.25)
 
-    local gyro = Instance.new("BodyGyro")
-    gyro.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
-    gyro.P         = 1e5
-    gyro.D         = 500
-    gyro.CFrame    = targetCFrame
-    gyro.Parent    = Root
+    local gyro        = Instance.new("BodyGyro")
+    gyro.MaxTorque    = Vector3.new(1e6, 1e6, 1e6)
+    gyro.P            = 1e5
+    gyro.D            = 500
+    gyro.CFrame       = targetCFrame
+    gyro.Parent       = Root
 
     local distance = (Root.Position - targetCFrame.Position).Magnitude
     local duration = distance / _G.CourierSpeed
@@ -313,15 +366,14 @@ local function getAvatar()
     return "https://www.roblox.com/headshot-thumbnail/image?userId=" .. LP.UserId .. "&width=420&height=420&format=png"
 end
 
-local function formatRP(v)
-    local s         = string.format("%.0f", v)
-    local formatted = s:reverse():gsub("(%d%d%d)", "%1."):reverse():gsub("^%.", "")
-    return "RP. " .. formatted
-end
-
-local function getRunningTime()
-    local diff = os.time() - _G.StartTime
-    return string.format("%02d:%02d:%02d", math.floor(diff/3600), math.floor((diff%3600)/60), diff%60)
+local function getRunningTimeWall()
+    -- wall-clock elapsed since first farm-on; used only in webhook
+    if not _G._wallStart then return "00:00:00" end
+    local diff = os.time() - _G._wallStart
+    return string.format("%02d:%02d:%02d",
+        math.floor(diff / 3600),
+        math.floor((diff % 3600) / 60),
+        diff % 60)
 end
 
 local function sendWebhook(income, target)
@@ -329,7 +381,7 @@ local function sendWebhook(income, target)
     _G.CycleCount = _G.CycleCount + 1
 
     local currentMoney = PlayerData.RPValue.Value
-    local http_request = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
+    local http_request  = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
 
     local embed = {
         ["author"] = {
@@ -345,7 +397,7 @@ local function sendWebhook(income, target)
             {["name"] = "Current Money", ["value"] = formatRP(currentMoney) .. " (Est)",    ["inline"] = false},
             {["name"] = "Total Earning", ["value"] = formatRP(_G.TotalEarning) .. " (Est)", ["inline"] = false},
             {["name"] = "Cycle Count",   ["value"] = tostring(_G.CycleCount),               ["inline"] = false},
-            {["name"] = "Running Time",  ["value"] = getRunningTime(),                      ["inline"] = false}
+            {["name"] = "Running Time",  ["value"] = getRunningTimeWall(),                  ["inline"] = false}
         },
         ["image"] = {
             ["url"] = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&"
@@ -372,8 +424,17 @@ local function sendWebhook(income, target)
     end
 end
 
+-- ─── Stat label handles ───────────────────────────────────────────────────────
 local lblTotalEarned, lblCurrentMoney, lblSessionTime
 local lblCourierEarned, lblBaristaEarned, lblPoliceEarned
+local lblTotalPerHour, lblCourierPerHour, lblBaristaPerHour, lblPolicePerHour
+
+local function refreshPerHourLabels()
+    if lblTotalPerHour   then lblTotalPerHour:Set("Total /hr: "             .. formatPerHour(_G.TotalEarning))  end
+    if lblCourierPerHour then lblCourierPerHour:Set("Courier /hr: "         .. formatPerHour(_G.CourierEarned)) end
+    if lblBaristaPerHour then lblBaristaPerHour:Set("Barista /hr: "         .. formatPerHour(_G.BaristaEarned)) end
+    if lblPolicePerHour  then lblPolicePerHour:Set("Police Department /hr: " .. formatPerHour(_G.PoliceEarned))  end
+end
 
 PlayerData.RPValue.Changed:Connect(function(newMoney)
     if newMoney > lastMoney then
@@ -389,11 +450,12 @@ PlayerData.RPValue.Changed:Connect(function(newMoney)
             _G.PoliceEarned  = _G.PoliceEarned + gained
         end
 
-        if lblTotalEarned   then lblTotalEarned:Set("Total Earned: "       .. formatRP(_G.TotalEarning))  end
-        if lblCurrentMoney  then lblCurrentMoney:Set("Current Money: "     .. formatRP(newMoney))         end
-        if lblCourierEarned then lblCourierEarned:Set("Courier: "          .. formatRP(_G.CourierEarned)) end
-        if lblBaristaEarned then lblBaristaEarned:Set("Barista: "          .. formatRP(_G.BaristaEarned)) end
-        if lblPoliceEarned  then lblPoliceEarned:Set("Police Department: " .. formatRP(_G.PoliceEarned))  end
+        if lblTotalEarned   then lblTotalEarned:Set("Total Earned: "        .. formatRP(_G.TotalEarning))  end
+        if lblCurrentMoney  then lblCurrentMoney:Set("Current Money: "      .. formatRP(newMoney))         end
+        if lblCourierEarned then lblCourierEarned:Set("Courier: "           .. formatRP(_G.CourierEarned)) end
+        if lblBaristaEarned then lblBaristaEarned:Set("Barista: "           .. formatRP(_G.BaristaEarned)) end
+        if lblPoliceEarned  then lblPoliceEarned:Set("Police Department: "  .. formatRP(_G.PoliceEarned))  end
+        refreshPerHourLabels()
 
         if not isRunning then
             isRunning = true
@@ -551,52 +613,25 @@ task.spawn(function()
                     continue
                 end
 
-                -- Pickup: platform under box grab point, tween in, grab, destroy platform
-                local pickupCF    = TAKE_BOX_CFRAME
-                local pickupSlab  = Instance.new("Part")
-                pickupSlab.Size         = Vector3.new(60, 1, 60)
-                pickupSlab.CFrame       = CFrame.new(pickupCF.Position - Vector3.new(0, 1, 0))
-                pickupSlab.Anchored     = true
-                pickupSlab.CanCollide   = true
-                pickupSlab.Transparency = 0.6
-                pickupSlab.BrickColor   = BrickColor.new("Bright blue")
-                pickupSlab.Material     = Enum.Material.SmoothPlastic
-                pickupSlab.Parent       = Workspace
-
-                Tween(pickupCF, false)
+                Tween(TAKE_BOX_CFRAME, false)
                 task.wait(0.4)
                 if _G.AutofarmCourier and TAKE_PROMPT.Enabled then
                     fireproximityprompt(TAKE_PROMPT)
                     task.wait(1.5)
                 end
-                pcall(function() pickupSlab:Destroy() end)
             else
                 WaktuKosong = nil
 
                 if TargetBlock and TargetPrompt then
                     task.wait(math.random(0, 1))
 
-                    local deliveryCF   = TargetBlock.CFrame * CFrame.new(0, 2, 0)
-
-                    -- Spawn platform at delivery point before tweening
-                    local deliverySlab = Instance.new("Part")
-                    deliverySlab.Size         = Vector3.new(60, 1, 60)
-                    deliverySlab.CFrame       = CFrame.new(deliveryCF.Position - Vector3.new(0, 1, 0))
-                    deliverySlab.Anchored     = true
-                    deliverySlab.CanCollide   = true
-                    deliverySlab.Transparency = 0.6
-                    deliverySlab.BrickColor   = BrickColor.new("Bright blue")
-                    deliverySlab.Material     = Enum.Material.SmoothPlastic
-                    deliverySlab.Parent       = Workspace
-
-                    Tween(deliveryCF, false)
+                    Tween(TargetBlock.CFrame * CFrame.new(0, 2, 0), false)
                     task.wait(0.3)
                     AutoEquipBox()
 
                     if _G.AutofarmCourier and TargetPrompt.Enabled then
                         fireproximityprompt(TargetPrompt)
 
-                        -- Sit back on for next leg, then destroy slab
                         task.wait(0.5)
                         if Hum and _G.AutofarmCourier then
                             Hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
@@ -604,8 +639,6 @@ task.spawn(function()
                         end
                         task.wait(3)
                     end
-
-                    pcall(function() deliverySlab:Destroy() end)
                 end
             end
         else
@@ -739,7 +772,6 @@ local function UnanchorAll()
     end
 end
 
--- ─── Police teleport — lerp path BodyGyro stabilized ─────────────────────────
 local function SafePoliceTeleport(targetCFrame, bypassChecks, preventUnsit, skipSit)
     if not bypassChecks and not _G.AutoPoliceEnabled then return end
     local Character = LP.Character
@@ -818,12 +850,12 @@ local function SafePoliceTeleport(targetCFrame, bypassChecks, preventUnsit, skip
                 tween.Completed:Wait()
                 if connection then connection:Disconnect() end
             else
-                local gyro = Instance.new("BodyGyro")
-                gyro.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
-                gyro.P         = 1e5
-                gyro.D         = 500
-                gyro.CFrame    = destCFrame
-                gyro.Parent    = HRP
+                local gyro        = Instance.new("BodyGyro")
+                gyro.MaxTorque    = Vector3.new(1e6, 1e6, 1e6)
+                gyro.P            = 1e5
+                gyro.D            = 500
+                gyro.CFrame       = destCFrame
+                gyro.Parent       = HRP
 
                 HRP.Anchored = false
                 local startTime = os.clock()
@@ -1294,6 +1326,7 @@ task.spawn(function()
     end
 end)
 
+-- ─── UI ──────────────────────────────────────────────────────────────────────
 local Window = Rayfield:CreateWindow({
     Name            = "Projectsion",
     LoadingTitle    = "Projectsion",
@@ -1312,11 +1345,11 @@ local HomeTab = Window:CreateTab("Home", 4483362458)
 HomeTab:CreateSection("Update Log")
 
 HomeTab:CreateButton({
-    Name = "Version 1.0",
+    Name = "Version 1.1",
     Callback = function()
         Rayfield:Notify({
             Title    = "Projectsion",
-            Content  = "+ script cleaned",
+            Content  = "+ /hr stats added\n+ session timer now active-only",
             Duration = 5
         })
     end
@@ -1326,18 +1359,6 @@ HomeTab:CreateButton({
     Name = "Rejoin Server",
     Callback = function()
         RejoinServer()
-    end
-})
-
-HomeTab:CreateButton({
-    Name = "Delete Buildings",
-    Callback = function()
-        DeleteBuildings()
-        Rayfield:Notify({
-            Title    = "Projectsion",
-            Content  = "Buildings cleared.",
-            Duration = 3
-        })
     end
 })
 
@@ -1351,6 +1372,7 @@ AutofarmTab:CreateToggle({
     Flag         = "CourierFarm",
     Callback     = function(state)
         _G.AutofarmCourier = state
+        updateBlackScreen()
         if state then
             Rayfield:Notify({
                 Title    = "Projectsion",
@@ -1381,6 +1403,7 @@ AutofarmTab:CreateToggle({
     Flag         = "BaristaFarm",
     Callback     = function(state)
         _G.AutoFarmBarista = state
+        updateBlackScreen()
         if state then
             LastActivity = tick()
             task.spawn(function()
@@ -1415,6 +1438,7 @@ AutofarmTab:CreateToggle({
     Flag         = "PoliceFarmToggle",
     Callback     = function(state)
         _G.AutoPoliceEnabled = state
+        updateBlackScreen()
         if state then
             Rayfield:Notify({Title = "Projectsion", Content = "Auto Police Department Enabled.",  Duration = 3})
             task.spawn(function()
@@ -1465,27 +1489,44 @@ AutofarmTab:CreateSlider({
     end
 })
 
+-- ─── Stats tab ────────────────────────────────────────────────────────────────
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 
 StatsTab:CreateSection("Session Stats")
 lblTotalEarned  = StatsTab:CreateLabel("Total Earned: RP. 0")
 lblCurrentMoney = StatsTab:CreateLabel("Current Money: " .. formatRP(PlayerData.RPValue.Value))
-lblSessionTime  = StatsTab:CreateLabel("Session Time: 00:00:00")
+lblSessionTime  = StatsTab:CreateLabel("Session Time: 00:00:00  (active only)")
+lblTotalPerHour = StatsTab:CreateLabel("Total /hr: RP. 0/hr")
 
 StatsTab:CreateSection("Job Income")
 lblCourierEarned = StatsTab:CreateLabel("Courier: RP. 0")
-lblBaristaEarned = StatsTab:CreateLabel("Barista: RP. 0")
-lblPoliceEarned  = StatsTab:CreateLabel("Police Department: RP. 0")
+lblCourierPerHour = StatsTab:CreateLabel("Courier /hr: RP. 0/hr")
 
+lblBaristaEarned = StatsTab:CreateLabel("Barista: RP. 0")
+lblBaristaPerHour = StatsTab:CreateLabel("Barista /hr: RP. 0/hr")
+
+lblPoliceEarned = StatsTab:CreateLabel("Police Department: RP. 0")
+lblPolicePerHour = StatsTab:CreateLabel("Police Department /hr: RP. 0/hr")
+
+-- ─── Stats ticker — 1s, only updates /hr when any farm is active ──────────────
 task.spawn(function()
     while true do
-        if lblSessionTime then
-            lblSessionTime:Set("Session Time: " .. getRunningTime())
-        end
         task.wait(1)
+        local anyActive = _G.AutofarmCourier or _G.AutoFarmBarista or _G.AutoPoliceEnabled
+        if lblSessionTime then
+            if anyActive then
+                lblSessionTime:Set("Session Time: " .. getRunningTime() .. "  (active)")
+            else
+                lblSessionTime:Set("Session Time: " .. getRunningTime() .. "  (paused)")
+            end
+        end
+        if anyActive then
+            refreshPerHourLabels()
+        end
     end
 end)
 
+-- ─── Webhook tab ──────────────────────────────────────────────────────────────
 local WebhookTab = Window:CreateTab("Webhook", 4483362458)
 
 WebhookTab:CreateSection("Webhook Configuration")
