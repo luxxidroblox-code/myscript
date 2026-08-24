@@ -58,8 +58,6 @@ _G.CourierSpeed         = 230
 _G.AutoFarmBarista      = false
 _G.BaristaSpeed         = 300
 _G.AutoPoliceEnabled    = false
-_G.blackscreen          = false
-_G.PermanentBlackscreen = false
 _G.RejoinTriggered      = false
 
 _G.AutoWebhook  = false
@@ -92,7 +90,7 @@ local missionsCompleted = 0
 local AnchoredPartsList = {}
 local ActiveMissions    = Workspace:WaitForChild("ActiveMissions", 10)
 
--- â”€â”€â”€ Building whitelist â€” anything whose name matches stays alive â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- Building whitelist
 local BuildingWhitelist = {
     "Terrain", "Camera", "Baseplate", "SpawnLocation",
     "BaristaJob", "Livrason", "ActiveMissions", "PoliceJob",
@@ -179,7 +177,6 @@ local function RejoinServer()
     end)
 end
 
--- â”€â”€â”€ Courier 79m cap â€” CourierEarned only, guarded by RejoinTriggered â”€â”€â”€â”€â”€â”€â”€â”€â”€
 task.spawn(function()
     task.wait(10)
     while task.wait(2) do
@@ -198,60 +195,6 @@ task.spawn(function()
     end
 end)
 
-local BlackScreen = Instance.new("ScreenGui")
-local Frame       = Instance.new("Frame")
-
-if gethui then
-    BlackScreen.Parent = gethui()
-else
-    BlackScreen.Parent = game:GetService("CoreGui") or LP.PlayerGui
-end
-
-BlackScreen.Name         = generateRandomName()
-Frame.Name               = generateRandomName()
-BlackScreen.DisplayOrder = -1
-BlackScreen.Enabled      = false
-
-Frame.Parent           = BlackScreen
-Frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-Frame.Size             = UDim2.new(1.5, 0, 1.5, 0)
-Frame.Position         = UDim2.new(-0.25, 0, -0.25, 0)
-Frame.BorderSizePixel  = 0
-
-Frame:GetPropertyChangedSignal("Size"):Connect(function()
-    if Frame.Size ~= UDim2.new(1.5, 0, 1.5, 0) then
-        Frame.Size = UDim2.new(1.5, 0, 1.5, 0)
-    end
-end)
-
-Frame:GetPropertyChangedSignal("BackgroundTransparency"):Connect(function()
-    if Frame.BackgroundTransparency ~= 0 then
-        Frame.BackgroundTransparency = 0
-    end
-end)
-
-Frame:GetPropertyChangedSignal("Visible"):Connect(function()
-    if Frame.Visible == false and _G.PermanentBlackscreen then
-        Frame.Visible = true
-    end
-end)
-
-local function updateBlackScreen()
-    verifyFunction(updateBlackScreen)
-    local isAnyFarmActive = (_G.AutofarmCourier or _G.AutoFarmBarista or _G.AutoPoliceEnabled)
-    if isAnyFarmActive then
-        _G.blackscreen          = true
-        _G.PermanentBlackscreen = true
-    else
-        _G.blackscreen = false
-        if _G.PermanentBlackscreen then
-            BlackScreen.Enabled = true
-        end
-        return
-    end
-    BlackScreen.Enabled = _G.blackscreen
-end
-
 local function SwitchToCourier()
     local TeamRemote = ReplicatedStorage:FindFirstChild("TeamChangeRequest", true)
     if TeamRemote then
@@ -262,7 +205,6 @@ local function SwitchToCourier()
     end
 end
 
--- â”€â”€â”€ Courier Tween â€” sit-gated, BodyGyro stabilized â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 local function Tween(targetCFrame, keepSit)
     local Char = LP.Character
     local Root = Char and Char:FindFirstChild("HumanoidRootPart")
@@ -553,7 +495,6 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- â”€â”€â”€ Courier main loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 task.spawn(function()
     while true do
         task.wait(1)
@@ -591,7 +532,6 @@ task.spawn(function()
                     continue
                 end
 
-                -- Pickup slab: stays alive until character has landed after unsit
                 local pickupCF   = TAKE_BOX_CFRAME
                 local pickupSlab = Instance.new("Part")
                 pickupSlab.Size         = Vector3.new(60, 1, 60)
@@ -603,13 +543,13 @@ task.spawn(function()
                 pickupSlab.Material     = Enum.Material.SmoothPlastic
                 pickupSlab.Parent       = Workspace
 
-                Tween(pickupCF, false)          -- Tween unsits + jumps internally
-                task.wait(0.6)                  -- jump arc clears the slab edge
+                Tween(pickupCF, false)
+                task.wait(0.6)
                 if _G.AutofarmCourier and TAKE_PROMPT.Enabled then
                     fireproximityprompt(TAKE_PROMPT)
                     task.wait(1.5)
                 end
-                task.wait(0.4)                  -- character fully grounded before slab goes
+                task.wait(0.4)
                 pcall(function() pickupSlab:Destroy() end)
             else
                 WaktuKosong = nil
@@ -636,22 +576,20 @@ task.spawn(function()
                     if _G.AutofarmCourier and TargetPrompt.Enabled then
                         fireproximityprompt(TargetPrompt)
 
-                        -- Re-sit for stability while the prompt resolves
                         task.wait(0.5)
                         if Hum and _G.AutofarmCourier then
                             Hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
                             Hum.Sit = true
                         end
-                        task.wait(3)                -- delivery animation + server ack window
+                        task.wait(3)
 
-                        -- Unsit and verify ground contact before pulling the slab
                         if Hum then
                             Hum.Sit = false
                             Hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
                             task.wait(0.15)
                             Hum.Jump = true
                         end
-                        task.wait(0.6)              -- jump arc clears; character lands on slab
+                        task.wait(0.6)
                     end
 
                     pcall(function() deliverySlab:Destroy() end)
@@ -788,7 +726,6 @@ local function UnanchorAll()
     end
 end
 
--- â”€â”€â”€ Police teleport â€” lerp path BodyGyro stabilized â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 local function SafePoliceTeleport(targetCFrame, bypassChecks, preventUnsit, skipSit)
     if not bypassChecks and not _G.AutoPoliceEnabled then return end
     local Character = LP.Character
@@ -1400,7 +1337,6 @@ AutofarmTab:CreateToggle({
     Flag         = "CourierFarm",
     Callback     = function(state)
         _G.AutofarmCourier = state
-        updateBlackScreen()
         if state then
             Rayfield:Notify({
                 Title    = "Projectsion",
@@ -1431,7 +1367,6 @@ AutofarmTab:CreateToggle({
     Flag         = "BaristaFarm",
     Callback     = function(state)
         _G.AutoFarmBarista = state
-        updateBlackScreen()
         if state then
             LastActivity = tick()
             task.spawn(function()
@@ -1466,7 +1401,6 @@ AutofarmTab:CreateToggle({
     Flag         = "PoliceFarmToggle",
     Callback     = function(state)
         _G.AutoPoliceEnabled = state
-        updateBlackScreen()
         if state then
             Rayfield:Notify({Title = "Projectsion", Content = "Auto Police Department Enabled.",  Duration = 3})
             task.spawn(function()
