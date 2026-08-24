@@ -29,65 +29,115 @@ end)
 
 local Rayfield = loadstring(game:HttpGet(targetUrl2))()
 
-local HttpService = game:GetService("HttpService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
-local Players = game:GetService("Players")
-local LP = Players.LocalPlayer
-local RunService = game:GetService("RunService")
-local PlayerData = LP:WaitForChild("PlayerData")
-local UserInputService = game:GetService("UserInputService")
-local Workspace = game:GetService("Workspace")
-local TeleportService = game:GetService("TeleportService")
+local HttpService        = game:GetService("HttpService")
+local ReplicatedStorage  = game:GetService("ReplicatedStorage")
+local TweenService       = game:GetService("TweenService")
+local Players            = game:GetService("Players")
+local LP                 = Players.LocalPlayer
+local RunService         = game:GetService("RunService")
+local PlayerData         = LP:WaitForChild("PlayerData")
+local UserInputService   = game:GetService("UserInputService")
+local Workspace          = game:GetService("Workspace")
+local TeleportService    = game:GetService("TeleportService")
 
 local CourierSettings = require(ReplicatedStorage:WaitForChild("Delivery System"):WaitForChild("Settings"))
-local MachinePrompt = workspace.BaristaJob.Interactions.MachinePart.MachinePart.MachinePrompt
-local RegisterPrompt = workspace.BaristaJob.Interactions.RegisterPart.RegisterPart.RegisterPrompt
-local SupplyPrompt = workspace.BaristaJob.Interactions.SupplyPart.SupplyPart.SupplyPrompt
-local JobPrompt = workspace.BaristaJob.Interactions.StartPart.StartPart.JobPrompt
+local MachinePrompt   = workspace.BaristaJob.Interactions.MachinePart.MachinePart.MachinePrompt
+local RegisterPrompt  = workspace.BaristaJob.Interactions.RegisterPart.RegisterPart.RegisterPrompt
+local SupplyPrompt    = workspace.BaristaJob.Interactions.SupplyPart.SupplyPart.SupplyPrompt
+local JobPrompt       = workspace.BaristaJob.Interactions.StartPart.StartPart.JobPrompt
 
-local SupplyCF = CFrame.new(-5116.78418, 5.78931046, -670.858887)
-local MachineCF = CFrame.new(-4997.1665, 1.58353043, -795.047607)
-local RegisterCF = CFrame.new(-4994.06934, 1.30402756, -760.247437)
-local StartJobCF = CFrame.new(-4989.80078, 5.30382967, -715.013062)
+local SupplyCF        = CFrame.new(-5116.78418, 5.78931046, -670.858887)
+local MachineCF       = CFrame.new(-4997.1665, 1.58353043, -795.047607)
+local RegisterCF      = CFrame.new(-4994.06934, 1.30402756, -760.247437)
+local StartJobCF      = CFrame.new(-4989.80078, 5.30382967, -715.013062)
 local TAKE_BOX_CFRAME = CFrame.new(-5105.61182, 4.48948574, -3758.98267)
-local TAKE_PROMPT = workspace:WaitForChild("Livrason"):WaitForChild("Take1"):WaitForChild("Take"):WaitForChild("ProximityPrompt")
+local TAKE_PROMPT     = workspace:WaitForChild("Livrason"):WaitForChild("Take1"):WaitForChild("Take"):WaitForChild("ProximityPrompt")
 
-_G.AutofarmCourier = false
-_G.CourierSpeed = 230
-_G.AutoFarmBarista = false
-_G.BaristaSpeed = 300 
-_G.AutoPoliceEnabled = false
+_G.AutofarmCourier      = false
+_G.CourierSpeed         = 230
+_G.AutoFarmBarista      = false
+_G.BaristaSpeed         = 300
+_G.AutoPoliceEnabled    = false
+_G.RejoinTriggered      = false
 
-_G.AutoWebhook = false
-_G.WebhookURL = ""
+_G.AutoWebhook  = false
+_G.WebhookURL   = ""
 _G.TotalEarning = 0
-_G.CycleCount = 0
-_G.StartTime = os.time()
-LastActivity = tick()
-local lastMoney = PlayerData.RPValue.Value
+_G.CycleCount   = 0
+_G.StartTime    = os.time()
+LastActivity    = tick()
+local lastMoney     = PlayerData.RPValue.Value
 local pendingIncome = 0
-local isRunning = false
-local cooldownTime = 60
-local WaktuKosong = nil
+local isRunning     = false
+local cooldownTime  = 60
+local WaktuKosong   = nil
 
 _G.CourierEarned = 0
 _G.BaristaEarned = 0
-_G.PoliceEarned = 0
+_G.PoliceEarned  = 0
 
 local AutoPoliceConfig = {
-    TeleportSpeed = {min = 200, max = 300},
-    PostTeleportWait = {min = 2, max = 4},
-    WalkTimeout = 10,
-    TargetOffset = 15,
-    LoopDelay = 1
+    TeleportSpeed    = {min = 200, max = 300},
+    PostTeleportWait = {min = 2,   max = 4},
+    WalkTimeout      = 10,
+    TargetOffset     = 15,
+    LoopDelay        = 1
 }
 local ActiveConnections = {}
 local NeedJobRefresh, RequestingJob = false, false
-local TeleportActive = false
+local TeleportActive    = false
 local missionsCompleted = 0
 local AnchoredPartsList = {}
-local ActiveMissions = Workspace:WaitForChild("ActiveMissions", 10)
+local ActiveMissions    = Workspace:WaitForChild("ActiveMissions", 10)
+
+-- ─── Building whitelist — anything whose name matches stays alive ─────────────
+local BuildingWhitelist = {
+    "Terrain", "Camera", "Baseplate", "SpawnLocation",
+    "BaristaJob", "Livrason", "ActiveMissions", "PoliceJob",
+    "Players", "ReplicatedStorage", "StarterGui", "StarterPack",
+    "Lighting", "CoreGui", "CorePackages", "RobloxGui",
+}
+
+local function IsWhitelisted(name)
+    for _, w in ipairs(BuildingWhitelist) do
+        if name == w then return true end
+    end
+    return false
+end
+
+local function DeleteBuildings()
+    for _, obj in ipairs(Workspace:GetChildren()) do
+        if obj:IsA("Model") or obj:IsA("Folder") then
+            if not IsWhitelisted(obj.Name) then
+                -- skip player characters
+                local isChar = false
+                for _, plr in ipairs(Players:GetPlayers()) do
+                    if plr.Character == obj then isChar = true break end
+                end
+                if not isChar then
+                    pcall(function() obj:Destroy() end)
+                end
+            end
+        end
+    end
+end
+
+DeleteBuildings()
+
+-- ─── Delivery platform — 60×1×60 anchored slab, lives only during delivery ───
+local function SpawnDeliveryPlatform(atCFrame)
+    local platform = Instance.new("Part")
+    platform.Name         = "DeliveryPlatform_" .. generateRandomName and generateRandomName() or tostring(math.random(1e6))
+    platform.Size         = Vector3.new(60, 1, 60)
+    platform.CFrame       = CFrame.new(atCFrame.Position - Vector3.new(0, 1, 0))
+    platform.Anchored     = true
+    platform.CanCollide   = true
+    platform.Transparency = 0.6
+    platform.BrickColor   = BrickColor.new("Bright blue")
+    platform.Material     = Enum.Material.SmoothPlastic
+    platform.Parent       = Workspace
+    return platform
+end
 
 local function generateRandomName()
     local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -102,24 +152,24 @@ end
 
 local function RejoinServer()
     local queue_teleport = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
-    
-    _G.AutofarmCourier = false
-    _G.AutoFarmBarista = false
+
+    _G.AutofarmCourier   = false
+    _G.AutoFarmBarista   = false
     _G.AutoPoliceEnabled = false
-    
+
     Rayfield:Notify({
-        Title = "Projectsion",
-        Content = "Rejoining server safely...",
+        Title    = "Projectsion",
+        Content  = "Rejoining server safely...",
         Duration = 3
     })
     task.wait(5)
-    
+
     if queue_teleport then
         queue_teleport([[
             if not game:IsLoaded() then
                 game.Loaded:Wait()
             end
-            task.wait(5)
+            task.wait(8)
             pcall(function() 
                 loadstring(game:HttpGet("https://raw.githubusercontent.com/luxxidroblox-code/myscript.lua/refs/heads/main/adonis.lua"))() 
             end)
@@ -133,7 +183,7 @@ local function RejoinServer()
             end)
         ]])
     end
-    
+
     pcall(function()
         if #Players:GetPlayers() <= 1 then
             TeleportService:Teleport(game.PlaceId, LP)
@@ -143,14 +193,17 @@ local function RejoinServer()
     end)
 end
 
+-- ─── Courier 79m cap — CourierEarned only, guarded by RejoinTriggered ─────────
 task.spawn(function()
+    task.wait(10)
     while task.wait(2) do
-        if _G.TotalEarning >= 79000000 then
+        if not _G.RejoinTriggered and _G.CourierEarned >= 79000000 then
+            _G.RejoinTriggered = true
             Rayfield:Notify({
-                Title = "Target Reached",
-                Content = "Total earned mencakup batas. Memulai Rejoin...",
+                Title    = "Target Reached",
+                Content  = "Courier earned mencakup batas. Memulai Rejoin...",
                 Duration = 5,
-                Image = 4483362458,
+                Image    = 4483362458,
             })
             task.wait(1)
             RejoinServer()
@@ -169,6 +222,7 @@ local function SwitchToCourier()
     end
 end
 
+-- ─── Courier Tween — sit-gated, BodyGyro stabilized ──────────────────────────
 local function Tween(targetCFrame, keepSit)
     local Char = LP.Character
     local Root = Char and Char:FindFirstChild("HumanoidRootPart")
@@ -238,7 +292,7 @@ end
 
 local function GetActivePoint()
     for _, folder in ipairs(CourierSettings.Folder.Location:GetChildren()) do
-        local block = folder:FindFirstChild("Block")
+        local block  = folder:FindFirstChild("Block")
         local prompt = block and block:FindFirstChildOfClass("ProximityPrompt")
         if prompt and (prompt.Enabled or folder:FindFirstChild("POINT").billboardgui.Enabled) then
             return block, prompt
@@ -260,7 +314,7 @@ local function getAvatar()
 end
 
 local function formatRP(v)
-    local s = string.format("%.0f", v)
+    local s         = string.format("%.0f", v)
     local formatted = s:reverse():gsub("(%d%d%d)", "%1."):reverse():gsub("^%.", "")
     return "RP. " .. formatted
 end
@@ -272,27 +326,26 @@ end
 
 local function sendWebhook(income, target)
     if _G.WebhookURL == "" or not _G.WebhookURL:find("discord.com") then return end
-
     _G.CycleCount = _G.CycleCount + 1
-    
+
     local currentMoney = PlayerData.RPValue.Value
     local http_request = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
 
     local embed = {
         ["author"] = {
-            ["name"] = "Projectsion Webhook",
+            ["name"]     = "Projectsion Webhook",
             ["icon_url"] = getAvatar()
         },
         ["title"] = "Cycle Completed",
         ["color"] = 0xFFFFFF,
         ["fields"] = {
-            {["name"] = "Username", ["value"] = LP.Name, ["inline"] = false},
-            {["name"] = "Cycle Income", ["value"] = formatRP(income), ["inline"] = false},
-            {["name"] = "Target", ["value"] = formatRP(target), ["inline"] = false},
-            {["name"] = "Current Money", ["value"] = formatRP(currentMoney) .. " (Est)", ["inline"] = false},
+            {["name"] = "Username",      ["value"] = LP.Name,                               ["inline"] = false},
+            {["name"] = "Cycle Income",  ["value"] = formatRP(income),                      ["inline"] = false},
+            {["name"] = "Target",        ["value"] = formatRP(target),                      ["inline"] = false},
+            {["name"] = "Current Money", ["value"] = formatRP(currentMoney) .. " (Est)",    ["inline"] = false},
             {["name"] = "Total Earning", ["value"] = formatRP(_G.TotalEarning) .. " (Est)", ["inline"] = false},
-            {["name"] = "Cycle Count", ["value"] = tostring(_G.CycleCount), ["inline"] = false},
-            {["name"] = "Running Time", ["value"] = getRunningTime(), ["inline"] = false}
+            {["name"] = "Cycle Count",   ["value"] = tostring(_G.CycleCount),               ["inline"] = false},
+            {["name"] = "Running Time",  ["value"] = getRunningTime(),                      ["inline"] = false}
         },
         ["image"] = {
             ["url"] = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&"
@@ -304,16 +357,16 @@ local function sendWebhook(income, target)
 
     local payload = HttpService:JSONEncode({
         ["username"] = "Projectsion Reports",
-        ["embeds"] = {embed}
+        ["embeds"]   = {embed}
     })
 
     if http_request then
         pcall(function()
             http_request({
-                Url = _G.WebhookURL,
-                Method = "POST",
+                Url     = _G.WebhookURL,
+                Method  = "POST",
                 Headers = {["Content-Type"] = "application/json"},
-                Body = payload
+                Body    = payload
             })
         end)
     end
@@ -325,22 +378,22 @@ local lblCourierEarned, lblBaristaEarned, lblPoliceEarned
 PlayerData.RPValue.Changed:Connect(function(newMoney)
     if newMoney > lastMoney then
         local gained = newMoney - lastMoney
-        pendingIncome = pendingIncome + gained
+        pendingIncome   = pendingIncome + gained
         _G.TotalEarning = _G.TotalEarning + gained
-        
+
         if _G.AutofarmCourier then
             _G.CourierEarned = _G.CourierEarned + gained
         elseif _G.AutoFarmBarista then
             _G.BaristaEarned = _G.BaristaEarned + gained
         elseif _G.AutoPoliceEnabled then
-            _G.PoliceEarned = _G.PoliceEarned + gained
+            _G.PoliceEarned  = _G.PoliceEarned + gained
         end
 
-        if lblTotalEarned then lblTotalEarned:Set("Total Earned: " .. formatRP(_G.TotalEarning)) end
-        if lblCurrentMoney then lblCurrentMoney:Set("Current Money: " .. formatRP(newMoney)) end
-        if lblCourierEarned then lblCourierEarned:Set("Courier: " .. formatRP(_G.CourierEarned)) end
-        if lblBaristaEarned then lblBaristaEarned:Set("Barista: " .. formatRP(_G.BaristaEarned)) end
-        if lblPoliceEarned then lblPoliceEarned:Set("Police Department: " .. formatRP(_G.PoliceEarned)) end
+        if lblTotalEarned   then lblTotalEarned:Set("Total Earned: "       .. formatRP(_G.TotalEarning))  end
+        if lblCurrentMoney  then lblCurrentMoney:Set("Current Money: "     .. formatRP(newMoney))         end
+        if lblCourierEarned then lblCourierEarned:Set("Courier: "          .. formatRP(_G.CourierEarned)) end
+        if lblBaristaEarned then lblBaristaEarned:Set("Barista: "          .. formatRP(_G.BaristaEarned)) end
+        if lblPoliceEarned  then lblPoliceEarned:Set("Police Department: " .. formatRP(_G.PoliceEarned))  end
 
         if not isRunning then
             isRunning = true
@@ -367,7 +420,7 @@ local function GetBaristaElements()
     local Gui = LP.PlayerGui:FindFirstChild("BaristaGUI")
     if Gui then
         local OrderText = Gui:FindFirstChild("StatusFrame") and Gui.StatusFrame:FindFirstChild("OrderText")
-        local Minigame = Gui:FindFirstChild("MinigameFrame")
+        local Minigame  = Gui:FindFirstChild("MinigameFrame")
         return Gui, OrderText, Minigame
     end
     return nil, nil, nil
@@ -382,21 +435,17 @@ end
 
 local function BypassTP(targetCF)
     local Char = LP.Character or LP.CharacterAdded:Wait()
-    local Hum = Char:WaitForChild("Humanoid")
+    local Hum  = Char:WaitForChild("Humanoid")
     local Root = Char:WaitForChild("HumanoidRootPart")
-
     if Hum and Root then
         local distance = (Root.Position - targetCF.Position).Magnitude
         local duration = distance / _G.BaristaSpeed
-
         Hum.Sit = true
         task.wait(0.5)
-
-        local info = TweenInfo.new(duration, Enum.EasingStyle.Linear)
+        local info  = TweenInfo.new(duration, Enum.EasingStyle.Linear)
         local tween = TweenService:Create(Root, info, {CFrame = targetCF})
         tween:Play()
         tween.Completed:Wait()
-
         task.wait(0.3)
         Hum.Sit = false
     end
@@ -404,19 +453,15 @@ end
 
 local function ExecuteStartSequence()
     local tr = GetRemote("TeamChangeRequest")
-
     if LP.Team and LP.Team.Name ~= "Barista" and tr then
         tr:FireServer("Barista", 11378976, 0, 0, "Detector")
         task.wait(2.5)
     end
-
     BypassTP(StartJobCF)
     task.wait(0.8)
-
     if JobPrompt and JobPrompt.Enabled then
         fireproximityprompt(JobPrompt)
     end
-
     LastActivity = tick()
 end
 
@@ -430,7 +475,7 @@ task.spawn(function()
             end
 
             if OrderTextLabel then
-                local txt = OrderTextLabel.Text:lower()
+                local txt      = OrderTextLabel.Text:lower()
                 local isBroken = (OrderTextLabel.TextColor3.R > 0.8 and (txt:find("break") or txt:find("down")))
 
                 if isBroken then
@@ -468,6 +513,7 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
+-- ─── Courier main loop ────────────────────────────────────────────────────────
 task.spawn(function()
     while true do
         task.wait(1)
@@ -505,27 +551,52 @@ task.spawn(function()
                     continue
                 end
 
-                Tween(TAKE_BOX_CFRAME, false)
+                -- Pickup: platform under box grab point, tween in, grab, destroy platform
+                local pickupCF    = TAKE_BOX_CFRAME
+                local pickupSlab  = Instance.new("Part")
+                pickupSlab.Size         = Vector3.new(60, 1, 60)
+                pickupSlab.CFrame       = CFrame.new(pickupCF.Position - Vector3.new(0, 1, 0))
+                pickupSlab.Anchored     = true
+                pickupSlab.CanCollide   = true
+                pickupSlab.Transparency = 0.6
+                pickupSlab.BrickColor   = BrickColor.new("Bright blue")
+                pickupSlab.Material     = Enum.Material.SmoothPlastic
+                pickupSlab.Parent       = Workspace
 
+                Tween(pickupCF, false)
                 task.wait(0.4)
                 if _G.AutofarmCourier and TAKE_PROMPT.Enabled then
                     fireproximityprompt(TAKE_PROMPT)
                     task.wait(1.5)
                 end
+                pcall(function() pickupSlab:Destroy() end)
             else
                 WaktuKosong = nil
 
                 if TargetBlock and TargetPrompt then
                     task.wait(math.random(0, 1))
 
-                    Tween(TargetBlock.CFrame * CFrame.new(0, 2, 0), false)
+                    local deliveryCF   = TargetBlock.CFrame * CFrame.new(0, 2, 0)
 
+                    -- Spawn platform at delivery point before tweening
+                    local deliverySlab = Instance.new("Part")
+                    deliverySlab.Size         = Vector3.new(60, 1, 60)
+                    deliverySlab.CFrame       = CFrame.new(deliveryCF.Position - Vector3.new(0, 1, 0))
+                    deliverySlab.Anchored     = true
+                    deliverySlab.CanCollide   = true
+                    deliverySlab.Transparency = 0.6
+                    deliverySlab.BrickColor   = BrickColor.new("Bright blue")
+                    deliverySlab.Material     = Enum.Material.SmoothPlastic
+                    deliverySlab.Parent       = Workspace
+
+                    Tween(deliveryCF, false)
                     task.wait(0.3)
                     AutoEquipBox()
 
                     if _G.AutofarmCourier and TargetPrompt.Enabled then
                         fireproximityprompt(TargetPrompt)
 
+                        -- Sit back on for next leg, then destroy slab
                         task.wait(0.5)
                         if Hum and _G.AutofarmCourier then
                             Hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
@@ -533,6 +604,8 @@ task.spawn(function()
                         end
                         task.wait(3)
                     end
+
+                    pcall(function() deliverySlab:Destroy() end)
                 end
             end
         else
@@ -597,7 +670,7 @@ local function getPoliceUI()
 end
 
 local function GetLocationLabelText()
-    local ui = getPoliceUI()
+    local ui    = getPoliceUI()
     local label = ui and ui:FindFirstChild("LocationLabel", true)
     return label and label.Text
 end
@@ -607,7 +680,7 @@ local function WaitUntilAssigned()
 end
 
 local function GetObjectiveProgress()
-    local ui = getPoliceUI()
+    local ui    = getPoliceUI()
     local label = ui and ui:FindFirstChild("ObjectiveLabel", true)
     if label and label.Text then
         local text = label.Text:gsub("%s+", "")
@@ -619,7 +692,7 @@ local function GetObjectiveProgress()
 end
 
 local function GetObjectiveDetailedProgress()
-    local ui = getPoliceUI()
+    local ui    = getPoliceUI()
     local label = ui and ui:FindFirstChild("ObjectiveLabel", true)
     if label and label.Text then
         local text = label.Text:lower()
@@ -666,21 +739,23 @@ local function UnanchorAll()
     end
 end
 
+-- ─── Police teleport — lerp path BodyGyro stabilized ─────────────────────────
 local function SafePoliceTeleport(targetCFrame, bypassChecks, preventUnsit, skipSit)
     if not bypassChecks and not _G.AutoPoliceEnabled then return end
     local Character = LP.Character
-    local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
-    local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
+    local Humanoid  = Character and Character:FindFirstChildOfClass("Humanoid")
+    local HRP       = Character and Character:FindFirstChild("HumanoidRootPart")
     if not Humanoid or not HRP then return end
     TeleportActive = true
     pcall(function()
-        local isDriving = (Humanoid.SeatPart ~= nil and Humanoid.SeatPart:IsA("VehicleSeat"))
+        local isDriving  = (Humanoid.SeatPart ~= nil and Humanoid.SeatPart:IsA("VehicleSeat"))
         local destCFrame = targetCFrame + (isDriving and Vector3.new(0, 10, 0) or Vector3.new(0, 1.5, 0))
         local mainPart, vehicle = HRP, nil
+
         if isDriving then
             local seat = Humanoid.SeatPart
-            vehicle = seat:FindFirstAncestorOfClass("Model")
-            mainPart = (vehicle and vehicle.PrimaryPart) or seat
+            vehicle    = seat:FindFirstAncestorOfClass("Model")
+            mainPart   = (vehicle and vehicle.PrimaryPart) or seat
         else
             local distance = (destCFrame.Position - HRP.Position).Magnitude
             if distance > 80 then skipSit = false end
@@ -706,19 +781,19 @@ local function SafePoliceTeleport(targetCFrame, bypassChecks, preventUnsit, skip
                 end
             end
         end
-        
+
         if Character then
             for _, part in ipairs(Character:GetDescendants()) do
                 if part:IsA("BasePart") then pcall(function() part.Anchored = false end) end
             end
         end
-        
+
         local currentPos = mainPart.Position
-        local targetPos = destCFrame.Position
-        local distance = (targetPos - currentPos).Magnitude
-        local speedConf = AutoPoliceConfig.TeleportSpeed
-        local speed = math.random(speedConf.min, speedConf.max)
-        local duration = distance / speed
+        local targetPos  = destCFrame.Position
+        local distance   = (targetPos - currentPos).Magnitude
+        local speedConf  = AutoPoliceConfig.TeleportSpeed
+        local speed      = math.random(speedConf.min, speedConf.max)
+        local duration   = distance / speed
 
         if duration > 0 then
             if isDriving then
@@ -743,6 +818,13 @@ local function SafePoliceTeleport(targetCFrame, bypassChecks, preventUnsit, skip
                 tween.Completed:Wait()
                 if connection then connection:Disconnect() end
             else
+                local gyro = Instance.new("BodyGyro")
+                gyro.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
+                gyro.P         = 1e5
+                gyro.D         = 500
+                gyro.CFrame    = destCFrame
+                gyro.Parent    = HRP
+
                 HRP.Anchored = false
                 local startTime = os.clock()
                 while os.clock() - startTime < duration do
@@ -750,11 +832,13 @@ local function SafePoliceTeleport(targetCFrame, bypassChecks, preventUnsit, skip
                     local alpha = math.clamp((os.clock() - startTime) / duration, 0, 1)
                     pcall(function()
                         HRP.Velocity, HRP.RotVelocity = Vector3.new(0,0,0), Vector3.new(0,0,0)
-                        HRP.CFrame = CFrame.new(currentPos:Lerp(targetPos, alpha)) * destCFrame.Rotation
+                        HRP.CFrame  = CFrame.new(currentPos:Lerp(targetPos, alpha)) * destCFrame.Rotation
+                        gyro.CFrame = destCFrame
                     end)
                     RunService.Heartbeat:Wait()
                 end
                 pcall(function() HRP.CFrame = destCFrame end)
+                gyro:Destroy()
             end
             mainPart.Velocity, mainPart.RotVelocity = Vector3.new(0,0,0), Vector3.new(0,0,0)
         else
@@ -803,7 +887,7 @@ end
 
 local function EquipToolByName(toolName)
     local Character = LP.Character
-    local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+    local Humanoid  = Character and Character:FindFirstChildOfClass("Humanoid")
     if not Humanoid then return false end
     if Humanoid.Sit or Humanoid.SeatPart then
         pcall(function()
@@ -838,7 +922,7 @@ local function FirePrompt(prompt, targetPart)
         if prompt.MaxActivationDistance < 100 then prompt.MaxActivationDistance = 100 end
     end)
     local Character = LP.Character
-    local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
+    local HRP    = Character and Character:FindFirstChild("HumanoidRootPart")
     local target = targetPart or prompt.Parent
     for attempt = 1, 3 do
         if not _G.AutoPoliceEnabled then break end
@@ -846,7 +930,7 @@ local function FirePrompt(prompt, targetPart)
         if HRP and target and target:IsA("BasePart") then
             pcall(function()
                 HRP.CFrame = CFrame.new(HRP.Position, Vector3.new(target.Position.X, HRP.Position.Y, target.Position.Z))
-                local cam = Workspace.CurrentCamera
+                local cam  = Workspace.CurrentCamera
                 if cam then cam.CFrame = CFrame.new(cam.CFrame.Position, target.Position) end
             end)
             task.wait(0.2)
@@ -873,7 +957,7 @@ local function FirePrompt(prompt, targetPart)
 end
 
 local function RequestPoliceJob()
-    local ui = getPoliceUI()
+    local ui        = getPoliceUI()
     local container = ui and ui:FindFirstChild("Container")
     if container and container.Visible then return end
     RequestingJob = true
@@ -881,7 +965,7 @@ local function RequestPoliceJob()
         local isAlreadyPolice = (LP.Team and LP.Team.Name == "Police")
         if not isAlreadyPolice then
             local JobEvents = ReplicatedStorage:WaitForChild("JobEvents", 10)
-            local Event = JobEvents and JobEvents:WaitForChild("TeamChangeRequest", 10)
+            local Event     = JobEvents and JobEvents:WaitForChild("TeamChangeRequest", 10)
             if Event then Event:FireServer("Police", 0, 0, 1428858969, "Detector") task.wait(2) end
         end
         local Character = LP.Character
@@ -898,8 +982,8 @@ local function RequestPoliceJob()
                 UnanchorAll()
                 task.wait(1.5)
                 local PoliceJob = Workspace:WaitForChild("PoliceJob", 10)
-                local Start = PoliceJob and PoliceJob:WaitForChild("Start", 10)
-                local TOMBOL = Start and Start:WaitForChild("ProximityPrompt", 10)
+                local Start     = PoliceJob and PoliceJob:WaitForChild("Start", 10)
+                local TOMBOL    = Start and Start:WaitForChild("ProximityPrompt", 10)
                 if TOMBOL then
                     task.wait(1)
                     if fireproximityprompt then
@@ -921,7 +1005,11 @@ end
 
 local function GetRandomPointInPart(part)
     local size = part.Size
-    return part.Position + Vector3.new((math.random() - 0.5) * (size.X * 0.8), size.Y / 2, (math.random() - 0.5) * (size.Z * 0.8))
+    return part.Position + Vector3.new(
+        (math.random() - 0.5) * (size.X * 0.8),
+        size.Y / 2,
+        (math.random() - 0.5) * (size.Z * 0.8)
+    )
 end
 
 local function GetConePlacementZones(missionModel)
@@ -934,7 +1022,7 @@ end
 
 local function PlaceConeAtZone(zonePart)
     local Character = LP.Character
-    local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
+    local HRP       = Character and Character:FindFirstChild("HumanoidRootPart")
     if not HRP then return false end
     local targetPos = GetRandomPointInPart(zonePart)
     SafePoliceTeleport(CFrame.new(targetPos + Vector3.new(0, 1.5, 0)), nil, false, true)
@@ -946,7 +1034,7 @@ local function PlaceConeAtZone(zonePart)
         EquipToolByName("TrafficCone")
         pcall(function()
             HRP.CFrame = CFrame.new(HRP.Position, Vector3.new(zonePart.Position.X, zonePart.Position.Y, zonePart.Position.Z))
-            local cam = Workspace.CurrentCamera
+            local cam  = Workspace.CurrentCamera
             if cam then cam.CFrame = CFrame.new(cam.CFrame.Position, zonePart.Position) end
         end)
         task.wait(0.2)
@@ -983,7 +1071,7 @@ end
 
 local function PlaceLineAtZone(zonePart)
     local Character = LP.Character
-    local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
+    local HRP       = Character and Character:FindFirstChild("HumanoidRootPart")
     if not HRP then return false end
     local targetPos = GetRandomPointInPart(zonePart)
     SafePoliceTeleport(CFrame.new(targetPos + Vector3.new(0, 1.5, 0)), nil, false, true)
@@ -996,7 +1084,7 @@ local function PlaceLineAtZone(zonePart)
         EquipToolByName("PoliceLine")
         pcall(function()
             HRP.CFrame = CFrame.new(HRP.Position, Vector3.new(zonePart.Position.X, zonePart.Position.Y, zonePart.Position.Z))
-            local cam = Workspace.CurrentCamera
+            local cam  = Workspace.CurrentCamera
             if cam then cam.CFrame = CFrame.new(cam.CFrame.Position, zonePart.Position) end
         end)
         task.wait(0.2)
@@ -1025,7 +1113,7 @@ local function PlaceLineAtZone(zonePart)
 end
 
 local function GetSuspectHP()
-    local ui = getPoliceUI()
+    local ui    = getPoliceUI()
     local label = ui and ui:FindFirstChild("ObjectiveLabel", true)
     if label and label.Text then
         local text = label.Text:lower()
@@ -1037,34 +1125,34 @@ end
 
 local function NeutralizeSuspect(missionModel, suspect)
     local Character = LP.Character
-    local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
+    local HRP       = Character and Character:FindFirstChild("HumanoidRootPart")
     if not HRP then return end
     local suspectHRP = suspect:FindFirstChild("HumanoidRootPart") or suspect.PrimaryPart or suspect:FindFirstChild("Head") or suspect:FindFirstChildOfClass("Part")
     EquipToolByName("Baton")
-    local lastHitTime = 0
+    local lastHitTime   = 0
     local lastEquipTime = 0
-    
+
     while _G.AutoPoliceEnabled and missionModel.Parent and suspect.Parent do
         local curHP, maxHP = GetSuspectHP()
         Character = LP.Character
-        HRP = Character and Character:FindFirstChild("HumanoidRootPart")
+        HRP       = Character and Character:FindFirstChild("HumanoidRootPart")
         if not HRP then task.wait(0.5) continue end
-        
+
         local tool = Character:FindFirstChild("Baton")
         if not tool then
             if os.clock() - lastEquipTime > 2 then EquipToolByName("Baton") lastEquipTime = os.clock() end
             tool = Character:FindFirstChild("Baton") or LP.Backpack:FindFirstChild("Baton")
         end
-        
-        local suspectPos = suspectHRP.Position
+
+        local suspectPos  = suspectHRP.Position
         local suspectLook = suspectHRP.CFrame.LookVector
-        local targetPos = suspectPos + suspectLook * 2.5
-        
+        local targetPos   = suspectPos + suspectLook * 2.5
+
         pcall(function()
             HRP.Velocity = Vector3.new(0, 0, 0)
-            HRP.CFrame = CFrame.new(targetPos, suspectPos)
+            HRP.CFrame   = CFrame.new(targetPos, suspectPos)
         end)
-        
+
         if tool and tool.Parent == Character then
             if os.clock() - lastHitTime > 0.2 then
                 pcall(function() tool:Activate() end)
@@ -1075,7 +1163,7 @@ local function NeutralizeSuspect(missionModel, suspect)
     end
     pcall(function()
         local Character = LP.Character
-        local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+        local Humanoid  = Character and Character:FindFirstChildOfClass("Humanoid")
         if Humanoid then Humanoid:UnequipTools() end
     end)
 end
@@ -1110,8 +1198,8 @@ task.spawn(function()
                 continue
             end
             local Character = LP.Character
-            local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
-            local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
+            local Humanoid  = Character and Character:FindFirstChildOfClass("Humanoid")
+            local HRP       = Character and Character:FindFirstChild("HumanoidRootPart")
             if not Character or not Humanoid or not HRP or Humanoid.Health <= 0 then
                 task.wait(0.5)
                 continue
@@ -1129,7 +1217,7 @@ task.spawn(function()
                         end
                     end)
                     local targetPart = FindMissionPart(missionModel)
-                    local prompt = GetPrompt(missionModel, targetPart)
+                    local prompt     = GetPrompt(missionModel, targetPart)
                     if prompt then
                         if targetPart then
                             SafePoliceTeleport(CFrame.new(targetPart.Position + Vector3.new(0, 1.5, 0)), nil, false)
@@ -1187,11 +1275,11 @@ task.spawn(function()
                             end
                             pcall(function()
                                 local Character = LP.Character
-                                local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+                                local Humanoid  = Character and Character:FindFirstChildOfClass("Humanoid")
                                 if Humanoid then Humanoid:UnequipTools() end
                             end)
                         end
-                        
+
                         local suspect = missionModel:FindFirstChild("Penjahat") or missionModel:WaitForChild("Penjahat", 2)
                         if suspect and _G.AutoPoliceEnabled then NeutralizeSuspect(missionModel, suspect) end
                         task.wait(math.random(3.5, 6))
@@ -1207,15 +1295,15 @@ task.spawn(function()
 end)
 
 local Window = Rayfield:CreateWindow({
-    Name = "Projectsion",
-    LoadingTitle = "Projectsion",
+    Name            = "Projectsion",
+    LoadingTitle    = "Projectsion",
     LoadingSubtitle = "by laksid",
     ConfigurationSaving = {
-        Enabled = true,
+        Enabled    = true,
         FolderName = "ProjectsionConfig",
-        FileName = "AutofarmSettings"
+        FileName   = "AutofarmSettings"
     },
-    Discord = {Enabled = false},
+    Discord   = {Enabled = false},
     KeySystem = false
 })
 
@@ -1227,8 +1315,8 @@ HomeTab:CreateButton({
     Name = "Version 1.0",
     Callback = function()
         Rayfield:Notify({
-            Title = "Projectsion",
-            Content = "+ script cleaned",
+            Title    = "Projectsion",
+            Content  = "+ script cleaned",
             Duration = 5
         })
     end
@@ -1241,20 +1329,32 @@ HomeTab:CreateButton({
     end
 })
 
+HomeTab:CreateButton({
+    Name = "Delete Buildings",
+    Callback = function()
+        DeleteBuildings()
+        Rayfield:Notify({
+            Title    = "Projectsion",
+            Content  = "Buildings cleared.",
+            Duration = 3
+        })
+    end
+})
+
 local AutofarmTab = Window:CreateTab("Autofarm", 4483362458)
 
 AutofarmTab:CreateSection("Courier")
 
 AutofarmTab:CreateToggle({
-    Name = "Autofarm Courier",
+    Name         = "Autofarm Courier",
     CurrentValue = false,
-    Flag = "CourierFarm",
-    Callback = function(state)
+    Flag         = "CourierFarm",
+    Callback     = function(state)
         _G.AutofarmCourier = state
         if state then
             Rayfield:Notify({
-                Title = "Projectsion",
-                Content = "Courier Autofarm Enabled!",
+                Title    = "Projectsion",
+                Content  = "Courier Autofarm Enabled!",
                 Duration = 3
             })
         end
@@ -1262,13 +1362,13 @@ AutofarmTab:CreateToggle({
 })
 
 AutofarmTab:CreateSlider({
-    Name = "Courier Speed",
-    Range = {10, 550},
-    Increment = 1,
-    Suffix = "Speed",
+    Name         = "Courier Speed",
+    Range        = {10, 550},
+    Increment    = 1,
+    Suffix       = "Speed",
     CurrentValue = 230,
-    Flag = "CourierSpeed",
-    Callback = function(value)
+    Flag         = "CourierSpeed",
+    Callback     = function(value)
         _G.CourierSpeed = value
     end
 })
@@ -1276,21 +1376,19 @@ AutofarmTab:CreateSlider({
 AutofarmTab:CreateSection("Barista")
 
 AutofarmTab:CreateToggle({
-    Name = "Autofarm Barista",
+    Name         = "Autofarm Barista",
     CurrentValue = false,
-    Flag = "BaristaFarm",
-    Callback = function(state)
+    Flag         = "BaristaFarm",
+    Callback     = function(state)
         _G.AutoFarmBarista = state
-
         if state then
             LastActivity = tick()
             task.spawn(function()
                 ExecuteStartSequence()
             end)
-
             Rayfield:Notify({
-                Title = "Projectsion",
-                Content = "Barista Active!",
+                Title    = "Projectsion",
+                Content  = "Barista Active!",
                 Duration = 3
             })
         end
@@ -1298,13 +1396,13 @@ AutofarmTab:CreateToggle({
 })
 
 AutofarmTab:CreateSlider({
-    Name = "Barista Speed",
-    Range = {10, 1500},
-    Increment = 1,
-    Suffix = "Speed",
+    Name         = "Barista Speed",
+    Range        = {10, 1500},
+    Increment    = 1,
+    Suffix       = "Speed",
     CurrentValue = 300,
-    Flag = "BaristaSpeed",
-    Callback = function(value)
+    Flag         = "BaristaSpeed",
+    Callback     = function(value)
         _G.BaristaSpeed = value
     end
 })
@@ -1312,13 +1410,13 @@ AutofarmTab:CreateSlider({
 AutofarmTab:CreateSection("Police Department")
 
 AutofarmTab:CreateToggle({
-    Name = "Autofarm Police",
+    Name         = "Autofarm Police",
     CurrentValue = false,
-    Flag = "PoliceFarmToggle",
-    Callback = function(state)
+    Flag         = "PoliceFarmToggle",
+    Callback     = function(state)
         _G.AutoPoliceEnabled = state
         if state then
-            Rayfield:Notify({Title = "Projectsion", Content = "Auto Police Department Enabled.", Duration = 3})
+            Rayfield:Notify({Title = "Projectsion", Content = "Auto Police Department Enabled.",  Duration = 3})
             task.spawn(function()
                 while _G.AutoPoliceEnabled do
                     if LP.Team and LP.Team.Name ~= "Police" then RequestPoliceJob() end
@@ -1332,37 +1430,37 @@ AutofarmTab:CreateToggle({
 })
 
 AutofarmTab:CreateSlider({
-    Name = "Min PostTeleport Wait (s)",
-    Range = {0, 10},
-    Increment = 0.5,
-    Suffix = "s",
+    Name         = "Min PostTeleport Wait (s)",
+    Range        = {0, 10},
+    Increment    = 0.5,
+    Suffix       = "s",
     CurrentValue = 2,
-    Flag = "PoliceMinWait",
-    Callback = function(value)
+    Flag         = "PoliceMinWait",
+    Callback     = function(value)
         AutoPoliceConfig.PostTeleportWait.min = value
     end
 })
 
 AutofarmTab:CreateSlider({
-    Name = "Max PostTeleport Wait (s)",
-    Range = {0, 10},
-    Increment = 0.5,
-    Suffix = "s",
+    Name         = "Max PostTeleport Wait (s)",
+    Range        = {0, 10},
+    Increment    = 0.5,
+    Suffix       = "s",
     CurrentValue = 4,
-    Flag = "PoliceMaxWait",
-    Callback = function(value)
+    Flag         = "PoliceMaxWait",
+    Callback     = function(value)
         AutoPoliceConfig.PostTeleportWait.max = value
     end
 })
 
 AutofarmTab:CreateSlider({
-    Name = "Police Teleport Speed Max",
-    Range = {100, 500},
-    Increment = 10,
-    Suffix = " km/h",
+    Name         = "Police Teleport Speed Max",
+    Range        = {100, 500},
+    Increment    = 10,
+    Suffix       = " km/h",
     CurrentValue = 300,
-    Flag = "PoliceMaxSpeed",
-    Callback = function(value)
+    Flag         = "PoliceMaxSpeed",
+    Callback     = function(value)
         AutoPoliceConfig.TeleportSpeed.max = value
     end
 })
@@ -1370,14 +1468,14 @@ AutofarmTab:CreateSlider({
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 
 StatsTab:CreateSection("Session Stats")
-lblTotalEarned = StatsTab:CreateLabel("Total Earned: RP. 0")
+lblTotalEarned  = StatsTab:CreateLabel("Total Earned: RP. 0")
 lblCurrentMoney = StatsTab:CreateLabel("Current Money: " .. formatRP(PlayerData.RPValue.Value))
-lblSessionTime = StatsTab:CreateLabel("Session Time: 00:00:00")
+lblSessionTime  = StatsTab:CreateLabel("Session Time: 00:00:00")
 
 StatsTab:CreateSection("Job Income")
 lblCourierEarned = StatsTab:CreateLabel("Courier: RP. 0")
 lblBaristaEarned = StatsTab:CreateLabel("Barista: RP. 0")
-lblPoliceEarned = StatsTab:CreateLabel("Police Department: RP. 0")
+lblPoliceEarned  = StatsTab:CreateLabel("Police Department: RP. 0")
 
 task.spawn(function()
     while true do
@@ -1393,27 +1491,27 @@ local WebhookTab = Window:CreateTab("Webhook", 4483362458)
 WebhookTab:CreateSection("Webhook Configuration")
 
 WebhookTab:CreateInput({
-    Name = "Discord Webhook URL",
-    PlaceholderText = "https://discord.com/api/webhooks/...",
+    Name                     = "Discord Webhook URL",
+    PlaceholderText          = "https://discord.com/api/webhooks/...",
     RemoveTextAfterFocusLost = false,
-    Flag = "WebhookURL",
-    Callback = function(text)
+    Flag                     = "WebhookURL",
+    Callback                 = function(text)
         _G.WebhookURL = text
     end
 })
 
 WebhookTab:CreateToggle({
-    Name = "Enable Webhook Logs",
+    Name         = "Enable Webhook Logs",
     CurrentValue = false,
-    Flag = "WebhookEnabled",
-    Callback = function(state)
+    Flag         = "WebhookEnabled",
+    Callback     = function(state)
         _G.AutoWebhook = state
     end
 })
 
 Rayfield:Notify({
-    Title = "Projectsion",
-    Content = "Loaded Successfully",
+    Title    = "Projectsion",
+    Content  = "Loaded Successfully",
     Duration = 5
 })
 
