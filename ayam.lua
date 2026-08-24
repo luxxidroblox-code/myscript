@@ -90,39 +90,6 @@ local missionsCompleted = 0
 local AnchoredPartsList = {}
 local ActiveMissions    = Workspace:WaitForChild("ActiveMissions", 10)
 
--- Building whitelist
-local BuildingWhitelist = {
-    "Terrain", "Camera", "Baseplate", "SpawnLocation",
-    "BaristaJob", "Livrason", "ActiveMissions", "PoliceJob",
-    "Players", "ReplicatedStorage", "StarterGui", "StarterPack",
-    "Lighting", "CoreGui", "CorePackages", "RobloxGui",
-}
-
-local function IsWhitelisted(name)
-    for _, w in ipairs(BuildingWhitelist) do
-        if name == w then return true end
-    end
-    return false
-end
-
-local function DeleteBuildings()
-    for _, obj in ipairs(Workspace:GetChildren()) do
-        if obj:IsA("Model") or obj:IsA("Folder") then
-            if not IsWhitelisted(obj.Name) then
-                local isChar = false
-                for _, plr in ipairs(Players:GetPlayers()) do
-                    if plr.Character == obj then isChar = true break end
-                end
-                if not isChar then
-                    pcall(function() obj:Destroy() end)
-                end
-            end
-        end
-    end
-end
-
-DeleteBuildings()
-
 local function generateRandomName()
     local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     local length = math.random(12, 24)
@@ -177,6 +144,7 @@ local function RejoinServer()
     end)
 end
 
+-- ─── Courier 79m cap — triggers only on CourierEarned, guarded by RejoinTriggered
 task.spawn(function()
     task.wait(10)
     while task.wait(2) do
@@ -205,6 +173,7 @@ local function SwitchToCourier()
     end
 end
 
+-- ─── Courier Tween — sit-gated, BodyGyro stabilized ──────────────────────────
 local function Tween(targetCFrame, keepSit)
     local Char = LP.Character
     local Root = Char and Char:FindFirstChild("HumanoidRootPart")
@@ -495,6 +464,7 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
+-- ─── Courier main loop ────────────────────────────────────────────────────────
 task.spawn(function()
     while true do
         task.wait(1)
@@ -532,44 +502,19 @@ task.spawn(function()
                     continue
                 end
 
-                local pickupCF   = TAKE_BOX_CFRAME
-                local pickupSlab = Instance.new("Part")
-                pickupSlab.Size         = Vector3.new(60, 1, 60)
-                pickupSlab.CFrame       = CFrame.new(pickupCF.Position - Vector3.new(0, 1, 0))
-                pickupSlab.Anchored     = true
-                pickupSlab.CanCollide   = true
-                pickupSlab.Transparency = 0.6
-                pickupSlab.BrickColor   = BrickColor.new("Bright blue")
-                pickupSlab.Material     = Enum.Material.SmoothPlastic
-                pickupSlab.Parent       = Workspace
-
-                Tween(pickupCF, false)
-                task.wait(0.6)
+                Tween(TAKE_BOX_CFRAME, false)
+                task.wait(0.4)
                 if _G.AutofarmCourier and TAKE_PROMPT.Enabled then
                     fireproximityprompt(TAKE_PROMPT)
                     task.wait(1.5)
                 end
-                task.wait(0.4)
-                pcall(function() pickupSlab:Destroy() end)
             else
                 WaktuKosong = nil
 
                 if TargetBlock and TargetPrompt then
                     task.wait(math.random(0, 1))
 
-                    local deliveryCF   = TargetBlock.CFrame * CFrame.new(0, 2, 0)
-
-                    local deliverySlab = Instance.new("Part")
-                    deliverySlab.Size         = Vector3.new(60, 1, 60)
-                    deliverySlab.CFrame       = CFrame.new(deliveryCF.Position - Vector3.new(0, 1, 0))
-                    deliverySlab.Anchored     = true
-                    deliverySlab.CanCollide   = true
-                    deliverySlab.Transparency = 0.6
-                    deliverySlab.BrickColor   = BrickColor.new("Bright blue")
-                    deliverySlab.Material     = Enum.Material.SmoothPlastic
-                    deliverySlab.Parent       = Workspace
-
-                    Tween(deliveryCF, false)
+                    Tween(TargetBlock.CFrame * CFrame.new(0, 2, 0), false)
                     task.wait(0.3)
                     AutoEquipBox()
 
@@ -582,17 +527,7 @@ task.spawn(function()
                             Hum.Sit = true
                         end
                         task.wait(3)
-
-                        if Hum then
-                            Hum.Sit = false
-                            Hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
-                            task.wait(0.15)
-                            Hum.Jump = true
-                        end
-                        task.wait(0.6)
                     end
-
-                    pcall(function() deliverySlab:Destroy() end)
                 end
             end
         else
@@ -726,6 +661,7 @@ local function UnanchorAll()
     end
 end
 
+-- ─── Police teleport — lerp path BodyGyro stabilized ─────────────────────────
 local function SafePoliceTeleport(targetCFrame, bypassChecks, preventUnsit, skipSit)
     if not bypassChecks and not _G.AutoPoliceEnabled then return end
     local Character = LP.Character
@@ -1312,18 +1248,6 @@ HomeTab:CreateButton({
     Name = "Rejoin Server",
     Callback = function()
         RejoinServer()
-    end
-})
-
-HomeTab:CreateButton({
-    Name = "Delete Buildings",
-    Callback = function()
-        DeleteBuildings()
-        Rayfield:Notify({
-            Title    = "Projectsion",
-            Content  = "Buildings cleared.",
-            Duration = 3
-        })
     end
 })
 
