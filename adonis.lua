@@ -1,4 +1,3 @@
-
 local function hiadonis()
     local Detected = filtergc("function", {
         Constants = { " - On Xbox", " - On mobile", "_" },
