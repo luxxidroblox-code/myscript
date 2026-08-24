@@ -11,19 +11,20 @@ local function hiadonis()
 
     local s, l, a, n, f = debug.info(Detected, "slanf")
     warn("[SannSunner] Detected something.")
-    --[[warn(string.format(
-        "[kacung adonis] Detected info:\n  source: %s\n  line: %s\n  args: %s\n  name: %s\n  is_vararg: %s",
-        tostring(s), tostring(l), tostring(a), tostring(n), tostring(f)
-    ))]]
 
-    local origDebugInfo = hookfunction(REnv.debug.info, newcclosure(function(fn, fmt, ...)
-        if fn == Detected and fmt == "slanf" then
-            return s, l, a, n, f
-        end
-        return origDebugInfo(fn, fmt, ...)
-    end))
+    local targetDebug = (typeof(REnv) == "table" and REnv.debug) or debug
+    local origDebugInfo
+    
+    if targetDebug and targetDebug.info then
+        origDebugInfo = hookfunction(targetDebug.info, newcclosure(function(fn, fmt, ...)
+            if fn == Detected and fmt == "slanf" then
+                return s, l, a, n, f
+            end
+            return origDebugInfo(fn, fmt, ...)
+        end))
+    end
 
-    hookfunction(Detected, newcclosure(function(action, info, noCrash)
+    hookfunction(Detected, newcclosure(function(...)
         return coroutine.yield(coroutine.running())
     end))
 
@@ -33,6 +34,6 @@ end
 task.delay(0.5, function()
     local ok = hiadonis()
     if ok then
-        print("adonis kontol")
+        print("adonis bypass applied successfully")
     end
 end)
