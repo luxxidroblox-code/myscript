@@ -16,8 +16,8 @@ local NotifSound     = ReplicatedStorage:WaitForChild("Notification"):WaitForChi
 local MainUI         = LocalPlayer.PlayerGui:WaitForChild("MainUI", 15)
 local ScrollingFrame = MainUI.Frame.MainFrame:WaitForChild("ScrollingFrame", 15)
 
-local GYRO_SPEED   = 150   -- studs/s for cruise and descend legs
-local CRUISE_ALT   = 100   -- studs above current position for cruise
+local GYRO_SPEED   = 150
+local CRUISE_ALT   = 100
 local VEHICLE_TAG  = "LikasturaMontors_"
 
 local jobRunning   = false
@@ -26,7 +26,10 @@ local currentToken = nil
 local isOnline     = false
 local spawnedOnce  = false
 local tripActive   = false
-local _charNoclipConn = nil
+
+local _charNoclipConn  = nil
+local _anchorConn      = nil   -- keeps vehicle anchored every Stepped
+local _antiRagdollConn = nil   -- keeps ragdoll states disabled every Stepped
 
 -- ─── vehicle list ─────────────────────────────────────────────────────────────
 local function getVehicleList()
@@ -63,7 +66,104 @@ local function getCharParts()
            char
 end
 
--- ─── character noclip — only during air phase ────────────────────────────────
+-- ─── anti-ragdoll — runs every Stepped while job is active ───────────────────
+-- Blocks FallingDown, Ragdoll, and GettingUp so the humanoid never enters
+-- the ragdoll pipeline regardless of what the server fires.
+local RAGDOLL_STATES = {
+    Enum.HumanoidStateType.FallingDown,
+    Enum.HumanoidStateType.Ragdoll,
+    Enum.HumanoidStateType.GettingUp,
+}
+
+local function startAntiRagdoll()
+    if _antiRagdollConn then _antiRagdollConn:Disconnect() end
+    _antiRagdollConn = RunService.Stepped:Connect(function()
+        local char = LocalPlayer.Character
+        if not char then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+        for _, state in ipairs(RAGDOLL_STATES) do
+            pcall(function()
+                hum:SetStateEnabled(state, false)
+            end)
+        end
+        -- if somehow already ragdolled, force back to Running
+        pcall(function()
+            local cur = hum:GetState()
+            if cur == Enum.HumanoidStateType.FallingDown
+            or cur == Enum.HumanoidStateType.Ragdoll then
+                hum:ChangeState(Enum.HumanoidStateType.Running)
+            end
+        end)
+        -- unanchor character parts so HRP CFrame writes still work
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("BasePart") and p ~= char:FindFirstChild("HumanoidRootPart") then
+                pcall(function() p.Anchored = false end)
+            end
+        end
+    end)
+end
+
+local function stopAntiRagdoll()
+    if _antiRagdollConn then
+        _antiRagdollConn:Disconnect()
+        _antiRagdollConn = nil
+    end
+    -- re-enable states when job stops
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            for _, state in ipairs(RAGDOLL_STATES) do
+                pcall(function() hum:SetStateEnabled(state, true) end)
+            end
+        end
+    end
+end
+
+-- ─── vehicle anchor + network ownership ──────────────────────────────────────
+-- Anchor: every BasePart gets Anchored=true so physics can't move it.
+-- Network ownership: setneworkowner(LocalPlayer) claims the physics simulation
+-- for this client — prevents server from overriding our CFrame writes.
+local function applyVehicleOwnership(vehicle)
+    for _, p in ipairs(vehicle:GetDescendants()) do
+        if p:IsA("BasePart") then
+            pcall(function() p:SetNetworkOwner(LocalPlayer) end)
+        end
+    end
+end
+
+local function startVehicleAnchor(vehicle)
+    -- apply ownership once immediately
+    applyVehicleOwnership(vehicle)
+
+    if _anchorConn then _anchorConn:Disconnect() end
+    _anchorConn = RunService.Stepped:Connect(function()
+        if not vehicle or not vehicle.Parent then
+            if _anchorConn then _anchorConn:Disconnect(); _anchorConn = nil end
+            return
+        end
+        for _, p in ipairs(vehicle:GetDescendants()) do
+            if p:IsA("BasePart") then
+                pcall(function()
+                    p.Anchored      = true
+                    p.CanCollide    = false
+                    p.Velocity      = Vector3.new(0, 0, 0)
+                    p.RotVelocity   = Vector3.new(0, 0, 0)
+                end)
+            end
+        end
+    end)
+end
+
+local function stopVehicleAnchor()
+    if _anchorConn then
+        _anchorConn:Disconnect()
+        _anchorConn = nil
+    end
+end
+
+-- ─── character noclip — during air phase only ─────────────────────────────────
 local function startCharNoclip()
     if _charNoclipConn then _charNoclipConn:Disconnect() end
     _charNoclipConn = RunService.Stepped:Connect(function()
@@ -88,19 +188,14 @@ local function stopCharNoclip()
     end
 end
 
--- ─── raw HRP lerp segment — no BodyGyro, direct CFrame write ─────────────────
--- BodyGyro fights the lerp when Humanoid.Sit is true; raw Heartbeat write is
--- cleaner and gives full control over the three-leg path.
+-- ─── raw HRP lerp segment ────────────────────────────────────────────────────
 local function lerpHRP(fromPos, toPos, speed)
     local hrp = getCharParts()
     if not hrp then return end
-
     local distance = (toPos - fromPos).Magnitude
     if distance < 0.1 then return end
-
     local duration  = distance / speed
     local startTime = os.clock()
-
     local conn = RunService.Heartbeat:Connect(function()
         if not jobRunning then return end
         local alpha = math.clamp((os.clock() - startTime) / duration, 0, 1)
@@ -110,10 +205,8 @@ local function lerpHRP(fromPos, toPos, speed)
             hrp.CFrame      = CFrame.new(fromPos:Lerp(toPos, alpha))
         end)
     end)
-
     task.wait(duration + 0.05)
     conn:Disconnect()
-
     pcall(function()
         hrp.Velocity    = Vector3.new(0, 0, 0)
         hrp.RotVelocity = Vector3.new(0, 0, 0)
@@ -121,10 +214,7 @@ local function lerpHRP(fromPos, toPos, speed)
     end)
 end
 
--- ─── three-leg fly-over move ──────────────────────────────────────────────────
--- Leg 1 — lift straight up CRUISE_ALT studs
--- Leg 2 — cruise horizontally to above waypoint at same altitude
--- Leg 3 — descend straight down to waypoint ground level
+-- ─── three-leg fly-over ───────────────────────────────────────────────────────
 local function flyTo(targetPos)
     local hrp, hum = getCharParts()
     if not hrp then return end
@@ -137,15 +227,12 @@ local function flyTo(targetPos)
     local cruiseDst = Vector3.new(targetPos.X, origin.Y    + CRUISE_ALT, targetPos.Z)
     local landDst   = Vector3.new(targetPos.X, targetPos.Y + 3,          targetPos.Z)
 
-    -- leg 1: lift
     lerpHRP(origin,    liftTop,    GYRO_SPEED)
     if not jobRunning then stopCharNoclip() return end
 
-    -- leg 2: cruise (faster — no obstacles at this altitude)
     lerpHRP(liftTop,   cruiseDst,  GYRO_SPEED * 2)
     if not jobRunning then stopCharNoclip() return end
 
-    -- leg 3: descend
     lerpHRP(cruiseDst, landDst,    GYRO_SPEED)
 
     stopCharNoclip()
@@ -209,30 +296,23 @@ local function tripLoop()
     tripActive = false
 end
 
--- ─── sit via proximity prompt ─────────────────────────────────────────────────
+-- ─── sit on vehicle ───────────────────────────────────────────────────────────
 local function sitOnVehicle(vehicle)
     local seat = vehicle:FindFirstChild("DriveSeat")
     if not seat then return false end
-
     local hrp, hum = getCharParts()
-
     local prompt = seat:FindFirstChildOfClass("ProximityPrompt")
     if prompt then
         pcall(function() prompt.MaxActivationDistance = 50 end)
     end
-
-    -- snap HRP flush to seat surface
     hrp.CFrame = seat.CFrame * CFrame.new(0, 0.5, 0)
     task.wait(0.2)
-
     if prompt then
         pcall(function() fireproximityprompt(prompt) end)
         task.wait(0.5)
     end
-
     hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
     hum.Sit = true
-
     local deadline = os.clock() + 3
     while os.clock() < deadline do
         if hum.Sit then break end
@@ -240,7 +320,6 @@ local function sitOnVehicle(vehicle)
         hum.Sit    = true
         task.wait(0.15)
     end
-
     return hum.Sit
 end
 
@@ -258,7 +337,10 @@ local function ensureVehicle()
             vehicle = findVehicle()
         end
     end
-    if vehicle then sitOnVehicle(vehicle) end
+    if vehicle then
+        startVehicleAnchor(vehicle)
+        sitOnVehicle(vehicle)
+    end
     return vehicle
 end
 
@@ -266,6 +348,8 @@ end
 local function startJob()
     TeamChange:FireServer("RideGO Driver", 11378976, 1, 0, "Detector")
     task.wait(2)
+
+    startAntiRagdoll()
 
     local vehicle = ensureVehicle()
     if not vehicle then
@@ -288,7 +372,10 @@ local function startJob()
             Duration = 3,
         })
         vehicle.AncestryChanged:Connect(function(_, parent)
-            if not parent then isOnline = false end
+            if not parent then
+                isOnline = false
+                stopVehicleAnchor()
+            end
         end)
     end
 end
@@ -400,6 +487,8 @@ Tab:CreateToggle({
             task.spawn(startJob)
         else
             stopCharNoclip()
+            stopVehicleAnchor()
+            stopAntiRagdoll()
         end
     end,
 })
