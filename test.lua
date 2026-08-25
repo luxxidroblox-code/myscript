@@ -16,8 +16,9 @@ local NotifSound     = ReplicatedStorage:WaitForChild("Notification"):WaitForChi
 local MainUI         = LocalPlayer.PlayerGui:WaitForChild("MainUI", 15)
 local ScrollingFrame = MainUI.Frame.MainFrame:WaitForChild("ScrollingFrame", 15)
 
-local GYRO_SPEED  = 150
-local VEHICLE_TAG = "LikasturaMontors_"
+local GYRO_SPEED   = 150   -- studs/s for cruise and descend legs
+local CRUISE_ALT   = 100   -- studs above current position for cruise
+local VEHICLE_TAG  = "LikasturaMontors_"
 
 local jobRunning   = false
 local vehicleName  = nil
@@ -25,8 +26,7 @@ local currentToken = nil
 local isOnline     = false
 local spawnedOnce  = false
 local tripActive   = false
-local _seatWeld    = nil   -- active Motor6D keeping HRP on seat
-local _noclipConn  = nil   -- RunService conn for noclip during move
+local _charNoclipConn = nil
 
 -- ─── vehicle list ─────────────────────────────────────────────────────────────
 local function getVehicleList()
@@ -48,7 +48,7 @@ end
 local vehicleList = getVehicleList()
 vehicleName       = vehicleList[1]
 
--- ─── helpers ──────────────────────────────────────────────────────────────────
+-- ─── helpers ─────────────────────────────────────────────────────────────────
 local function findVehicle()
     for _, obj in pairs(workspace:GetChildren()) do
         if obj.Name:match("^" .. VEHICLE_TAG) then return obj end
@@ -63,101 +63,92 @@ local function getCharParts()
            char
 end
 
--- ─── noclip: disable CanCollide on every character part ──────────────────────
-local function startNoclip()
-    if _noclipConn then _noclipConn:Disconnect() end
-    _noclipConn = RunService.Stepped:Connect(function()
+-- ─── character noclip — only during air phase ────────────────────────────────
+local function startCharNoclip()
+    if _charNoclipConn then _charNoclipConn:Disconnect() end
+    _charNoclipConn = RunService.Stepped:Connect(function()
         local char = LocalPlayer.Character
         if not char then return end
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-            end
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanCollide = false end
         end
     end)
 end
 
-local function stopNoclip()
-    if _noclipConn then
-        _noclipConn:Disconnect()
-        _noclipConn = nil
+local function stopCharNoclip()
+    if _charNoclipConn then
+        _charNoclipConn:Disconnect()
+        _charNoclipConn = nil
     end
-    -- restore collision on character parts
     local char = LocalPlayer.Character
     if char then
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                pcall(function() part.CanCollide = true end)
-            end
+        for _, p in ipairs(char:GetDescendants()) do
+            pcall(function() p.CanCollide = true end)
         end
     end
 end
 
--- ─── hard seat weld: Motor6D from DriveSeat → HRP ────────────────────────────
-local function destroySeatWeld()
-    if _seatWeld and _seatWeld.Parent then
-        pcall(function() _seatWeld:Destroy() end)
-    end
-    _seatWeld = nil
-end
+-- ─── raw HRP lerp segment — no BodyGyro, direct CFrame write ─────────────────
+-- BodyGyro fights the lerp when Humanoid.Sit is true; raw Heartbeat write is
+-- cleaner and gives full control over the three-leg path.
+local function lerpHRP(fromPos, toPos, speed)
+    local hrp = getCharParts()
+    if not hrp then return end
 
-local function weldToSeat(seat, hrp)
-    destroySeatWeld()
-    local weld      = Instance.new("Motor6D")
-    weld.Name       = "AutoTaxiWeld"
-    weld.Part0      = seat
-    weld.Part1      = hrp
-    -- offset: keep HRP centered above seat
-    weld.C0         = CFrame.new(0, 1.5, 0)
-    weld.C1         = CFrame.new()
-    weld.Parent     = seat
-    _seatWeld       = weld
-    return weld
-end
+    local distance = (toPos - fromPos).Magnitude
+    if distance < 0.1 then return end
 
--- ─── sit + weld sequence ─────────────────────────────────────────────────────
--- Returns true once the humanoid confirms Sit == true.
-local function sitAndWeld(vehicle)
-    local seat = vehicle:FindFirstChild("DriveSeat")
-    if not seat then return false end
+    local duration  = distance / speed
+    local startTime = os.clock()
 
-    local hrp, hum, char = getCharParts()
-
-    -- 1. teleport HRP directly onto the seat
-    hrp.CFrame = seat.CFrame * CFrame.new(0, 1.5, 0)
-    task.wait(0.15)
-
-    -- 2. fire proximity prompt if present
-    local prompt = seat:FindFirstChildOfClass("ProximityPrompt")
-    if prompt then
-        pcall(function() fireproximityprompt(prompt) end)
-        task.wait(0.4)
-    end
-
-    -- 3. force sit state
-    hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
-    hum.Sit = true
-
-    -- 4. poll until seated, max 3s
-    local deadline = os.clock() + 3
-    while not hum.Sit and os.clock() < deadline do
-        hrp.CFrame = seat.CFrame * CFrame.new(0, 1.5, 0)
-        hum.Sit    = true
-        task.wait(0.2)
-    end
-
-    -- 5. hard weld so physics can't eject the character
-    weldToSeat(seat, hrp)
-
-    -- 6. destroy weld when vehicle is removed from workspace
-    vehicle.AncestryChanged:Connect(function(_, parent)
-        if not parent then
-            destroySeatWeld()
-            isOnline = false
-        end
+    local conn = RunService.Heartbeat:Connect(function()
+        if not jobRunning then return end
+        local alpha = math.clamp((os.clock() - startTime) / duration, 0, 1)
+        pcall(function()
+            hrp.Velocity    = Vector3.new(0, 0, 0)
+            hrp.RotVelocity = Vector3.new(0, 0, 0)
+            hrp.CFrame      = CFrame.new(fromPos:Lerp(toPos, alpha))
+        end)
     end)
 
-    return hum.Sit
+    task.wait(duration + 0.05)
+    conn:Disconnect()
+
+    pcall(function()
+        hrp.Velocity    = Vector3.new(0, 0, 0)
+        hrp.RotVelocity = Vector3.new(0, 0, 0)
+        hrp.CFrame      = CFrame.new(toPos)
+    end)
+end
+
+-- ─── three-leg fly-over move ──────────────────────────────────────────────────
+-- Leg 1 — lift straight up CRUISE_ALT studs
+-- Leg 2 — cruise horizontally to above waypoint at same altitude
+-- Leg 3 — descend straight down to waypoint ground level
+local function flyTo(targetPos)
+    local hrp, hum = getCharParts()
+    if not hrp then return end
+
+    hum.Sit = true
+    startCharNoclip()
+
+    local origin    = hrp.Position
+    local liftTop   = Vector3.new(origin.X,    origin.Y    + CRUISE_ALT, origin.Z)
+    local cruiseDst = Vector3.new(targetPos.X, origin.Y    + CRUISE_ALT, targetPos.Z)
+    local landDst   = Vector3.new(targetPos.X, targetPos.Y + 3,          targetPos.Z)
+
+    -- leg 1: lift
+    lerpHRP(origin,    liftTop,    GYRO_SPEED)
+    if not jobRunning then stopCharNoclip() return end
+
+    -- leg 2: cruise (faster — no obstacles at this altitude)
+    lerpHRP(liftTop,   cruiseDst,  GYRO_SPEED * 2)
+    if not jobRunning then stopCharNoclip() return end
+
+    -- leg 3: descend
+    lerpHRP(cruiseDst, landDst,    GYRO_SPEED)
+
+    stopCharNoclip()
 end
 
 -- ─── waypoint search ─────────────────────────────────────────────────────────
@@ -197,49 +188,6 @@ local function getWaypointPosition(wp)
     return part and part.Position
 end
 
--- ─── gyro move — moves HRP with noclip active ────────────────────────────────
-local function gyroMoveHRP(targetPos)
-    local hrp, hum = getCharParts()
-    if not hrp then return end
-
-    hum.Sit = true
-    startNoclip()
-
-    local gyro        = Instance.new("BodyGyro")
-    gyro.MaxTorque    = Vector3.new(1e6, 1e6, 1e6)
-    gyro.P            = 1e5
-    gyro.D            = 500
-    gyro.CFrame       = CFrame.new(hrp.Position, targetPos)
-    gyro.Parent       = hrp
-
-    local startPos  = hrp.Position
-    local distance  = (targetPos - startPos).Magnitude
-    local duration  = math.max(distance / GYRO_SPEED, 0.1)
-    local startTime = os.clock()
-
-    local conn = RunService.Heartbeat:Connect(function()
-        if not jobRunning then return end
-        local alpha = math.clamp((os.clock() - startTime) / duration, 0, 1)
-        pcall(function()
-            hrp.Velocity    = Vector3.new(0, 0, 0)
-            hrp.RotVelocity = Vector3.new(0, 0, 0)
-            hrp.CFrame      = CFrame.new(startPos:Lerp(targetPos, alpha), targetPos)
-            gyro.CFrame     = hrp.CFrame
-        end)
-    end)
-
-    task.wait(duration + 0.1)
-    conn:Disconnect()
-    gyro:Destroy()
-
-    pcall(function()
-        hrp.Velocity    = Vector3.new(0, 0, 0)
-        hrp.RotVelocity = Vector3.new(0, 0, 0)
-    end)
-
-    stopNoclip()
-end
-
 -- ─── trip loop ───────────────────────────────────────────────────────────────
 local function tripLoop()
     if tripActive then return end
@@ -251,39 +199,70 @@ local function tripLoop()
         if pos then
             if not lastPos or (pos - lastPos).Magnitude > 5 then
                 lastPos = pos
-                gyroMoveHRP(pos + Vector3.new(0, 3, 0))
+                flyTo(pos)
             end
         else
-            if lastPos then lastPos = nil end
+            lastPos = nil
         end
         task.wait(1)
     end
     tripActive = false
 end
 
+-- ─── sit via proximity prompt ─────────────────────────────────────────────────
+local function sitOnVehicle(vehicle)
+    local seat = vehicle:FindFirstChild("DriveSeat")
+    if not seat then return false end
+
+    local hrp, hum = getCharParts()
+
+    local prompt = seat:FindFirstChildOfClass("ProximityPrompt")
+    if prompt then
+        pcall(function() prompt.MaxActivationDistance = 50 end)
+    end
+
+    -- snap HRP flush to seat surface
+    hrp.CFrame = seat.CFrame * CFrame.new(0, 0.5, 0)
+    task.wait(0.2)
+
+    if prompt then
+        pcall(function() fireproximityprompt(prompt) end)
+        task.wait(0.5)
+    end
+
+    hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+    hum.Sit = true
+
+    local deadline = os.clock() + 3
+    while os.clock() < deadline do
+        if hum.Sit then break end
+        hrp.CFrame = seat.CFrame * CFrame.new(0, 0.5, 0)
+        hum.Sit    = true
+        task.wait(0.15)
+    end
+
+    return hum.Sit
+end
+
 -- ─── spawn guard ─────────────────────────────────────────────────────────────
 local function ensureVehicle()
     local vehicle = findVehicle()
-    if vehicle then
-        sitAndWeld(vehicle)
-        return vehicle
+    if not vehicle then
+        if not spawnedOnce then
+            spawnedOnce = true
+            SpawnCarEvents.SpawnCar:FireServer(vehicleName)
+        end
+        local t = 0
+        while not vehicle and t < 8 do
+            task.wait(0.5); t = t + 0.5
+            vehicle = findVehicle()
+        end
     end
-    if not spawnedOnce then
-        spawnedOnce = true
-        SpawnCarEvents.SpawnCar:FireServer(vehicleName)
-    end
-    local t = 0
-    while not vehicle and t < 8 do
-        task.wait(0.5)
-        t       = t + 0.5
-        vehicle = findVehicle()
-    end
-    if vehicle then sitAndWeld(vehicle) end
+    if vehicle then sitOnVehicle(vehicle) end
     return vehicle
 end
 
 -- ─── job start ───────────────────────────────────────────────────────────────
--- GoOnline only fires after sitAndWeld confirms hum.Sit == true.
 local function startJob()
     TeamChange:FireServer("RideGO Driver", 11378976, 1, 0, "Detector")
     task.wait(2)
@@ -294,12 +273,10 @@ local function startJob()
         return
     end
 
-    -- confirm seated before going online
-    local hrp, hum = getCharParts()
-    local waited   = 0
+    local _, hum = getCharParts()
+    local waited = 0
     while not hum.Sit and waited < 5 do
-        task.wait(0.3)
-        waited = waited + 0.3
+        task.wait(0.3); waited = waited + 0.3
     end
 
     if not isOnline then
@@ -310,6 +287,9 @@ local function startJob()
             Content  = "Online! Menunggu orderan...",
             Duration = 3,
         })
+        vehicle.AncestryChanged:Connect(function(_, parent)
+            if not parent then isOnline = false end
+        end)
     end
 end
 
@@ -382,7 +362,7 @@ Tab:CreateButton({
 Tab:CreateSection("Pengaturan")
 
 Tab:CreateSlider({
-    Name         = "Kecepatan Gyro (studs/s)",
+    Name         = "Kecepatan (studs/s)",
     Range        = {30, 500},
     Increment    = 10,
     Suffix       = " studs/s",
@@ -390,6 +370,18 @@ Tab:CreateSlider({
     Flag         = "GyroSpeed",
     Callback     = function(Value)
         GYRO_SPEED = Value
+    end,
+})
+
+Tab:CreateSlider({
+    Name         = "Ketinggian Cruise (studs)",
+    Range        = {50, 300},
+    Increment    = 10,
+    Suffix       = " studs",
+    CurrentValue = 100,
+    Flag         = "CruiseAlt",
+    Callback     = function(Value)
+        CRUISE_ALT = Value
     end,
 })
 
@@ -402,13 +394,12 @@ Tab:CreateToggle({
     Callback     = function(Value)
         jobRunning = Value
         tripActive = false
-        stopNoclip()
         if jobRunning then
             spawnedOnce = false
             isOnline    = false
             task.spawn(startJob)
         else
-            destroySeatWeld()
+            stopCharNoclip()
         end
     end,
 })
