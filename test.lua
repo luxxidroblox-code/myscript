@@ -16,8 +16,9 @@ local NotifSound     = ReplicatedStorage:WaitForChild("Notification"):WaitForChi
 local MainUI         = LocalPlayer.PlayerGui:WaitForChild("MainUI", 15)
 local ScrollingFrame = MainUI.Frame.MainFrame:WaitForChild("ScrollingFrame", 15)
 
-local GYRO_SPEED   = 150
-local CRUISE_ALT   = 100
+local MOVE_SPEED   = 150   -- studs/s for lift and descend legs
+local CRUISE_SPEED = 300   -- studs/s for horizontal cruise
+local CRUISE_ALT   = 100   -- studs above ground during cruise
 local VEHICLE_TAG  = "LikasturaMontors_"
 
 local jobRunning   = false
@@ -27,9 +28,8 @@ local isOnline     = false
 local spawnedOnce  = false
 local tripActive   = false
 
+local _antiRagdollConn = nil
 local _charNoclipConn  = nil
-local _anchorConn      = nil   -- keeps vehicle anchored every Stepped
-local _antiRagdollConn = nil   -- keeps ragdoll states disabled every Stepped
 
 -- ─── vehicle list ─────────────────────────────────────────────────────────────
 local function getVehicleList()
@@ -66,9 +66,30 @@ local function getCharParts()
            char
 end
 
--- ─── anti-ragdoll — runs every Stepped while job is active ───────────────────
--- Blocks FallingDown, Ragdoll, and GettingUp so the humanoid never enters
--- the ragdoll pipeline regardless of what the server fires.
+-- ─── network ownership — claim all vehicle BaseParts ─────────────────────────
+-- Must be called after every respawn of the vehicle since new parts reset owner.
+local function claimOwnership(vehicle)
+    for _, p in ipairs(vehicle:GetDescendants()) do
+        if p:IsA("BasePart") then
+            pcall(function()
+                p:SetNetworkOwner(LocalPlayer)
+                p.Anchored    = false   -- unanchor so CFrame writes replicate
+                p.CanCollide  = false
+                p.Velocity    = Vector3.new(0, 0, 0)
+                p.RotVelocity = Vector3.new(0, 0, 0)
+            end)
+        end
+    end
+end
+
+-- ─── get the part we'll be moving (PrimaryPart > DriveSeat > any BasePart) ───
+local function getVehicleRoot(vehicle)
+    return vehicle.PrimaryPart
+        or vehicle:FindFirstChild("DriveSeat")
+        or vehicle:FindFirstChildWhichIsA("BasePart")
+end
+
+-- ─── anti-ragdoll ─────────────────────────────────────────────────────────────
 local RAGDOLL_STATES = {
     Enum.HumanoidStateType.FallingDown,
     Enum.HumanoidStateType.Ragdoll,
@@ -83,87 +104,31 @@ local function startAntiRagdoll()
         local hum = char:FindFirstChildOfClass("Humanoid")
         if not hum then return end
         for _, state in ipairs(RAGDOLL_STATES) do
-            pcall(function()
-                hum:SetStateEnabled(state, false)
-            end)
+            pcall(function() hum:SetStateEnabled(state, false) end)
         end
-        -- if somehow already ragdolled, force back to Running
         pcall(function()
             local cur = hum:GetState()
             if cur == Enum.HumanoidStateType.FallingDown
             or cur == Enum.HumanoidStateType.Ragdoll then
-                hum:ChangeState(Enum.HumanoidStateType.Running)
+                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
             end
         end)
-        -- unanchor character parts so HRP CFrame writes still work
-        for _, p in ipairs(char:GetDescendants()) do
-            if p:IsA("BasePart") and p ~= char:FindFirstChild("HumanoidRootPart") then
-                pcall(function() p.Anchored = false end)
-            end
-        end
     end)
 end
 
 local function stopAntiRagdoll()
-    if _antiRagdollConn then
-        _antiRagdollConn:Disconnect()
-        _antiRagdollConn = nil
-    end
-    -- re-enable states when job stops
+    if _antiRagdollConn then _antiRagdollConn:Disconnect(); _antiRagdollConn = nil end
     local char = LocalPlayer.Character
-    if char then
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            for _, state in ipairs(RAGDOLL_STATES) do
-                pcall(function() hum:SetStateEnabled(state, true) end)
-            end
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        for _, state in ipairs(RAGDOLL_STATES) do
+            pcall(function() hum:SetStateEnabled(state, true) end)
         end
     end
 end
 
--- ─── vehicle anchor + network ownership ──────────────────────────────────────
--- Anchor: every BasePart gets Anchored=true so physics can't move it.
--- Network ownership: setneworkowner(LocalPlayer) claims the physics simulation
--- for this client — prevents server from overriding our CFrame writes.
-local function applyVehicleOwnership(vehicle)
-    for _, p in ipairs(vehicle:GetDescendants()) do
-        if p:IsA("BasePart") then
-            pcall(function() p:SetNetworkOwner(LocalPlayer) end)
-        end
-    end
-end
-
-local function startVehicleAnchor(vehicle)
-    -- apply ownership once immediately
-    applyVehicleOwnership(vehicle)
-
-    if _anchorConn then _anchorConn:Disconnect() end
-    _anchorConn = RunService.Stepped:Connect(function()
-        if not vehicle or not vehicle.Parent then
-            if _anchorConn then _anchorConn:Disconnect(); _anchorConn = nil end
-            return
-        end
-        for _, p in ipairs(vehicle:GetDescendants()) do
-            if p:IsA("BasePart") then
-                pcall(function()
-                    p.Anchored      = true
-                    p.CanCollide    = false
-                    p.Velocity      = Vector3.new(0, 0, 0)
-                    p.RotVelocity   = Vector3.new(0, 0, 0)
-                end)
-            end
-        end
-    end)
-end
-
-local function stopVehicleAnchor()
-    if _anchorConn then
-        _anchorConn:Disconnect()
-        _anchorConn = nil
-    end
-end
-
--- ─── character noclip — during air phase only ─────────────────────────────────
+-- ─── character noclip during air phase ───────────────────────────────────────
 local function startCharNoclip()
     if _charNoclipConn then _charNoclipConn:Disconnect() end
     _charNoclipConn = RunService.Stepped:Connect(function()
@@ -176,10 +141,7 @@ local function startCharNoclip()
 end
 
 local function stopCharNoclip()
-    if _charNoclipConn then
-        _charNoclipConn:Disconnect()
-        _charNoclipConn = nil
-    end
+    if _charNoclipConn then _charNoclipConn:Disconnect(); _charNoclipConn = nil end
     local char = LocalPlayer.Character
     if char then
         for _, p in ipairs(char:GetDescendants()) do
@@ -188,52 +150,79 @@ local function stopCharNoclip()
     end
 end
 
--- ─── raw HRP lerp segment ────────────────────────────────────────────────────
-local function lerpHRP(fromPos, toPos, speed)
-    local hrp = getCharParts()
-    if not hrp then return end
-    local distance = (toPos - fromPos).Magnitude
+-- ─── vehicle CFrame lerp segment ─────────────────────────────────────────────
+-- Moves the vehicle root part directly. Because we own the network, the server
+-- accepts these CFrame values and the anti-cheat sees vehicle movement, not
+-- character teleportation.
+local function lerpVehicle(vehicle, fromCF, toCF, speed)
+    local root = getVehicleRoot(vehicle)
+    if not root then return end
+
+    local distance = (toCF.Position - fromCF.Position).Magnitude
     if distance < 0.1 then return end
+
     local duration  = distance / speed
     local startTime = os.clock()
+
     local conn = RunService.Heartbeat:Connect(function()
-        if not jobRunning then return end
+        if not jobRunning or not vehicle.Parent then return end
         local alpha = math.clamp((os.clock() - startTime) / duration, 0, 1)
         pcall(function()
-            hrp.Velocity    = Vector3.new(0, 0, 0)
-            hrp.RotVelocity = Vector3.new(0, 0, 0)
-            hrp.CFrame      = CFrame.new(fromPos:Lerp(toPos, alpha))
+            local cf = fromCF:Lerp(toCF, alpha)
+            root.CFrame      = cf
+            root.Velocity    = Vector3.new(0, 0, 0)
+            root.RotVelocity = Vector3.new(0, 0, 0)
+
+            -- keep all other parts relative (PivotTo handles the whole model)
+            if vehicle.PrimaryPart then
+                vehicle:PivotTo(cf)
+            end
         end)
     end)
+
     task.wait(duration + 0.05)
     conn:Disconnect()
+
     pcall(function()
-        hrp.Velocity    = Vector3.new(0, 0, 0)
-        hrp.RotVelocity = Vector3.new(0, 0, 0)
-        hrp.CFrame      = CFrame.new(toPos)
+        if vehicle.PrimaryPart then
+            vehicle:PivotTo(toCF)
+        else
+            root.CFrame = toCF
+        end
+        root.Velocity    = Vector3.new(0, 0, 0)
+        root.RotVelocity = Vector3.new(0, 0, 0)
     end)
 end
 
--- ─── three-leg fly-over ───────────────────────────────────────────────────────
-local function flyTo(targetPos)
-    local hrp, hum = getCharParts()
-    if not hrp then return end
+-- ─── three-leg fly-over using vehicle spoof ───────────────────────────────────
+local function flyTo(vehicle, targetPos)
+    local root = getVehicleRoot(vehicle)
+    if not root then return end
 
+    -- re-claim ownership before every move in case server reclaimed it
+    claimOwnership(vehicle)
+
+    local _, hum = getCharParts()
     hum.Sit = true
     startCharNoclip()
 
-    local origin    = hrp.Position
-    local liftTop   = Vector3.new(origin.X,    origin.Y    + CRUISE_ALT, origin.Z)
-    local cruiseDst = Vector3.new(targetPos.X, origin.Y    + CRUISE_ALT, targetPos.Z)
-    local landDst   = Vector3.new(targetPos.X, targetPos.Y + 3,          targetPos.Z)
+    local origin = root.Position
+    local liftCF   = CFrame.new(origin.X,    origin.Y    + CRUISE_ALT, origin.Z)
+    local cruiseCF = CFrame.new(targetPos.X, origin.Y    + CRUISE_ALT, targetPos.Z)
+    local landCF   = CFrame.new(targetPos.X, targetPos.Y + 3,          targetPos.Z)
 
-    lerpHRP(origin,    liftTop,    GYRO_SPEED)
+    local originCF = root.CFrame
+
+    -- leg 1: lift straight up
+    lerpVehicle(vehicle, originCF,                                     liftCF,   MOVE_SPEED)
     if not jobRunning then stopCharNoclip() return end
 
-    lerpHRP(liftTop,   cruiseDst,  GYRO_SPEED * 2)
+    -- leg 2: cruise horizontally above geometry
+    lerpVehicle(vehicle, liftCF,                                       cruiseCF, CRUISE_SPEED)
     if not jobRunning then stopCharNoclip() return end
 
-    lerpHRP(cruiseDst, landDst,    GYRO_SPEED)
+    -- leg 3: descend to waypoint
+    lerpVehicle(vehicle, cruiseCF,                                     landCF,   MOVE_SPEED)
 
     stopCharNoclip()
 end
@@ -281,12 +270,13 @@ local function tripLoop()
     tripActive = true
     local lastPos = nil
     while tripActive and jobRunning do
-        local wp  = findWaypoint()
-        local pos = wp and getWaypointPosition(wp)
-        if pos then
+        local vehicle = findVehicle()
+        local wp      = vehicle and findWaypoint()
+        local pos     = wp and getWaypointPosition(wp)
+        if vehicle and pos then
             if not lastPos or (pos - lastPos).Magnitude > 5 then
                 lastPos = pos
-                flyTo(pos)
+                flyTo(vehicle, pos)
             end
         else
             lastPos = nil
@@ -338,7 +328,7 @@ local function ensureVehicle()
         end
     end
     if vehicle then
-        startVehicleAnchor(vehicle)
+        claimOwnership(vehicle)
         sitOnVehicle(vehicle)
     end
     return vehicle
@@ -372,10 +362,7 @@ local function startJob()
             Duration = 3,
         })
         vehicle.AncestryChanged:Connect(function(_, parent)
-            if not parent then
-                isOnline = false
-                stopVehicleAnchor()
-            end
+            if not parent then isOnline = false end
         end)
     end
 end
@@ -449,14 +436,15 @@ Tab:CreateButton({
 Tab:CreateSection("Pengaturan")
 
 Tab:CreateSlider({
-    Name         = "Kecepatan (studs/s)",
+    Name         = "Kecepatan Move (studs/s)",
     Range        = {30, 500},
     Increment    = 10,
     Suffix       = " studs/s",
     CurrentValue = 150,
-    Flag         = "GyroSpeed",
+    Flag         = "MoveSpeed",
     Callback     = function(Value)
-        GYRO_SPEED = Value
+        MOVE_SPEED   = Value
+        CRUISE_SPEED = Value * 2
     end,
 })
 
@@ -487,7 +475,6 @@ Tab:CreateToggle({
             task.spawn(startJob)
         else
             stopCharNoclip()
-            stopVehicleAnchor()
             stopAntiRagdoll()
         end
     end,
