@@ -10,7 +10,7 @@ local function hiadonis()
     end
 
     local s, l, a, n, f = debug.info(Detected, "slanf")
-    warn("[SannSunner] Detected something.")
+    warn("[projectsion] Detected something.")
 
     local targetDebug = (typeof(REnv) == "table" and REnv.debug) or debug
     local origDebugInfo
