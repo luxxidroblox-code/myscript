@@ -13,23 +13,23 @@ local TaxiEvent      = TaxiAssets.Events:WaitForChild("TaxiEvent")
 local SpawnCarEvents = ReplicatedStorage:WaitForChild("SpawnCarEvents")
 local NotifSound     = ReplicatedStorage:WaitForChild("Notification"):WaitForChild("Notif2Sound")
 
--- ─── wait until PlayerGui and ScrollingFrame are actually ready ───────────────
-local MainUI = LocalPlayer.PlayerGui:WaitForChild("MainUI", 15)
+local MainUI         = LocalPlayer.PlayerGui:WaitForChild("MainUI", 15)
 local ScrollingFrame = MainUI.Frame.MainFrame:WaitForChild("ScrollingFrame", 15)
 
 local GYRO_SPEED  = 150
 local VEHICLE_TAG = "LikasturaMontors_"
 
-local jobRunning  = false
-local vehicleName = nil
-local currentToken= nil
-local isOnline    = false
-local spawnedOnce = false
-local tripActive  = false
+local jobRunning   = false
+local vehicleName  = nil
+local currentToken = nil
+local isOnline     = false
+local spawnedOnce  = false
+local tripActive   = false
+local _seatWeld    = nil   -- active Motor6D keeping HRP on seat
+local _noclipConn  = nil   -- RunService conn for noclip during move
 
--- ─── vehicle list — waits for children to populate ───────────────────────────
+-- ─── vehicle list ─────────────────────────────────────────────────────────────
 local function getVehicleList()
-    -- give the frame up to 5s to populate if it's still empty
     local deadline = os.clock() + 5
     while #ScrollingFrame:GetChildren() == 0 and os.clock() < deadline do
         task.wait(0.3)
@@ -48,7 +48,7 @@ end
 local vehicleList = getVehicleList()
 vehicleName       = vehicleList[1]
 
--- ─── helpers ─────────────────────────────────────────────────────────────────
+-- ─── helpers ──────────────────────────────────────────────────────────────────
 local function findVehicle()
     for _, obj in pairs(workspace:GetChildren()) do
         if obj.Name:match("^" .. VEHICLE_TAG) then return obj end
@@ -63,21 +63,114 @@ local function getCharParts()
            char
 end
 
--- ─── waypoint search — scans workspace descendants broadly ───────────────────
--- Matches: RideGO_GuideTarget, WaypointPart, GuideTarget, BeaconPart,
---          any BasePart/Model whose name contains guide/waypoint/beacon/target
+-- ─── noclip: disable CanCollide on every character part ──────────────────────
+local function startNoclip()
+    if _noclipConn then _noclipConn:Disconnect() end
+    _noclipConn = RunService.Stepped:Connect(function()
+        local char = LocalPlayer.Character
+        if not char then return end
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end)
+end
+
+local function stopNoclip()
+    if _noclipConn then
+        _noclipConn:Disconnect()
+        _noclipConn = nil
+    end
+    -- restore collision on character parts
+    local char = LocalPlayer.Character
+    if char then
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                pcall(function() part.CanCollide = true end)
+            end
+        end
+    end
+end
+
+-- ─── hard seat weld: Motor6D from DriveSeat → HRP ────────────────────────────
+local function destroySeatWeld()
+    if _seatWeld and _seatWeld.Parent then
+        pcall(function() _seatWeld:Destroy() end)
+    end
+    _seatWeld = nil
+end
+
+local function weldToSeat(seat, hrp)
+    destroySeatWeld()
+    local weld      = Instance.new("Motor6D")
+    weld.Name       = "AutoTaxiWeld"
+    weld.Part0      = seat
+    weld.Part1      = hrp
+    -- offset: keep HRP centered above seat
+    weld.C0         = CFrame.new(0, 1.5, 0)
+    weld.C1         = CFrame.new()
+    weld.Parent     = seat
+    _seatWeld       = weld
+    return weld
+end
+
+-- ─── sit + weld sequence ─────────────────────────────────────────────────────
+-- Returns true once the humanoid confirms Sit == true.
+local function sitAndWeld(vehicle)
+    local seat = vehicle:FindFirstChild("DriveSeat")
+    if not seat then return false end
+
+    local hrp, hum, char = getCharParts()
+
+    -- 1. teleport HRP directly onto the seat
+    hrp.CFrame = seat.CFrame * CFrame.new(0, 1.5, 0)
+    task.wait(0.15)
+
+    -- 2. fire proximity prompt if present
+    local prompt = seat:FindFirstChildOfClass("ProximityPrompt")
+    if prompt then
+        pcall(function() fireproximityprompt(prompt) end)
+        task.wait(0.4)
+    end
+
+    -- 3. force sit state
+    hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+    hum.Sit = true
+
+    -- 4. poll until seated, max 3s
+    local deadline = os.clock() + 3
+    while not hum.Sit and os.clock() < deadline do
+        hrp.CFrame = seat.CFrame * CFrame.new(0, 1.5, 0)
+        hum.Sit    = true
+        task.wait(0.2)
+    end
+
+    -- 5. hard weld so physics can't eject the character
+    weldToSeat(seat, hrp)
+
+    -- 6. destroy weld when vehicle is removed from workspace
+    vehicle.AncestryChanged:Connect(function(_, parent)
+        if not parent then
+            destroySeatWeld()
+            isOnline = false
+        end
+    end)
+
+    return hum.Sit
+end
+
+-- ─── waypoint search ─────────────────────────────────────────────────────────
 local WAYPOINT_PATTERNS = {
-    "guidetarget", "waypoint", "beacon", "ridego", "guide_target",
-    "dropoff", "pickup", "destination", "navpoint",
+    "guidetarget", "waypoint", "beacon", "ridego",
+    "guide_target", "dropoff", "pickup", "destination", "navpoint",
 }
 
 local function findWaypoint()
-    -- priority 1: known ActiveMissions path
     local missions = workspace:FindFirstChild("ActiveMissions")
     if missions then
         local direct = missions:FindFirstChild("RideGO_GuideTarget")
         if direct then return direct end
-        -- search one level deeper
         for _, child in ipairs(missions:GetChildren()) do
             local lower = child.Name:lower()
             for _, pat in ipairs(WAYPOINT_PATTERNS) do
@@ -85,8 +178,6 @@ local function findWaypoint()
             end
         end
     end
-
-    -- priority 2: scan all workspace descendants for name match
     for _, desc in ipairs(workspace:GetDescendants()) do
         if desc:IsA("BasePart") or desc:IsA("Model") then
             local lower = desc.Name:lower()
@@ -95,93 +186,24 @@ local function findWaypoint()
             end
         end
     end
-
-    -- priority 3: scan for a red BillboardGui (the map pin visible in screenshot)
-    for _, desc in ipairs(workspace:GetDescendants()) do
-        if desc:IsA("BillboardGui") then
-            for _, img in ipairs(desc:GetDescendants()) do
-                if img:IsA("ImageLabel") or img:IsA("Frame") then
-                    local c = img.BackgroundColor3 or Color3.new()
-                    -- red: R > 0.7, G < 0.3, B < 0.3
-                    if c.R > 0.7 and c.G < 0.3 and c.B < 0.3 then
-                        return desc.Parent  -- the Part the billboard is on
-                    end
-                end
-            end
-        end
-    end
-
     return nil
 end
 
 local function getWaypointPosition(wp)
-    if wp:IsA("BasePart") then
-        return wp.Position
-    elseif wp:IsA("Model") then
-        local hrp = wp:FindFirstChild("HumanoidRootPart")
-                 or wp.PrimaryPart
-                 or wp:FindFirstChildWhichIsA("BasePart")
-        if hrp then return hrp.Position end
-    end
-    -- fallback: any BasePart descendant
-    local part = wp:FindFirstChildWhichIsA("BasePart")
+    if wp:IsA("BasePart") then return wp.Position end
+    local part = wp:FindFirstChild("HumanoidRootPart")
+             or (wp:IsA("Model") and wp.PrimaryPart)
+             or wp:FindFirstChildWhichIsA("BasePart")
     return part and part.Position
 end
 
--- ─── seat onto vehicle via proximity prompt ───────────────────────────────────
-local function sitOnVehicle(vehicle)
-    local seat = vehicle:FindFirstChild("DriveSeat")
-    if not seat then return false end
-
-    local hrp, hum = getCharParts()
-    hrp.CFrame = seat.CFrame * CFrame.new(0, 3, 0)
-    task.wait(0.3)
-
-    local prompt = seat:FindFirstChildOfClass("ProximityPrompt")
-    if prompt then
-        pcall(function() fireproximityprompt(prompt) end)
-        task.wait(0.5)
-    end
-
-    -- force sit state
-    pcall(function() hum.Sit = true end)
-    return true
-end
-
--- ─── spawn guard ─────────────────────────────────────────────────────────────
-local function ensureVehicle()
-    local vehicle = findVehicle()
-    if vehicle then
-        sitOnVehicle(vehicle)
-        return vehicle
-    end
-
-    if not spawnedOnce then
-        spawnedOnce = true
-        SpawnCarEvents.SpawnCar:FireServer(vehicleName)
-    end
-
-    -- wait up to 8s
-    local t = 0
-    while not vehicle and t < 8 do
-        task.wait(0.5)
-        t = t + 0.5
-        vehicle = findVehicle()
-    end
-
-    if vehicle then sitOnVehicle(vehicle) end
-    return vehicle
-end
-
--- ─── movement: teleport HRP with BodyGyro stabilisation ──────────────────────
--- Moving the vehicle mesh from client doesn't replicate (server-owned).
--- Moving the character HRP while Humanoid.Sit=true keeps the ride illusion.
+-- ─── gyro move — moves HRP with noclip active ────────────────────────────────
 local function gyroMoveHRP(targetPos)
     local hrp, hum = getCharParts()
     if not hrp then return end
 
-    hum.Sit = true   -- stay seated
-    task.wait(0.1)
+    hum.Sit = true
+    startNoclip()
 
     local gyro        = Instance.new("BodyGyro")
     gyro.MaxTorque    = Vector3.new(1e6, 1e6, 1e6)
@@ -197,13 +219,11 @@ local function gyroMoveHRP(targetPos)
 
     local conn = RunService.Heartbeat:Connect(function()
         if not jobRunning then return end
-        local elapsed = os.clock() - startTime
-        local alpha   = math.clamp(elapsed / duration, 0, 1)
+        local alpha = math.clamp((os.clock() - startTime) / duration, 0, 1)
         pcall(function()
             hrp.Velocity    = Vector3.new(0, 0, 0)
             hrp.RotVelocity = Vector3.new(0, 0, 0)
-            hrp.CFrame      = CFrame.new(startPos:Lerp(targetPos, alpha),
-                                          targetPos)
+            hrp.CFrame      = CFrame.new(startPos:Lerp(targetPos, alpha), targetPos)
             gyro.CFrame     = hrp.CFrame
         end)
     end)
@@ -216,34 +236,54 @@ local function gyroMoveHRP(targetPos)
         hrp.Velocity    = Vector3.new(0, 0, 0)
         hrp.RotVelocity = Vector3.new(0, 0, 0)
     end)
+
+    stopNoclip()
 end
 
--- ─── trip loop — polls waypoint every 1s, re-moves when it shifts ─────────────
+-- ─── trip loop ───────────────────────────────────────────────────────────────
 local function tripLoop()
     if tripActive then return end
     tripActive = true
-
     local lastPos = nil
     while tripActive and jobRunning do
         local wp  = findWaypoint()
         local pos = wp and getWaypointPosition(wp)
-
         if pos then
             if not lastPos or (pos - lastPos).Magnitude > 5 then
                 lastPos = pos
-                gyroMoveHRP(pos + Vector3.new(0, 3, 0))  -- +3 so we land on ground
+                gyroMoveHRP(pos + Vector3.new(0, 3, 0))
             end
         else
             if lastPos then lastPos = nil end
         end
-
         task.wait(1)
     end
-
     tripActive = false
 end
 
+-- ─── spawn guard ─────────────────────────────────────────────────────────────
+local function ensureVehicle()
+    local vehicle = findVehicle()
+    if vehicle then
+        sitAndWeld(vehicle)
+        return vehicle
+    end
+    if not spawnedOnce then
+        spawnedOnce = true
+        SpawnCarEvents.SpawnCar:FireServer(vehicleName)
+    end
+    local t = 0
+    while not vehicle and t < 8 do
+        task.wait(0.5)
+        t       = t + 0.5
+        vehicle = findVehicle()
+    end
+    if vehicle then sitAndWeld(vehicle) end
+    return vehicle
+end
+
 -- ─── job start ───────────────────────────────────────────────────────────────
+-- GoOnline only fires after sitAndWeld confirms hum.Sit == true.
 local function startJob()
     TeamChange:FireServer("RideGO Driver", 11378976, 1, 0, "Detector")
     task.wait(2)
@@ -254,17 +294,26 @@ local function startJob()
         return
     end
 
+    -- confirm seated before going online
+    local hrp, hum = getCharParts()
+    local waited   = 0
+    while not hum.Sit and waited < 5 do
+        task.wait(0.3)
+        waited = waited + 0.3
+    end
+
     if not isOnline then
         TaxiEvent:FireServer("GoOnline")
         isOnline = true
-
-        vehicle.AncestryChanged:Connect(function(_, parent)
-            if not parent then isOnline = false end
-        end)
+        Rayfield:Notify({
+            Title    = "Auto Taxi",
+            Content  = "Online! Menunggu orderan...",
+            Duration = 3,
+        })
     end
 end
 
--- ─── cleanup old listeners ───────────────────────────────────────────────────
+-- ─── cleanup ─────────────────────────────────────────────────────────────────
 if _G.__AutoTaxiConn      then _G.__AutoTaxiConn:Disconnect()      end
 if _G.__AutoTaxiNotifConn then _G.__AutoTaxiNotifConn:Disconnect() end
 
@@ -272,12 +321,10 @@ _G.__AutoTaxiConn = TaxiEvent.OnClientEvent:Connect(function(...)
     local args   = {...}
     local action = args[1]
     local data   = args[2]
-
     if action == "OrderOffer" and jobRunning and typeof(data) == "table" then
         currentToken = data.Token
         task.wait(0.3)
         TaxiEvent:FireServer("AcceptOrder", currentToken)
-
     elseif action == "OrderAccepted" and jobRunning then
         task.spawn(tripLoop)
     end
@@ -300,8 +347,8 @@ local Window = Rayfield:CreateWindow({
 
 local Tab = Window:CreateTab("Main", nil)
 
--- dropdown is stored so refresh can destroy + recreate it
-local dropdownHolder = Tab:CreateSection("Kendaraan")
+Tab:CreateSection("Kendaraan")
+
 local VehicleDropdown = Tab:CreateDropdown({
     Name          = "Pilih Motor",
     Options       = #vehicleList > 0 and vehicleList or {"(belum ada)"},
@@ -316,13 +363,10 @@ Tab:CreateButton({
     Name     = "Refresh Daftar Motor",
     Callback = function()
         vehicleList = getVehicleList()
-        -- Rayfield dropdown: Set() updates the selected value;
-        -- for options list, rebuild with the refreshed data
-        if VehicleDropdown and VehicleDropdown.Refresh then
-            VehicleDropdown:Refresh(vehicleList, true)
-        elseif VehicleDropdown and VehicleDropdown.Set then
-            -- fallback: at minimum update selection
-            if vehicleList[1] then
+        if VehicleDropdown then
+            if VehicleDropdown.Refresh then
+                VehicleDropdown:Refresh(vehicleList, true)
+            elseif VehicleDropdown.Set and vehicleList[1] then
                 vehicleName = vehicleList[1]
                 VehicleDropdown:Set(vehicleName)
             end
@@ -356,18 +400,19 @@ Tab:CreateToggle({
     CurrentValue = false,
     Flag         = "AutoJob",
     Callback     = function(Value)
-        jobRunning  = Value
-        tripActive  = false
-
+        jobRunning = Value
+        tripActive = false
+        stopNoclip()
         if jobRunning then
             spawnedOnce = false
             isOnline    = false
             task.spawn(startJob)
+        else
+            destroySeatWeld()
         end
     end,
 })
 
--- ─── debug button: print what findWaypoint() sees right now ──────────────────
 Tab:CreateButton({
     Name     = "Debug: Cari Waypoint",
     Callback = function()
@@ -375,7 +420,7 @@ Tab:CreateButton({
         local pos = wp and getWaypointPosition(wp)
         Rayfield:Notify({
             Title    = "Waypoint Debug",
-            Content  = wp and ("Ketemu: " .. wp.Name .. " @ " .. tostring(pos))
+            Content  = wp and ("Ketemu: " .. wp.Name .. "\n" .. tostring(pos))
                            or "Tidak ditemukan",
             Duration = 5,
         })
