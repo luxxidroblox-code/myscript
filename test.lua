@@ -6,34 +6,39 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService        = game:GetService("RunService")
 local LocalPlayer       = Players.LocalPlayer
 
-local JobEvents   = ReplicatedStorage:WaitForChild("JobEvents")
-local TeamChange  = JobEvents:WaitForChild("TeamChangeRequest")
-local TaxiAssets  = ReplicatedStorage:WaitForChild("TaxiAssets")
-local TaxiEvent   = TaxiAssets.Events:WaitForChild("TaxiEvent")
+local JobEvents      = ReplicatedStorage:WaitForChild("JobEvents")
+local TeamChange     = JobEvents:WaitForChild("TeamChangeRequest")
+local TaxiAssets     = ReplicatedStorage:WaitForChild("TaxiAssets")
+local TaxiEvent      = TaxiAssets.Events:WaitForChild("TaxiEvent")
 local SpawnCarEvents = ReplicatedStorage:WaitForChild("SpawnCarEvents")
-local NotifSound  = ReplicatedStorage:WaitForChild("Notification"):WaitForChild("Notif2Sound")
+local NotifSound     = ReplicatedStorage:WaitForChild("Notification"):WaitForChild("Notif2Sound")
 
-local ScrollingFrame = LocalPlayer.PlayerGui
-    :WaitForChild("MainUI").Frame.MainFrame.ScrollingFrame
+-- ─── wait until PlayerGui and ScrollingFrame are actually ready ───────────────
+local MainUI = LocalPlayer.PlayerGui:WaitForChild("MainUI", 15)
+local ScrollingFrame = MainUI.Frame.MainFrame:WaitForChild("ScrollingFrame", 15)
 
--- ─── config ──────────────────────────────────────────────────────────────────
-local GYRO_SPEED    = 150   -- studs/s, replaces tweenDuration
-local VEHICLE_TAG   = "LikasturaMontors_"
+local GYRO_SPEED  = 150
+local VEHICLE_TAG = "LikasturaMontors_"
 
--- ─── state ───────────────────────────────────────────────────────────────────
-local jobRunning    = false
-local vehicleName   = nil
-local currentToken  = nil
-local isOnline      = false
-local spawnedOnce   = false   -- guard: only spawn once per job session
-local tripActive    = false
+local jobRunning  = false
+local vehicleName = nil
+local currentToken= nil
+local isOnline    = false
+local spawnedOnce = false
+local tripActive  = false
 
--- ─── vehicle list ─────────────────────────────────────────────────────────────
+-- ─── vehicle list — waits for children to populate ───────────────────────────
 local function getVehicleList()
+    -- give the frame up to 5s to populate if it's still empty
+    local deadline = os.clock() + 5
+    while #ScrollingFrame:GetChildren() == 0 and os.clock() < deadline do
+        task.wait(0.3)
+    end
     local list = {}
     for _, child in ipairs(ScrollingFrame:GetChildren()) do
-        local isButton = child:IsA("TextButton") or child:IsA("ImageButton")
-        if isButton and not child.Name:lower():match("ui") then
+        if (child:IsA("TextButton") or child:IsA("ImageButton"))
+            and not child.Name:lower():match("ui")
+        then
             table.insert(list, child.Name)
         end
     end
@@ -53,163 +58,185 @@ end
 
 local function getCharParts()
     local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    local hrp  = char:WaitForChild("HumanoidRootPart")
-    local hum  = char:WaitForChild("Humanoid")
-    return hrp, hum, char
+    return char:WaitForChild("HumanoidRootPart"),
+           char:WaitForChild("Humanoid"),
+           char
 end
 
--- ─── seat lock: weld HRP to DriveSeat so character doesn't fall off ──────────
-local _seatConn = nil
-local function lockToSeat(vehicle)
-    local seat = vehicle:FindFirstChild("DriveSeat")
-    if not seat then return end
+-- ─── waypoint search — scans workspace descendants broadly ───────────────────
+-- Matches: RideGO_GuideTarget, WaypointPart, GuideTarget, BeaconPart,
+--          any BasePart/Model whose name contains guide/waypoint/beacon/target
+local WAYPOINT_PATTERNS = {
+    "guidetarget", "waypoint", "beacon", "ridego", "guide_target",
+    "dropoff", "pickup", "destination", "navpoint",
+}
 
-    local hrp, hum = getCharParts()
-
-    -- fire proximity prompt if present
-    local prompt = seat:FindFirstChildOfClass("ProximityPrompt")
-    if prompt then
-        hrp.CFrame = seat.CFrame * CFrame.new(0, 2.5, 0)
-        task.wait(0.2)
-        pcall(function() fireproximityprompt(prompt) end)
-        task.wait(0.3)
+local function findWaypoint()
+    -- priority 1: known ActiveMissions path
+    local missions = workspace:FindFirstChild("ActiveMissions")
+    if missions then
+        local direct = missions:FindFirstChild("RideGO_GuideTarget")
+        if direct then return direct end
+        -- search one level deeper
+        for _, child in ipairs(missions:GetChildren()) do
+            local lower = child.Name:lower()
+            for _, pat in ipairs(WAYPOINT_PATTERNS) do
+                if lower:find(pat) then return child end
+            end
+        end
     end
 
-    -- inject a Motor6D/weld so the character stays seated during gyro movement
-    pcall(function()
-        local weld      = Instance.new("Motor6D")
-        weld.Name       = "AutoTaxiSeatWeld"
-        weld.Part0      = seat
-        weld.Part1      = hrp
-        weld.C0         = CFrame.new(0, 0, 0)
-        weld.C1         = hrp.CFrame:ToObjectSpace(seat.CFrame)
-        weld.Parent     = seat
-
-        hum.Sit = true
-
-        -- clean up weld when job stops or character resets
-        if _seatConn then _seatConn:Disconnect() end
-        _seatConn = vehicle.AncestryChanged:Connect(function(_, parent)
-            if not parent then
-                pcall(function() weld:Destroy() end)
-                if _seatConn then _seatConn:Disconnect() end
+    -- priority 2: scan all workspace descendants for name match
+    for _, desc in ipairs(workspace:GetDescendants()) do
+        if desc:IsA("BasePart") or desc:IsA("Model") then
+            local lower = desc.Name:lower()
+            for _, pat in ipairs(WAYPOINT_PATTERNS) do
+                if lower:find(pat) then return desc end
             end
-        end)
-    end)
+        end
+    end
+
+    -- priority 3: scan for a red BillboardGui (the map pin visible in screenshot)
+    for _, desc in ipairs(workspace:GetDescendants()) do
+        if desc:IsA("BillboardGui") then
+            for _, img in ipairs(desc:GetDescendants()) do
+                if img:IsA("ImageLabel") or img:IsA("Frame") then
+                    local c = img.BackgroundColor3 or Color3.new()
+                    -- red: R > 0.7, G < 0.3, B < 0.3
+                    if c.R > 0.7 and c.G < 0.3 and c.B < 0.3 then
+                        return desc.Parent  -- the Part the billboard is on
+                    end
+                end
+            end
+        end
+    end
+
+    return nil
 end
 
--- ─── spawn guard: only fires SpawnCar once per job session ───────────────────
+local function getWaypointPosition(wp)
+    if wp:IsA("BasePart") then
+        return wp.Position
+    elseif wp:IsA("Model") then
+        local hrp = wp:FindFirstChild("HumanoidRootPart")
+                 or wp.PrimaryPart
+                 or wp:FindFirstChildWhichIsA("BasePart")
+        if hrp then return hrp.Position end
+    end
+    -- fallback: any BasePart descendant
+    local part = wp:FindFirstChildWhichIsA("BasePart")
+    return part and part.Position
+end
+
+-- ─── seat onto vehicle via proximity prompt ───────────────────────────────────
+local function sitOnVehicle(vehicle)
+    local seat = vehicle:FindFirstChild("DriveSeat")
+    if not seat then return false end
+
+    local hrp, hum = getCharParts()
+    hrp.CFrame = seat.CFrame * CFrame.new(0, 3, 0)
+    task.wait(0.3)
+
+    local prompt = seat:FindFirstChildOfClass("ProximityPrompt")
+    if prompt then
+        pcall(function() fireproximityprompt(prompt) end)
+        task.wait(0.5)
+    end
+
+    -- force sit state
+    pcall(function() hum.Sit = true end)
+    return true
+end
+
+-- ─── spawn guard ─────────────────────────────────────────────────────────────
 local function ensureVehicle()
     local vehicle = findVehicle()
     if vehicle then
-        lockToSeat(vehicle)
+        sitOnVehicle(vehicle)
         return vehicle
     end
 
-    if spawnedOnce then
-        -- already spawned this session, wait up to 8s for it to appear
-        local t = 0
-        while not vehicle and t < 8 do
-            task.wait(0.5)
-            t       = t + 0.5
-            vehicle = findVehicle()
-        end
-        if vehicle then lockToSeat(vehicle) end
-        return vehicle
+    if not spawnedOnce then
+        spawnedOnce = true
+        SpawnCarEvents.SpawnCar:FireServer(vehicleName)
     end
 
-    spawnedOnce = true
-    SpawnCarEvents.SpawnCar:FireServer(vehicleName)
-    task.wait(2)
-
-    vehicle = findVehicle()
-    local tries = 0
-    while not vehicle and tries < 10 do
+    -- wait up to 8s
+    local t = 0
+    while not vehicle and t < 8 do
         task.wait(0.5)
+        t = t + 0.5
         vehicle = findVehicle()
-        tries   = tries + 1
     end
 
-    if vehicle then lockToSeat(vehicle) end
+    if vehicle then sitOnVehicle(vehicle) end
     return vehicle
 end
 
--- ─── BodyGyro lerp — moves the vehicle's DriveSeat/PrimaryPart ───────────────
-local function gyroMoveTo(targetPos)
-    local vehicle = findVehicle()
-    if not vehicle then return end
+-- ─── movement: teleport HRP with BodyGyro stabilisation ──────────────────────
+-- Moving the vehicle mesh from client doesn't replicate (server-owned).
+-- Moving the character HRP while Humanoid.Sit=true keeps the ride illusion.
+local function gyroMoveHRP(targetPos)
+    local hrp, hum = getCharParts()
+    if not hrp then return end
 
-    local basePart = vehicle:FindFirstChild("DriveSeat")
-                  or vehicle.PrimaryPart
-                  or vehicle:FindFirstChildWhichIsA("BasePart")
-    if not basePart then return end
-
-    -- temporarily disable collisions so the vehicle doesn't snag on geometry
-    local savedCollide = {}
-    for _, p in ipairs(vehicle:GetDescendants()) do
-        if p:IsA("BasePart") then
-            savedCollide[p] = p.CanCollide
-            p.CanCollide    = false
-        end
-    end
+    hum.Sit = true   -- stay seated
+    task.wait(0.1)
 
     local gyro        = Instance.new("BodyGyro")
     gyro.MaxTorque    = Vector3.new(1e6, 1e6, 1e6)
     gyro.P            = 1e5
     gyro.D            = 500
-    gyro.CFrame       = CFrame.new(basePart.Position, targetPos)
-    gyro.Parent       = basePart
+    gyro.CFrame       = CFrame.new(hrp.Position, targetPos)
+    gyro.Parent       = hrp
 
-    local startPos  = basePart.Position
+    local startPos  = hrp.Position
     local distance  = (targetPos - startPos).Magnitude
-    local duration  = distance / GYRO_SPEED
+    local duration  = math.max(distance / GYRO_SPEED, 0.1)
     local startTime = os.clock()
 
     local conn = RunService.Heartbeat:Connect(function()
-        if not jobRunning or not basePart.Parent then return end
-        local alpha = math.clamp((os.clock() - startTime) / duration, 0, 1)
+        if not jobRunning then return end
+        local elapsed = os.clock() - startTime
+        local alpha   = math.clamp(elapsed / duration, 0, 1)
         pcall(function()
-            basePart.Velocity    = Vector3.new(0, 0, 0)
-            basePart.RotVelocity = Vector3.new(0, 0, 0)
-            basePart.CFrame      = CFrame.new(startPos:Lerp(targetPos, alpha),
-                                              targetPos)
-            gyro.CFrame          = basePart.CFrame
+            hrp.Velocity    = Vector3.new(0, 0, 0)
+            hrp.RotVelocity = Vector3.new(0, 0, 0)
+            hrp.CFrame      = CFrame.new(startPos:Lerp(targetPos, alpha),
+                                          targetPos)
+            gyro.CFrame     = hrp.CFrame
         end)
     end)
 
-    task.wait(duration)
+    task.wait(duration + 0.1)
     conn:Disconnect()
     gyro:Destroy()
 
-    -- restore collisions
-    for part, was in pairs(savedCollide) do
-        pcall(function() part.CanCollide = was end)
-    end
-
     pcall(function()
-        basePart.Velocity    = Vector3.new(0, 0, 0)
-        basePart.RotVelocity = Vector3.new(0, 0, 0)
+        hrp.Velocity    = Vector3.new(0, 0, 0)
+        hrp.RotVelocity = Vector3.new(0, 0, 0)
     end)
 end
 
--- ─── trip loop — tracks guideTarget and re-gyros when it moves ───────────────
+-- ─── trip loop — polls waypoint every 1s, re-moves when it shifts ─────────────
 local function tripLoop()
     if tripActive then return end
     tripActive = true
 
     local lastPos = nil
     while tripActive and jobRunning do
-        local missions     = workspace:FindFirstChild("ActiveMissions")
-        local guideTarget  = missions and missions:FindFirstChild("RideGO_GuideTarget")
-        if guideTarget then
-            local pos = guideTarget.Position
+        local wp  = findWaypoint()
+        local pos = wp and getWaypointPosition(wp)
+
+        if pos then
             if not lastPos or (pos - lastPos).Magnitude > 5 then
                 lastPos = pos
-                gyroMoveTo(pos)
+                gyroMoveHRP(pos + Vector3.new(0, 3, 0))  -- +3 so we land on ground
             end
         else
             if lastPos then lastPos = nil end
         end
+
         task.wait(1)
     end
 
@@ -218,18 +245,15 @@ end
 
 -- ─── job start ───────────────────────────────────────────────────────────────
 local function startJob()
-    -- 1. switch team to RideGO Driver
     TeamChange:FireServer("RideGO Driver", 11378976, 1, 0, "Detector")
     task.wait(2)
 
-    -- 2. ensure vehicle exists (spawn once) and sit
     local vehicle = ensureVehicle()
     if not vehicle then
-        warn("[AutoTaxi] vehicle not found after spawn attempt")
+        warn("[AutoTaxi] vehicle not found")
         return
     end
 
-    -- 3. go online
     if not isOnline then
         TaxiEvent:FireServer("GoOnline")
         isOnline = true
@@ -241,10 +265,9 @@ local function startJob()
 end
 
 -- ─── cleanup old listeners ───────────────────────────────────────────────────
-if _G.__AutoTaxiConn       then _G.__AutoTaxiConn:Disconnect()       end
-if _G.__AutoTaxiNotifConn  then _G.__AutoTaxiNotifConn:Disconnect()  end
+if _G.__AutoTaxiConn      then _G.__AutoTaxiConn:Disconnect()      end
+if _G.__AutoTaxiNotifConn then _G.__AutoTaxiNotifConn:Disconnect() end
 
--- ─── TaxiEvent listener ──────────────────────────────────────────────────────
 _G.__AutoTaxiConn = TaxiEvent.OnClientEvent:Connect(function(...)
     local args   = {...}
     local action = args[1]
@@ -262,11 +285,11 @@ end)
 
 _G.__AutoTaxiNotifConn = NotifSound.OnClientEvent:Connect(function() end)
 
--- ─── Rayfield UI ─────────────────────────────────────────────────────────────
+-- ─── UI ──────────────────────────────────────────────────────────────────────
 local Window = Rayfield:CreateWindow({
-    Name             = "Auto Taxi",
-    LoadingTitle     = "Loading...",
-    LoadingSubtitle  = "by you",
+    Name            = "Auto Taxi",
+    LoadingTitle    = "Loading...",
+    LoadingSubtitle = "by you",
     ConfigurationSaving = {
         Enabled    = true,
         FolderName = "AutoTaxi",
@@ -277,10 +300,12 @@ local Window = Rayfield:CreateWindow({
 
 local Tab = Window:CreateTab("Main", nil)
 
-Tab:CreateDropdown({
+-- dropdown is stored so refresh can destroy + recreate it
+local dropdownHolder = Tab:CreateSection("Kendaraan")
+local VehicleDropdown = Tab:CreateDropdown({
     Name          = "Pilih Motor",
-    Options       = vehicleList,
-    CurrentOption = {vehicleName or ""},
+    Options       = #vehicleList > 0 and vehicleList or {"(belum ada)"},
+    CurrentOption = {vehicleName or "(belum ada)"},
     Flag          = "VehicleDropdown",
     Callback      = function(Option)
         vehicleName = Option[1]
@@ -291,17 +316,30 @@ Tab:CreateButton({
     Name     = "Refresh Daftar Motor",
     Callback = function()
         vehicleList = getVehicleList()
+        -- Rayfield dropdown: Set() updates the selected value;
+        -- for options list, rebuild with the refreshed data
+        if VehicleDropdown and VehicleDropdown.Refresh then
+            VehicleDropdown:Refresh(vehicleList, true)
+        elseif VehicleDropdown and VehicleDropdown.Set then
+            -- fallback: at minimum update selection
+            if vehicleList[1] then
+                vehicleName = vehicleList[1]
+                VehicleDropdown:Set(vehicleName)
+            end
+        end
         Rayfield:Notify({
-            Title   = "Refreshed",
-            Content = #vehicleList .. " motor ditemukan",
+            Title    = "Refreshed",
+            Content  = #vehicleList .. " motor ditemukan",
             Duration = 3,
         })
     end,
 })
 
+Tab:CreateSection("Pengaturan")
+
 Tab:CreateSlider({
     Name         = "Kecepatan Gyro (studs/s)",
-    Range        = {50, 400},
+    Range        = {30, 500},
     Increment    = 10,
     Suffix       = " studs/s",
     CurrentValue = 150,
@@ -310,6 +348,8 @@ Tab:CreateSlider({
         GYRO_SPEED = Value
     end,
 })
+
+Tab:CreateSection("Kontrol")
 
 Tab:CreateToggle({
     Name         = "Start Auto Taxi",
@@ -320,9 +360,24 @@ Tab:CreateToggle({
         tripActive  = false
 
         if jobRunning then
-            spawnedOnce = false   -- reset spawn guard for new session
+            spawnedOnce = false
             isOnline    = false
             task.spawn(startJob)
         end
+    end,
+})
+
+-- ─── debug button: print what findWaypoint() sees right now ──────────────────
+Tab:CreateButton({
+    Name     = "Debug: Cari Waypoint",
+    Callback = function()
+        local wp  = findWaypoint()
+        local pos = wp and getWaypointPosition(wp)
+        Rayfield:Notify({
+            Title    = "Waypoint Debug",
+            Content  = wp and ("Ketemu: " .. wp.Name .. " @ " .. tostring(pos))
+                           or "Tidak ditemukan",
+            Duration = 5,
+        })
     end,
 })
