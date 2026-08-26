@@ -127,7 +127,6 @@ local function formatPerHour(earned)
     local fmt   = s:reverse():gsub("(%d%d%d)", "%1."):reverse():gsub("^%.", "")
     return "RP. " .. fmt .. "/hr"
 end
--- ─────────────────────────────────────────────────────────────────────────────
 
 -- ─── Auto Drive constants ─────────────────────────────────────────────────────
 local AD_MIN_SPEED      = 0
@@ -165,7 +164,6 @@ local adDragPassActive  = false
 local adDragCount       = 0
 
 _G.AutoDriveActive      = false
--- ─────────────────────────────────────────────────────────────────────────────
 
 local AutoPoliceConfig = {
     TeleportSpeed    = {min = 200, max = 300},
@@ -1439,11 +1437,9 @@ local function adFindClosestSeat()
     return best
 end
 
--- ─── FIXED: direct parent, not workspace-level ancestor ──────────────────────
 local function adGetVehicleRoot(seat)
     return seat.Parent or seat
 end
--- ─────────────────────────────────────────────────────────────────────────────
 
 local function adCalcSeatOffset(vehicle, seat)
     local lowestWheelY   = math.huge
@@ -1572,8 +1568,38 @@ local function adFireCarEvent(name, ...)
     return false
 end
 
-local function adSpawnVehicle()    adFireCarEvent("SpawnCar", adVehicleInput) end
-local function adDespawnVehicle()  adFireCarEvent("DespawnCar") end
+-- ─── FIXED: spawn with retry until a VehicleSeat appears near the player ─────
+local function adSpawnVehicle()
+    -- despawn first to clear any stuck ghost vehicle
+    adFireCarEvent("DespawnCar")
+    task.wait(1)
+
+    local char = LP.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+
+    for attempt = 1, 5 do
+        adFireCarEvent("SpawnCar", adVehicleInput)
+        local deadline = os.clock() + 6
+        while os.clock() < deadline do
+            task.wait(0.4)
+            if root then
+                for _, obj in ipairs(workspace:GetChildren()) do
+                    local seat = obj:FindFirstChildWhichIsA("VehicleSeat", true)
+                    if seat and (seat.Position - root.Position).Magnitude < 60 then
+                        return true   -- vehicle landed
+                    end
+                end
+            end
+        end
+        if adLblStatus then adLblStatus:Set("Status: Spawn attempt " .. attempt .. "/5...") end
+        adFireCarEvent("DespawnCar")
+        task.wait(1.5)
+    end
+    return false
+end
+
+local function adDespawnVehicle() adFireCarEvent("DespawnCar") end
+-- ─────────────────────────────────────────────────────────────────────────────
 
 local function adGetCurrentSeat()
     if not adCurrentVehicle then return nil end
@@ -1780,8 +1806,8 @@ end
 
 local function adRespawnVehicle(hum, statusText)
     if adIsRespawning then return end
-    adIsRespawning = true
-    adActive       = false
+    adIsRespawning  = true
+    adActive        = false
     adUnseatedSince = nil
     if adLblStatus then adLblStatus:Set("Status: " .. (statusText or "Threshold reached, respawning...")) end
     adStopVehicle()
@@ -1789,9 +1815,15 @@ local function adRespawnVehicle(hum, statusText)
     task.wait(0.5)
     adCleanupPhysics()
     adDespawnVehicle()
-    task.wait(2)
-    adSpawnVehicle()
-    task.wait(3)
+    task.wait(1.5)
+
+    local spawned = adSpawnVehicle()
+    if not spawned then
+        if adLblStatus then adLblStatus:Set("Status: Spawn failed, retrying next cycle") end
+        adIsRespawning = false
+        return
+    end
+
     local seat = adFindClosestSeat()
     if not seat then
         if adLblStatus then adLblStatus:Set("Status: No seat found!") end
@@ -1804,7 +1836,7 @@ local function adRespawnVehicle(hum, statusText)
     task.wait(1)
     seat:Sit(hum)
     task.wait(1)
-    adCurrentVehicle = seat.Parent                              -- FIXED
+    adCurrentVehicle = seat.Parent
     adSeatOffset     = adCalcSeatOffset(adCurrentVehicle, seat)
     adStartMoney     = PlayerData.RPValue.Value
     adStartTime      = os.time()
@@ -1848,13 +1880,16 @@ local function adStartFarming()
     adCleanWorkspace()
 
     if adLblStatus then adLblStatus:Set("Status: Spawning vehicle...") end
-    adSpawnVehicle()
-    task.wait(4)
+    local spawned = adSpawnVehicle()
+    if not spawned then
+        if adLblStatus then adLblStatus:Set("Status: Vehicle spawn failed!") end
+        return false
+    end
 
     if adLblStatus then adLblStatus:Set("Status: Finding seat...") end
     local seat, attempts = nil, 0
     repeat task.wait(0.5); attempts = attempts + 1; seat = adFindClosestSeat()
-    until seat or attempts > 20
+    until seat or attempts > 10
 
     if not seat then
         if adLblStatus then adLblStatus:Set("Status: No seat found!") end
@@ -1872,7 +1907,7 @@ local function adStartFarming()
         return false
     end
 
-    adCurrentVehicle   = seat.Parent                            -- FIXED
+    adCurrentVehicle   = seat.Parent
     adSeatOffset       = adCalcSeatOffset(adCurrentVehicle, seat)
     adStartMoney       = PlayerData.RPValue.Value
     adStartTime        = os.time()
@@ -2290,28 +2325,29 @@ RunService.Heartbeat:Connect(function()
         adDespawnVehicle()
         for retry = 1, 5 do
             task.wait(1)
-            adSpawnVehicle()
-            task.wait(3)
-            local newSeat = adFindClosestSeat()
-            if newSeat then
-                local char = LP.Character
-                if char then
-                    local hum2 = char:FindFirstChildOfClass("Humanoid")
-                    local root = char:FindFirstChild("HumanoidRootPart")
-                    if hum2 and root then
-                        root.CFrame      = newSeat.CFrame * CFrame.new(0, 2, 0)
-                        task.wait(0.5)
-                        newSeat:Sit(hum2)
-                        task.wait(1)
-                        adCurrentVehicle   = newSeat.Parent                 -- FIXED
-                        adSeatOffset       = adCalcSeatOffset(adCurrentVehicle, newSeat)
-                        adStartMoney       = PlayerData.RPValue.Value
-                        adStartTime        = os.time()
-                        adSetupPhysics(newSeat)
-                        adActive           = true
-                        _G.AutoDriveActive = true
-                        if adLblStatus then adLblStatus:Set("Status: Farming!") end
-                        return
+            local spawned = adSpawnVehicle()
+            if spawned then
+                local newSeat = adFindClosestSeat()
+                if newSeat then
+                    local char = LP.Character
+                    if char then
+                        local hum2 = char:FindFirstChildOfClass("Humanoid")
+                        local root = char:FindFirstChild("HumanoidRootPart")
+                        if hum2 and root then
+                            root.CFrame      = newSeat.CFrame * CFrame.new(0, 2, 0)
+                            task.wait(0.5)
+                            newSeat:Sit(hum2)
+                            task.wait(1)
+                            adCurrentVehicle   = newSeat.Parent
+                            adSeatOffset       = adCalcSeatOffset(adCurrentVehicle, newSeat)
+                            adStartMoney       = PlayerData.RPValue.Value
+                            adStartTime        = os.time()
+                            adSetupPhysics(newSeat)
+                            adActive           = true
+                            _G.AutoDriveActive = true
+                            if adLblStatus then adLblStatus:Set("Status: Farming!") end
+                            return
+                        end
                     end
                 end
             end
