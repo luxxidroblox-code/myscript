@@ -1427,11 +1427,10 @@ local function adFindClosestSeat()
     if not char then return nil end
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return nil end
-    for _, obj in ipairs(workspace:GetChildren()) do
-        local seat = obj:FindFirstChildWhichIsA("VehicleSeat", true)
-        if seat then
-            local dist = (seat.Position - root.Position).Magnitude
-            if dist < bestDist then best, bestDist = seat, dist end
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("VehicleSeat") then
+            local dist = (obj.Position - root.Position).Magnitude
+            if dist < bestDist then best, bestDist = obj, dist end
         end
     end
     return best
@@ -1559,71 +1558,70 @@ local function adCorrectGrounding(seat, groundY)
     return seat.CFrame
 end
 
--- ─── FIXED: correct remote path, fires vehicleId only when AD is active ───────
-local _spawnCarRemote  = nil
-local _despawnCarRemote = nil
-
-local function adGetSpawnRemotes()
-    if _spawnCarRemote and _spawnCarRemote.Parent then return end
-    local sf = ReplicatedStorage:WaitForChild("SpawnCarEvents", 10)
+local function adFireCarEvent(name, ...)
+    local sf = ReplicatedStorage:FindFirstChild("SpawnCarEvents")
     if sf then
-        _spawnCarRemote  = sf:WaitForChild("SpawnCar",   10)
-        _despawnCarRemote = sf:FindFirstChild("DespawnCar")
+        local r = sf:FindFirstChild(name)
+        if r then r:FireServer(...) return true end
     end
+    return false
 end
 
+-- ─── FIXED: adSpawnVehicle ────────────────────────────────────────────────────
 local function adSpawnVehicle()
-    adGetSpawnRemotes()
-    if not _spawnCarRemote then
-        if adLblStatus then adLblStatus:Set("Status: SpawnCar remote not found!") end
-        return false
+    adFireCarEvent("DespawnCar")
+    task.wait(1.5)
+
+    local function getRoot()
+        local char = LP.Character
+        return char and char:FindFirstChild("HumanoidRootPart")
     end
 
-    -- despawn any existing vehicle first
-    if _despawnCarRemote then
-        pcall(function() _despawnCarRemote:FireServer() end)
-    end
-    task.wait(1)
-
-    local char = LP.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-
-    for attempt = 1, 5 do
-        -- fire exactly like the working snippet: FireServer(vehicleId)
-        pcall(function()
-            _spawnCarRemote:FireServer(adVehicleInput)
-        end)
-
-        local deadline = os.clock() + 7
-        while os.clock() < deadline do
-            task.wait(0.4)
-            if root then
-                for _, obj in ipairs(workspace:GetChildren()) do
-                    local seat = obj:FindFirstChildWhichIsA("VehicleSeat", true)
-                    if seat and (seat.Position - root.Position).Magnitude < 80 then
-                        return true
-                    end
+    local function findNearSeat(root, radius)
+        if not root then return nil end
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("VehicleSeat") then
+                if (obj.Position - root.Position).Magnitude < radius then
+                    return obj
                 end
             end
         end
+        return nil
+    end
 
-        if adLblStatus then adLblStatus:Set("Status: Spawn attempt " .. attempt .. "/5...") end
-        if _despawnCarRemote then
-            pcall(function() _despawnCarRemote:FireServer() end)
+    for attempt = 1, 6 do
+        local root = getRoot()
+        if not root then
+            task.wait(2)
+            root = getRoot()
+            if not root then continue end
         end
-        task.wait(1.5)
+
+        adFireCarEvent("SpawnCar", adVehicleInput)
+
+        local deadline = os.clock() + 8
+        local seat     = nil
+        repeat
+            task.wait(0.3)
+            root = getRoot()
+            seat = findNearSeat(root, 120)
+        until seat or os.clock() > deadline
+
+        if seat then return true end
+
+        if adLblStatus then
+            adLblStatus:Set("Status: Spawn attempt " .. attempt .. "/6, retrying...")
+        end
+
+        adFireCarEvent("DespawnCar")
+        task.wait(2)
     end
 
     return false
 end
-
-local function adDespawnVehicle()
-    adGetSpawnRemotes()
-    if _despawnCarRemote then
-        pcall(function() _despawnCarRemote:FireServer() end)
-    end
-end
 -- ─────────────────────────────────────────────────────────────────────────────
+
+local function adDespawnVehicle() adFireCarEvent("DespawnCar") end
 
 local function adGetCurrentSeat()
     if not adCurrentVehicle then return nil end
@@ -1866,8 +1864,8 @@ local function adRespawnVehicle(hum, statusText)
     adStartTime      = os.time()
     adUnseatedSince  = nil
     adSetupPhysics(seat)
-    adActive         = true
-    adIsRespawning   = false
+    adActive       = true
+    adIsRespawning = false
     _G.AutoDriveActive = true
     if adLblStatus then adLblStatus:Set("Status: Farming!") end
 end
@@ -2213,7 +2211,6 @@ AutoDriveTab:CreateDropdown({
     CurrentOption = {adDefaultName},
     Flag          = "ADVehicle",
     Callback      = function(option)
-        -- only update; spawn happens when Enable Auto Drive is toggled
         adVehicleInput = adVehicleById[option] or adVehicleInput
     end
 })
@@ -2349,6 +2346,7 @@ RunService.Heartbeat:Connect(function()
         adCleanupPhysics()
         adDespawnVehicle()
         for retry = 1, 5 do
+            task.wait(1)
             local spawned = adSpawnVehicle()
             if spawned then
                 local newSeat = adFindClosestSeat()
