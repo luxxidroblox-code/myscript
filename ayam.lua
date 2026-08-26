@@ -39,8 +39,8 @@ _G.CycleCount         = _G.CycleCount or 0
 _G.TotalEarning       = _G.TotalEarning or 0
 _G.TotalTeleportCount = _G.TotalTeleportCount or 0
 
-local TP_MIN = 47
-local TP_MAX = 48
+local TP_MIN = 35
+local TP_MAX = 45
 
 local MoneyPath = lp.PlayerGui
     :WaitForChild("Main"):WaitForChild("Container"):WaitForChild("Hub")
@@ -59,10 +59,10 @@ local destinationTimestamps = {}
 local activePlatforms       = {}
 local mapDeleted            = false
 local lastDestEarned        = 0
-local lastDestName          = "â€”"
+local lastDestName          = "—"
 local cycleMoneySnapshot    = 0
 
--- â”€â”€â”€ UTILS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- ─── UTILS ───────────────────────────────────────────────────────────────────
 
 local function randomTweenDuration()
     return TP_MIN + math.random() * (TP_MAX - TP_MIN)
@@ -227,45 +227,8 @@ task.spawn(function()
 end)
 local function getFPS() return _currentFPS end
 
--- â”€â”€â”€ ONCLIENTEVENT INCOME HOOK â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
--- Hooks every RemoteEvent under NetworkContainer.RemoteEvents.
--- Server sends payment as (amount) or (playerRef, amount) â€” both handled.
--- Fires the frame the packet lands â€” no 2s poll lag, no missed pulses.
-local function findPaymentRemote()
-    local rc = ReplicatedStorage:FindFirstChild("NetworkContainer")
-    if not rc then return end
-    local re = rc:FindFirstChild("RemoteEvents")
-    if not re then return end
-    for _, evt in ipairs(re:GetChildren()) do
-        if evt:IsA("RemoteEvent") then
-            evt.OnClientEvent:Connect(function(arg1, arg2)
-                local amount = nil
-                if type(arg1) == "number" and arg1 > 0 then
-                    amount = arg1
-                elseif type(arg2) == "number" and arg2 > 0 then
-                    amount = arg2
-                end
-                if not amount then return end
+-- ─── TWEEN TELEPORT ──────────────────────────────────────────────────────────
 
-                logIncome(amount)
-
-                local now = getCleanMoney()
-                EarnedMoney = now - StartMoney
-
-                if _G.AutoWebhook then
-                    pendingIncome = pendingIncome + amount
-                end
-            end)
-        end
-    end
-end
-
-task.spawn(function()
-    task.wait(2)
-    findPaymentRemote()
-end)
-
--- â”€â”€â”€ TWEEN TELEPORT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 local function tweenTruckToDestination(truck, targetCF, duration, onTick)
     if not truck or not truck.Parent then return end
 
@@ -333,7 +296,6 @@ local function getDestinationsInWindow(seconds)
     return count
 end
 
--- â”€â”€â”€ POLL FALLBACK (keeps working if OnClientEvent remote name mismatches) â”€â”€â”€
 task.spawn(function()
     task.wait(3)
     lastMoney = getCleanMoney()
@@ -342,20 +304,8 @@ task.spawn(function()
         local newMoney = getCleanMoney()
         if newMoney > lastMoney then
             local delta = newMoney - lastMoney
-            -- only log here if OnClientEvent didn't already catch it
-            -- duplicate guard: if incomeLog already has an entry within 2s with same amount, skip
-            local now = os.time()
-            local alreadyLogged = false
-            for i = #incomeLog, math.max(1, #incomeLog - 5), -1 do
-                if math.abs(incomeLog[i].t - now) <= 2 and incomeLog[i].amount == delta then
-                    alreadyLogged = true
-                    break
-                end
-            end
-            if not alreadyLogged then
-                logIncome(delta)
-            end
-            if _G.AutoWebhook and not alreadyLogged then
+            logIncome(delta)
+            if _G.AutoWebhook then
                 pendingIncome = pendingIncome + delta
                 if not isRunning then
                     isRunning = true
@@ -419,7 +369,7 @@ local function sendWebhook(income)
             {name="Total Earning", value=formatRP(_G.TotalEarning).." (Est)",                            inline=false},
             {name="Cycle Count",   value=tostring(_G.CycleCount),                                        inline=false},
             {name="Running Time",  value=getRunningTime(),                                                inline=false},
-            {name="Session Time",  value=SessionStart and formatDuration(os.time()-SessionStart) or "â€”", inline=false},
+            {name="Session Time",  value=SessionStart and formatDuration(os.time()-SessionStart) or "—", inline=false},
             {name="Session /Hour", value="RP. "..formatShort(getSessionIPH()),                           inline=false},
             {name="Est /Hour",     value="RP. "..formatShort(getIncomePerHour()),                        inline=false},
             {name="FPS",           value=string.format("%.0f fps", getFPS()),                            inline=false},
@@ -449,19 +399,20 @@ local function getWaypointName(waypoint)
     return waypoint.Name
 end
 
--- â”€â”€â”€ MALANG ONLY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
--- Sidoarjo, Surabaya, Cargo removed. rollUntilTarget re-rolls anything not Malang.
+-- ─── PATCH 1: sidoarjo removed ───────────────────────────────────────────────
 local function isTargetDestination(waypoint)
     if not waypoint then return false end
     local wpName  = waypoint.Name:lower()
     local wpLabel = ""
-    local gui = waypoint:FindFirstChildOfClass("BillboardGui")
-           or waypoint:FindFirstChildOfClass("SurfaceGui")
+    local gui = waypoint:FindFirstChildOfClass("BillboardGui") or waypoint:FindFirstChildOfClass("SurfaceGui")
     if gui then
         local tl = gui:FindFirstChildOfClass("TextLabel")
         if tl then wpLabel = tl.Text:lower() end
     end
-    return wpName:find("malang") ~= nil or wpLabel:find("malang") ~= nil
+    for _, t in pairs({"malang","cargo","surabaya"}) do
+        if wpName:find(t) or wpLabel:find(t) then return true end
+    end
+    return false
 end
 
 local function updateCycleLabels(earned, destName)
@@ -471,11 +422,53 @@ local function updateCycleLabels(earned, destName)
         CycleEarnedLabel:Set({Title="Cycle Earned:", Content="RP. "..formatNominal(earned)})
     end
     if LastDestLabel then
-        LastDestLabel:Set({Title="Last Destination:", Content=destName.."  â†’  RP. "..formatNominal(earned)})
+        LastDestLabel:Set({Title="Last Destination:", Content=destName.."  →  RP. "..formatNominal(earned)})
     end
 end
 
--- â”€â”€â”€ ROLL UNTIL TARGET â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- ─── PATCH 2: OnClientEvent ───────────────────────────────────────────────────
+task.spawn(function()
+    local network = ReplicatedStorage:WaitForChild("NetworkContainer", 10)
+    if not network then return end
+    local remoteEvents = network:WaitForChild("RemoteEvents", 10)
+    if not remoteEvents then return end
+
+    local jobRemote = remoteEvents:WaitForChild("Job", 10)
+    if not jobRemote then return end
+
+    jobRemote.OnClientEvent:Connect(function(eventType, payload)
+        if eventType == "PaymentReceived" then
+            local amount = tonumber(payload) or 0
+            if amount > 0 then
+                logIncome(amount)
+                updateCycleLabels(amount, lastDestName)
+                if _G.AutoWebhook then
+                    pendingIncome = pendingIncome + amount
+                end
+            end
+
+        elseif eventType == "JobExpired" or eventType == "Unemployed" then
+            if DelayLabel then
+                DelayLabel:Set({Title="Status:", Content="Job expired (server) — re-rolling..."})
+            end
+
+        elseif eventType == "WaypointUpdated" then
+            if DelayLabel then
+                DelayLabel:Set({Title="Waypoint Updated:", Content=tostring(payload)})
+            end
+
+        else
+            if DelayLabel then
+                DelayLabel:Set({
+                    Title   = "Server Event:",
+                    Content = tostring(eventType).."  |  "..tostring(payload),
+                })
+            end
+        end
+    end)
+end)
+
+-- ─── ROLL UNTIL TARGET ───────────────────────────────────────────────────────
 local function rollUntilTarget(remote, etc, hrp)
     local waypointFolder = etc and etc:FindFirstChild("Waypoint")
     if not waypointFolder then return false end
@@ -542,7 +535,7 @@ local function rollUntilTarget(remote, etc, hrp)
     return false
 end
 
--- â”€â”€â”€ AUTOFARM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- ─── AUTOFARM ────────────────────────────────────────────────────────────────
 local function runAutofarm()
     StartMoney        = getCleanMoney()
     SessionStart      = os.time()
@@ -599,14 +592,14 @@ local function runAutofarm()
                     if DelayLabel then
                         DelayLabel:Set({
                             Title   = "Teleporting to "..currentDestName..":",
-                            Content = string.format("Starting â€” %.2fs", tweenDuration),
+                            Content = string.format("Starting — %.2fs", tweenDuration),
                         })
                     end
 
                     tweenTruckToDestination(myTruck, targetCFrame, tweenDuration, function(remaining)
                         if DelayLabel then
                             DelayLabel:Set({
-                                Title   = "Teleporting â†’ "..currentDestName,
+                                Title   = "Teleporting → "..currentDestName,
                                 Content = string.format("%d sec remaining  |  %.0f fps", math.ceil(remaining), getFPS()),
                             })
                         end
@@ -683,12 +676,12 @@ local function runAutofarm()
         continue
     until not _G.Autofarm
 end
--- â”€â”€â”€ END AUTOFARM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- ─── END AUTOFARM ────────────────────────────────────────────────────────────
 
 local Window = Rayfield:CreateWindow({
     Name             = "Car Driving Indonesia | By .projectsion",
     LoadingTitle     = "Projectsion Loading...",
-    LoadingSubtitle  = "Version 3.8 (OnClientEvent hook, Malang-only)",
+    LoadingSubtitle  = "Version 3.7 (random tween 35–45s, anti-pattern)",
     ConfigurationSaving = {Enabled=false},
     Discord          = {Enabled=false},
     KeySystem        = false,
@@ -698,7 +691,7 @@ local FarmTab = Window:CreateTab("Autofarm", "truck")
 FarmTab:CreateSection("Autofarm Truck")
 FarmTab:CreateToggle({
     Name         = "On Autofarm Truck (yes)",
-    Info         = "Filter Malang only",
+    Info         = "Filter Malang / Surabaya / Cargo",
     CurrentValue = false,
     Callback     = function(v)
         _G.Autofarm = v
@@ -719,10 +712,10 @@ FarmTab:CreateToggle({
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 StatsTab:CreateSection("Cycle")
 CycleEarnedLabel = StatsTab:CreateParagraph({Title="Cycle Earned:",     Content="RP. 0"})
-LastDestLabel    = StatsTab:CreateParagraph({Title="Last Destination:", Content="â€”"})
+LastDestLabel    = StatsTab:CreateParagraph({Title="Last Destination:", Content="—"})
 
 StatsTab:CreateSection("Session")
-SessionTimeLabel   = StatsTab:CreateParagraph({Title="Session Time:",   Content="â€”"})
+SessionTimeLabel   = StatsTab:CreateParagraph({Title="Session Time:",   Content="—"})
 SessionEarnedLabel = StatsTab:CreateParagraph({Title="Session Earned:", Content="RP. 0"})
 SessionIPHLabel    = StatsTab:CreateParagraph({Title="Session / Hour:", Content="RP. 0/h"})
 
@@ -812,7 +805,7 @@ TpTab:CreateButton({
 })
 task.spawn(refreshPlayers)
 
--- â”€â”€â”€ STATS LOOP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- ─── STATS LOOP ──────────────────────────────────────────────────────────────
 task.spawn(function()
     while true do
         task.wait(1.5)
@@ -838,8 +831,8 @@ task.spawn(function()
         FpsLabel:Set({
             Title   = "Current FPS:",
             Content = string.format("%.0f fps  %s", fps,
-                fps < 30 and "âš   lag â€” tp slowed" or
-                fps < 50 and "~ mild lag" or "âœ” smooth"),
+                fps < 30 and "⚠  lag — tp slowed" or
+                fps < 50 and "~ mild lag" or "✔ smooth"),
         })
     end
 end)
