@@ -1439,13 +1439,11 @@ local function adFindClosestSeat()
     return best
 end
 
+-- ─── FIXED: direct parent, not workspace-level ancestor ──────────────────────
 local function adGetVehicleRoot(seat)
-    local node = seat
-    while node and node.Parent and node.Parent ~= workspace do
-        node = node.Parent
-    end
-    return (node and node ~= seat) and node or seat
+    return seat.Parent or seat
 end
+-- ─────────────────────────────────────────────────────────────────────────────
 
 local function adCalcSeatOffset(vehicle, seat)
     local lowestWheelY   = math.huge
@@ -1806,7 +1804,7 @@ local function adRespawnVehicle(hum, statusText)
     task.wait(1)
     seat:Sit(hum)
     task.wait(1)
-    adCurrentVehicle = adGetVehicleRoot(seat)
+    adCurrentVehicle = seat.Parent                              -- FIXED
     adSeatOffset     = adCalcSeatOffset(adCurrentVehicle, seat)
     adStartMoney     = PlayerData.RPValue.Value
     adStartTime      = os.time()
@@ -1874,7 +1872,7 @@ local function adStartFarming()
         return false
     end
 
-    adCurrentVehicle   = adGetVehicleRoot(seat)
+    adCurrentVehicle   = seat.Parent                            -- FIXED
     adSeatOffset       = adCalcSeatOffset(adCurrentVehicle, seat)
     adStartMoney       = PlayerData.RPValue.Value
     adStartTime        = os.time()
@@ -2305,7 +2303,7 @@ RunService.Heartbeat:Connect(function()
                         task.wait(0.5)
                         newSeat:Sit(hum2)
                         task.wait(1)
-                        adCurrentVehicle   = adGetVehicleRoot(newSeat)
+                        adCurrentVehicle   = newSeat.Parent                 -- FIXED
                         adSeatOffset       = adCalcSeatOffset(adCurrentVehicle, newSeat)
                         adStartMoney       = PlayerData.RPValue.Value
                         adStartTime        = os.time()
