@@ -31,7 +31,7 @@ _G.AutoKickEnabled   = false
 _G.CycleForceRestart = false
 
 local CYCLE_DURATION     = 360  -- 6 minutes
-local CHECKPOINT_BUFFER  = 5    -- extra seconds after server waitTime
+local CHECKPOINT_BUFFER  = 20    -- extra seconds after server waitTime
 
 local TargetUang       = 0
 local lastMoney        = StatsFolder.Uang.Value
