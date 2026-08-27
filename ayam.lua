@@ -1,9 +1,11 @@
 -- Lua 5.1 | Bus Explorer Indonesia | Roblox Executor
 -- Rayfield UI: sirius.menu/rayfield
--- Farm: OnClientEvent-driven, no workspace.Checkpoints scan
+-- Stop detection: WaypointBeam._targetInstance poll (primary)
+--                 OnClientEvent CFrame (secondary)
+--                 workspace.Checkpoints BillboardGui (tertiary)
 -- Spoof: BodyGyro P=240000 + BodyVelocity aerial descent
--- Stats: RunService.Heartbeat rolling FPS, direct Stats ping read
--- ~7 min cycle: 20s hold + 10s buffer + 54s delay = 84s × 5 stops
+-- Stats: RunService.Heartbeat rolling FPS, direct Stats ping
+-- Timing: 20s hold + 10s buffer + 30s delay = 60s × 7 stops = 420s ≈ 7 min
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
@@ -29,6 +31,15 @@ local Remotes         = ReplicatedStorage:WaitForChild("Remotes")
 local StatsFolder     = LP:WaitForChild("PlayerData")
 local OwnedCarsFolder = StatsFolder:WaitForChild("OwnedCars")
 local CarData         = Remotes.GetClientCustomizationData:InvokeServer()
+
+-- ── WaypointBeam module ───────────────────────────────────────────────────────
+-- *require fires once; module returns the class table*
+local WaypointBeamClass = require(
+    ReplicatedStorage:WaitForChild("Modules"):WaitForChild("WaypointBeam")
+)
+local beamWatcher      = WaypointBeamClass.new()
+local lastBeaconTarget = nil
+local beaconPollActive = false
 
 -- ── Globals ───────────────────────────────────────────────────────────────────
 _G.AutoFull        = false
@@ -56,7 +67,7 @@ local SelectedTP       = "Dealership"
 local isRunning        = false
 local busOptions       = {}
 
--- ── Remote destination state ──────────────────────────────────────────────────
+-- ── Destination state — written by all three detection paths ──────────────────
 local pendingDestinationCF = nil
 local destinationArrived   = false
 
@@ -122,21 +133,17 @@ local function getRunningTime()
 end
 
 -- ── Heartbeat stats ticker ────────────────────────────────────────────────────
--- Rolling 10-frame FPS average. UI update capped at 1Hz.
--- *Stats.Network.ServerStatsItem["Data Ping"].Value is a direct numeric property*
 local fpsBuffer   = {}
 local FPS_SAMPLES = 10
 local lastFPS     = 0
-local lastPing    = 0
 local statsTick   = 0
 
 RunService.Heartbeat:Connect(function(dt)
     table.insert(fpsBuffer, dt)
     if #fpsBuffer > FPS_SAMPLES then table.remove(fpsBuffer, 1) end
-
     local sum = 0
     for _, v in ipairs(fpsBuffer) do sum = sum + v end
-    lastFPS = math.floor(FPS_SAMPLES / sum)
+    lastFPS   = math.floor(FPS_SAMPLES / sum)
 
     statsTick = statsTick + dt
     if statsTick < 1 then return end
@@ -147,14 +154,12 @@ RunService.Heartbeat:Connect(function(dt)
         local cur = StatsFolder.Uang.Value
         UangLabel:Set("Uang: Rp "       .. formatRS(cur))
         EarningLabel:Set("Earning: Rp " .. formatRS(cur - StartUang))
-
         local d = os.time() - StartTime
         TimeLabel:Set(string.format("Time: %02d:%02d:%02d",
             math.floor(d / 3600), math.floor((d % 3600) / 60), d % 60))
-
-        lastPing = math.floor(
+        local ping = math.floor(
             game:GetService("Stats").Network.ServerStatsItem["Data Ping"].Value)
-        PingLabel:Set("Ping: " .. lastPing .. " ms")
+        PingLabel:Set("Ping: " .. ping .. " ms")
         FPSLabel:Set("FPS: "   .. lastFPS)
     end)
 end)
@@ -193,17 +198,16 @@ local function getAvatar()
 end
 
 -- ── SpoofTP ───────────────────────────────────────────────────────────────────
--- 1. Lift bus to current + 1000 studs (gravity 0 → floats instantly).
--- 2. Translate above target at sky height.
--- 3. Attach BodyGyro (P=240000, MaxTorque=1e6) + BodyVelocity spoof.
---    Server observes angular correction + linear velocity, not a snap.
--- 4. CFrameValue tween descent over 4s — Heartbeat-driven position update.
--- 5. Exact pivot to target on landing, constraints destroyed.
+-- 1. Lift to current + 1000 studs (gravity 0).
+-- 2. Translate above target.
+-- 3. BodyGyro P=240000 + BodyVelocity: server sees angular + linear approach.
+-- 4. CFrameValue tween descent 4s, Heartbeat-driven.
+-- 5. Exact pivot + destroy constraints on landing.
 local AERIAL_HEIGHT = 1000
 local DESCENT_TIME  = 4
-local GYRO_P        = 240000   -- 240 deg/s equivalent proportional gain
+local GYRO_P        = 240000
 local GYRO_DAMPING  = 500
-local ALIGN_SPEED   = 60       -- studs/s during BodyVelocity push
+local ALIGN_SPEED   = 60
 
 local function SpoofTP(targetCF)
     local bus = GetMyBus()
@@ -213,7 +217,6 @@ local function SpoofTP(targetCF)
     if not bus.PrimaryPart then return end
     local pp = bus.PrimaryPart
 
-    -- clear all physics
     for _, p in pairs(bus:GetDescendants()) do
         if p:IsA("BasePart") then
             p.Anchored                = false
@@ -222,33 +225,28 @@ local function SpoofTP(targetCF)
         end
     end
 
-    -- lift
     local curCF = bus:GetPivot()
     bus:PivotTo(curCF + Vector3.new(0, AERIAL_HEIGHT, 0))
     task.wait()
 
-    -- translate above target
     bus:PivotTo(targetCF + Vector3.new(0, AERIAL_HEIGHT, 0))
     task.wait()
 
-    -- BodyGyro: server sees smooth angular correction toward targetCF
-    local gyro       = Instance.new("BodyGyro")
-    gyro.MaxTorque   = Vector3.new(1e6, 1e6, 1e6)
-    gyro.D           = GYRO_DAMPING
-    gyro.P           = GYRO_P
-    gyro.CFrame      = targetCF + Vector3.new(0, AERIAL_HEIGHT, 0)
-    gyro.Parent      = pp
+    local gyro     = Instance.new("BodyGyro")
+    gyro.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
+    gyro.D         = GYRO_DAMPING
+    gyro.P         = GYRO_P
+    gyro.CFrame    = targetCF + Vector3.new(0, AERIAL_HEIGHT, 0)
+    gyro.Parent    = pp
 
-    -- BodyVelocity: server sees linear approach velocity
-    local toTarget   = targetCF.Position - pp.Position
-    local dist       = toTarget.Magnitude
-    local bv         = Instance.new("BodyVelocity")
-    bv.MaxForce      = Vector3.new(1e6, 1e6, 1e6)
-    bv.P             = 1e4
-    bv.Velocity      = dist > 0.1 and (toTarget.Unit * ALIGN_SPEED) or Vector3.zero
-    bv.Parent        = pp
+    local toTarget = targetCF.Position - pp.Position
+    local dist     = toTarget.Magnitude
+    local bv       = Instance.new("BodyVelocity")
+    bv.MaxForce    = Vector3.new(1e6, 1e6, 1e6)
+    bv.P           = 1e4
+    bv.Velocity    = dist > 0.1 and (toTarget.Unit * ALIGN_SPEED) or Vector3.zero
+    bv.Parent      = pp
 
-    -- CFrameValue tween descent — fires Changed every Heartbeat
     local info  = TweenInfo.new(DESCENT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
     local cfVal = Instance.new("CFrameValue")
     cfVal.Value = bus:GetPivot()
@@ -279,7 +277,6 @@ local function SpoofTP(targetCF)
 end
 
 -- ── HoldAtStop ────────────────────────────────────────────────────────────────
--- Zeros velocity every 0.05s. Gravity is 0 during farm — handles residual forces.
 local HOLD_INTERVAL = 0.05
 
 local function HoldAtStop(duration)
@@ -299,16 +296,56 @@ local function HoldAtStop(duration)
     end
 end
 
--- ── OnClientEvent hook ────────────────────────────────────────────────────────
--- Hooks every RemoteEvent under Remotes, present and future.
--- Filters for CFrame arguments — the server's route destination payload.
--- *Table-wrapped CFrames are also unwrapped one level deep.*
+-- ── WaypointBeam beacon poll ──────────────────────────────────────────────────
+-- Polls beamWatcher._targetInstance at 10Hz.
+-- When _targetInstance changes, resolves the checkpoint CFrame and pushes
+-- it into pendingDestinationCF — same pipeline as the remote hook.
+-- *_targetInstance is the BasePart the beam points at; its Parent is the
+--  checkpoint Model. GetPivot() on the Model is the correct SpoofTP target.*
+
+local function StartBeaconPoll()
+    if beaconPollActive then return end
+    beaconPollActive = true
+
+    task.spawn(function()
+        while beaconPollActive and _G.AutoFull do
+            task.wait(0.1)
+
+            local inst = beamWatcher._targetInstance
+            if inst and inst:IsA("BasePart") and inst.Parent and inst ~= lastBeaconTarget then
+                lastBeaconTarget = inst
+
+                local checkpointCF = (inst.Parent and inst.Parent:IsA("Model"))
+                    and inst.Parent:GetPivot()
+                    or  inst.CFrame
+
+                -- only push if no destination already queued
+                if not destinationArrived then
+                    pendingDestinationCF = checkpointCF
+                    destinationArrived   = true
+                end
+            end
+        end
+        beaconPollActive = false
+    end)
+end
+
+local function StopBeaconPoll()
+    beaconPollActive = false
+    lastBeaconTarget = nil
+    beamWatcher:Stop()
+end
+
+-- ── OnClientEvent hook — secondary detection ──────────────────────────────────
+-- Catches CFrame payloads the server pushes on route events.
+-- Pushes into the same destination pipeline only when beacon hasn't already.
 local hookedRemotes = {}
 
 local function hookRemote(remote)
     if hookedRemotes[remote] then return end
     hookedRemotes[remote] = true
     remote.OnClientEvent:Connect(function(...)
+        if destinationArrived then return end   -- beacon already has it
         local args = { ... }
         for _, v in ipairs(args) do
             if typeof(v) == "CFrame" then
@@ -332,7 +369,6 @@ end
 for _, remote in pairs(Remotes:GetChildren()) do
     if remote:IsA("RemoteEvent") then hookRemote(remote) end
 end
-
 Remotes.ChildAdded:Connect(function(child)
     if child:IsA("RemoteEvent") then hookRemote(child) end
 end)
@@ -432,6 +468,7 @@ MainTab:CreateToggle({
             workspace.Gravity    = 196.2
             pendingDestinationCF = nil
             destinationArrived   = false
+            StopBeaconPoll()
             SetStatus("Idle")
             return
         end
@@ -490,14 +527,31 @@ MainTab:CreateToggle({
                         bus.DriveSeat:Sit(hum)
                         jobStarted   = true
                         noEventTimer = 0
-                        SetStatus("Job active — awaiting server destination...")
+
+                        -- aim beam at first active checkpoint BasePart
+                        -- server steers _targetInstance through each stop
+                        local firstPart = nil
+                        for _, part in pairs(workspace.Checkpoints:GetChildren()) do
+                            local bs = part:FindFirstChild("BusStop")
+                            if bs and bs:IsA("BillboardGui") and bs.Enabled then
+                                firstPart = part:FindFirstChildWhichIsA("BasePart") or part
+                                break
+                            end
+                        end
+                        -- fallback: aim at Checkpoints folder anchor
+                        beamWatcher:Start(firstPart
+                            or workspace.Checkpoints:FindFirstChildWhichIsA("BasePart")
+                            or workspace.Checkpoints)
+                        StartBeaconPoll()
+
+                        SetStatus("Job active — beacon tracking...")
                     end
                 end
 
                 task.wait(1)
             end
 
-            -- ── Remote-driven stop handler ─────────────────────────────────
+            -- ── Stop handler — beacon/remote primary, Checkpoints tertiary ─
             if jobStarted then
                 if destinationArrived and pendingDestinationCF then
                     local destCF         = pendingDestinationCF
@@ -509,10 +563,11 @@ MainTab:CreateToggle({
                     SetStatus("Stop #" .. stopCount .. " — spoofing approach...")
                     SpoofTP(destCF)
 
-                    -- 20s hold with correction check
+                    -- 20s presence hold with correction check
                     for i = 20, 1, -1 do
                         if not _G.AutoFull then break end
-                        if infoLabel and string.find(string.upper(infoLabel.Text), "RETURN TO THE CHECKPOINT") then
+                        if infoLabel and string.find(
+                            string.upper(infoLabel.Text), "RETURN TO THE CHECKPOINT") then
                             SetStatus("Correction — re-spoofing stop #" .. stopCount)
                             SpoofTP(destCF)
                         else
@@ -521,7 +576,7 @@ MainTab:CreateToggle({
                         HoldAtStop(1)
                     end
 
-                    -- 10s early-exit buffer: next remote may arrive here
+                    -- 10s early-exit buffer
                     for i = 10, 1, -1 do
                         if not _G.AutoFull then break end
                         if destinationArrived then break end
@@ -529,7 +584,7 @@ MainTab:CreateToggle({
                         HoldAtStop(1)
                     end
 
-                    -- 54s inter-stop delay (84s total × 5 stops = 420s ≈ 7 min)
+                    -- 30s inter-stop delay
                     if not destinationArrived then
                         for i = 30, 1, -1 do
                             if not _G.AutoFull then break end
@@ -540,27 +595,47 @@ MainTab:CreateToggle({
                     end
 
                 else
-                    -- no remote yet: count down, then finish route
-                    noEventTimer = noEventTimer + 1
-                    SetStatus("Waiting for remote: " .. (NO_EVENT_LIMIT - noEventTimer) .. "s")
-
-                    if noEventTimer >= NO_EVENT_LIMIT then
-                        SetStatus("Route complete — finishing...")
-                        SpoofTP(BaranangsangEndCF)
-                        task.wait(2)
-
-                        jobStarted   = false
-                        noEventTimer = 0
-                        stopCount    = 0
-
-                        local bus = GetMyBus()
-                        if bus then bus:Destroy() end
-
-                        SetStatus("Restarting cycle...")
-                        task.wait(3)
+                    -- ── Checkpoints tertiary fallback ──────────────────────
+                    local activeStop = nil
+                    for _, part in pairs(workspace.Checkpoints:GetChildren()) do
+                        local bs = part:FindFirstChild("BusStop")
+                        if bs and bs:IsA("BillboardGui") and bs.Enabled then
+                            activeStop = part
+                            break
+                        end
                     end
 
-                    task.wait(1)
+                    if activeStop then
+                        -- push into pipeline, beacon poll will catch the
+                        -- real part on next 0.1s tick; this covers the gap
+                        if not destinationArrived then
+                            pendingDestinationCF = activeStop:GetPivot()
+                            destinationArrived   = true
+                            noEventTimer         = 0
+                        end
+                    else
+                        noEventTimer = noEventTimer + 1
+                        SetStatus("No stop found: " .. (NO_EVENT_LIMIT - noEventTimer) .. "s")
+
+                        if noEventTimer >= NO_EVENT_LIMIT then
+                            SetStatus("Route complete — finishing...")
+                            SpoofTP(BaranangsangEndCF)
+                            task.wait(2)
+
+                            StopBeaconPoll()
+                            jobStarted   = false
+                            noEventTimer = 0
+                            stopCount    = 0
+
+                            local bus = GetMyBus()
+                            if bus then bus:Destroy() end
+
+                            SetStatus("Restarting cycle...")
+                            task.wait(3)
+                        end
+
+                        task.wait(1)
+                    end
                 end
             else
                 task.wait(1)
@@ -568,6 +643,7 @@ MainTab:CreateToggle({
         end
 
         workspace.Gravity = 196.2
+        StopBeaconPoll()
     end,
 })
 
@@ -606,7 +682,8 @@ MainTab:CreateToggle({
                 while _G.AutoKickEnabled do
                     local cur = StatsFolder.Uang.Value
                     if TargetUang > 0 and cur >= TargetUang then
-                        LP:Kick("\n[VoidlineHub]\nTarget money reached!\nTotal: Rp " .. formatRS(cur))
+                        LP:Kick("\n[VoidlineHub]\nTarget money reached!\nTotal: Rp "
+                            .. formatRS(cur))
                         break
                     end
                     task.wait(2)
@@ -687,13 +764,13 @@ ConfigTab:CreateToggle({
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 
 StatsTab:CreateSection("Info Farm")
-StatusLabel  = StatsTab:CreateLabel("Status: Waiting",         "clock")
+StatusLabel  = StatsTab:CreateLabel("Status: Waiting",                  "clock")
 UangLabel    = StatsTab:CreateLabel("Uang: Rp " .. formatRS(StartUang), "banknote")
-EarningLabel = StatsTab:CreateLabel("Earning: Rp 0",           "coins")
-TimeLabel    = StatsTab:CreateLabel("Time: 00:00:00",           "timer")
+EarningLabel = StatsTab:CreateLabel("Earning: Rp 0",                    "coins")
+TimeLabel    = StatsTab:CreateLabel("Time: 00:00:00",                    "timer")
 
 StatsTab:CreateSection("System Info")
-FPSLabel  = StatsTab:CreateLabel("FPS: Scanning...", "monitor")
+FPSLabel  = StatsTab:CreateLabel("FPS: Scanning...",  "monitor")
 PingLabel = StatsTab:CreateLabel("Ping: Scanning...", "wifi")
 
 -- ════════════════════════════════════════════════════════════════════════════
@@ -728,8 +805,6 @@ MoreTab:CreateToggle({
 
 MoreTab:CreateSection("Visual & Performance")
 
--- Guard: BillboardGui destruction only when farm is off
--- (farm loop has no billboard scan but destroy mid-session breaks future hooks)
 MoreTab:CreateButton({
     Name     = "Hide All Names",
     Callback = function()
