@@ -16,18 +16,22 @@ local BusJobUpdate      = Remotes:WaitForChild("BusJobUpdate")
 -- ============================================================
 -- GLOBALS
 -- ============================================================
-_G.AutoFull        = false
-_G.AntiAFK         = true
-_G.AutoRejoin      = false
-_G.blackscreen     = false
-_G.HideChar        = false
-_G.SelectedBus     = ""
-_G.WebhookURL      = ""
-_G.WebhookEnabled  = false
-_G.TotalEarning    = 0
-_G.CycleCount      = 0
-_G.StartTime       = os.time()
-_G.AutoKickEnabled = false
+_G.AutoFull          = false
+_G.AntiAFK           = true
+_G.AutoRejoin        = false
+_G.blackscreen       = false
+_G.HideChar          = false
+_G.SelectedBus       = ""
+_G.WebhookURL        = ""
+_G.WebhookEnabled    = false
+_G.TotalEarning      = 0
+_G.CycleCount        = 0
+_G.StartTime         = os.time()
+_G.AutoKickEnabled   = false
+_G.CycleForceRestart = false
+
+local CYCLE_DURATION     = 360  -- 6 minutes
+local CHECKPOINT_BUFFER  = 5    -- extra seconds after server waitTime
 
 local TargetUang       = 0
 local lastMoney        = StatsFolder.Uang.Value
@@ -250,8 +254,6 @@ end
 
 -- ============================================================
 -- CHECKPOINT EVENT — normalizer + queue
---   Handles both StartCheckpointWait and JobResumed.
---   Both map to the same shape so the farm loop never branches.
 -- ============================================================
 local function normalizePayload(eventType, payload)
     if eventType == "StartCheckpointWait" then
@@ -298,34 +300,27 @@ local function ConsumeCheckpoint(timeout)
 end
 
 local function ResolveCheckpointCF(cp)
-    -- JobResumed provides exact world position — use it directly
     if cp.position then
         return CFrame.new(cp.position)
     end
-
     local checkpoints = workspace:FindFirstChild("Checkpoints")
     if checkpoints then
-        -- StartCheckpointWait: try part name first
         if cp.partName then
             local part = checkpoints:FindFirstChild(cp.partName)
             if part then return part.CFrame end
         end
-        -- attribute-based index lookup
         if cp.index then
             for _, part in ipairs(checkpoints:GetChildren()) do
                 if part:GetAttribute("CheckpointIndex") == cp.index then
                     return part.CFrame
                 end
             end
-            -- ordered fallback
             local children = checkpoints:GetChildren()
             if children[cp.index] then
                 return children[cp.index].CFrame
             end
         end
     end
-
-    -- nothing resolved — no-op pivot
     local bus = GetMyBus()
     return bus and bus:GetPivot() or CFrame.new()
 end
@@ -366,13 +361,13 @@ local function sendWebhook(income)
         ["title"]  = "Bus Route Completed",
         ["color"]  = 0xFFFFFF,
         ["fields"] = {
-            { ["name"] = "Player",        ["value"] = LP.Name,                  ["inline"] = false },
-            { ["name"] = "Cycle Income",  ["value"] = formatRP(income),         ["inline"] = false },
-            { ["name"] = "Route",         ["value"] = "Cirebon → Baranangsiang",["inline"] = false },
-            { ["name"] = "Current Money", ["value"] = formatRP(currentMoney),   ["inline"] = false },
-            { ["name"] = "Total Earning", ["value"] = formatRP(_G.TotalEarning),["inline"] = false },
-            { ["name"] = "Cycle Count",   ["value"] = tostring(_G.CycleCount),  ["inline"] = false },
-            { ["name"] = "Running Time",  ["value"] = getRunningTime(),         ["inline"] = false },
+            { ["name"] = "Player",        ["value"] = LP.Name,                   ["inline"] = false },
+            { ["name"] = "Cycle Income",  ["value"] = formatRP(income),          ["inline"] = false },
+            { ["name"] = "Route",         ["value"] = "Cirebon → Baranangsiang", ["inline"] = false },
+            { ["name"] = "Current Money", ["value"] = formatRP(currentMoney),    ["inline"] = false },
+            { ["name"] = "Total Earning", ["value"] = formatRP(_G.TotalEarning), ["inline"] = false },
+            { ["name"] = "Cycle Count",   ["value"] = tostring(_G.CycleCount),   ["inline"] = false },
+            { ["name"] = "Running Time",  ["value"] = getRunningTime(),          ["inline"] = false },
         },
         ["footer"] = { ["text"] = "Made By Projectsion | " .. os.date("%m/%d/%Y %I:%M %p") }
     }
@@ -443,7 +438,7 @@ local MainTab = Window:CreateTab("Main Farm", "play")
 MainTab:CreateSection("Autofarm Bus")
 MainTab:CreateParagraph({
     Title   = "INFO",
-    Content = "Event-driven via BusJobUpdate — handles StartCheckpointWait and JobResumed. No billboard scanning.",
+    Content = "Event-driven via BusJobUpdate — handles StartCheckpointWait and JobResumed. 6-minute cycle timer. No billboard scanning.",
 })
 
 MainTab:CreateToggle({
@@ -453,18 +448,39 @@ MainTab:CreateToggle({
         _G.AutoFull = Value
 
         if not Value then
-            checkpointQueue   = {}
-            workspace.Gravity = 196.2
+            checkpointQueue      = {}
+            _G.CycleForceRestart = false
+            workspace.Gravity    = 196.2
             SetStatus("Idle")
             return
         end
 
-        workspace.Gravity = 0
-        checkpointQueue   = {}
+        workspace.Gravity    = 0
+        checkpointQueue      = {}
+        _G.CycleForceRestart = false
 
         task.spawn(function()
             local hum = LP.Character and LP.Character:FindFirstChild("Humanoid")
 
+            -- ------------------------------------------------
+            -- RestartCycle — shared restart logic
+            -- ------------------------------------------------
+            local function RestartCycle()
+                checkpointQueue      = {}
+                _G.CycleForceRestart = false
+                local bus = GetMyBus()
+                if bus then bus:Destroy() end
+                task.wait(2)
+                hum = LP.Character and LP.Character:FindFirstChild("Humanoid")
+                SpawnAndSit(hum)
+                Remotes:WaitForChild("StartBusJob"):InvokeServer("Cirebon_Baranangsiang4", nil)
+                task.wait(1)
+                hum.Jump = true
+                task.wait(1.5)
+                SpawnAndSit(hum)
+            end
+
+            -- initial spawn + job acquire
             SpawnAndSit(hum)
             SetStatus("Acquiring job...")
             Remotes:WaitForChild("StartBusJob"):InvokeServer("Cirebon_Baranangsiang4", nil)
@@ -474,13 +490,50 @@ MainTab:CreateToggle({
             SpawnAndSit(hum)
 
             -- ------------------------------------------------
+            -- 6-MINUTE CYCLE TIMER (parallel coroutine)
+            --   Counts down in status label, sets
+            --   _G.CycleForceRestart at CYCLE_DURATION seconds.
+            --   Main loop checks the flag and restarts clean.
+            -- ------------------------------------------------
+            task.spawn(function()
+                while _G.AutoFull do
+                    local cycleStart = os.clock()
+                    while os.clock() - cycleStart < CYCLE_DURATION and _G.AutoFull do
+                        task.wait(1)
+                    end
+                    if _G.AutoFull then
+                        _G.CycleForceRestart = true
+                    end
+                end
+            end)
+
+            -- ------------------------------------------------
             -- MAIN EVENT LOOP
             -- ------------------------------------------------
             while _G.AutoFull do
+
+                -- cycle timer fired at top of loop
+                if _G.CycleForceRestart then
+                    SetStatus("Cycle limit — restarting...")
+                    AerialTP(BaranangsangEndCF)
+                    task.wait(2)
+                    RestartCycle()
+                    continue
+                end
+
                 SetStatus("Waiting for checkpoint event...")
                 local cp = ConsumeCheckpoint(120)
 
                 if not _G.AutoFull then break end
+
+                -- cycle timer may have fired during ConsumeCheckpoint wait
+                if _G.CycleForceRestart then
+                    SetStatus("Cycle limit — restarting...")
+                    AerialTP(BaranangsangEndCF)
+                    task.wait(2)
+                    RestartCycle()
+                    continue
+                end
 
                 if cp then
                     local targetCF = ResolveCheckpointCF(cp)
@@ -489,58 +542,48 @@ MainTab:CreateToggle({
                         cp.index, cp.total, cp.name))
                     AerialTP(targetCF)
 
-                    -- isWaiting=false (JobResumed mid-transit): short buffer only
-                    local holdTime = cp.isWaiting and (cp.waitTime + 5) or 5
+                    -- ----------------------------------------
+                    -- CHECKPOINT HOLD
+                    --   isWaiting = true  → full server waitTime
+                    --                       + CHECKPOINT_BUFFER
+                    --   isWaiting = false → JobResumed mid-transit;
+                    --                       server already counted
+                    --                       the wait, short buffer
+                    --                       only so presence lands.
+                    -- ----------------------------------------
+                    local holdTime = cp.isWaiting
+                        and (cp.waitTime + CHECKPOINT_BUFFER)
+                        or  CHECKPOINT_BUFFER
+
                     for i = holdTime, 1, -1 do
                         if not _G.AutoFull then break end
-                        SetStatus(string.format("[%d/%d] holding — %ds",
-                            cp.index, cp.total, i))
+                        if _G.CycleForceRestart then break end
+                        SetStatus(string.format("[%d/%d] %s — holding %ds",
+                            cp.index, cp.total, cp.name, i))
                         HoldAtStop(1)
                     end
 
-                    -- final checkpoint → finish route + restart cycle
-                    if cp.index == cp.total then
+                    -- final checkpoint → finish route + restart
+                    if cp.index == cp.total and not _G.CycleForceRestart then
                         SetStatus("Final stop — completing route...")
                         AerialTP(BaranangsangEndCF)
                         task.wait(3)
-
-                        local bus = GetMyBus()
-                        if bus then bus:Destroy() end
-
-                        checkpointQueue = {}
                         SetStatus("Route complete — restarting...")
                         task.wait(2)
-
-                        hum = LP.Character and LP.Character:FindFirstChild("Humanoid")
-                        SpawnAndSit(hum)
-                        Remotes:WaitForChild("StartBusJob"):InvokeServer("Cirebon_Baranangsiang4", nil)
-                        task.wait(1)
-                        hum.Jump = true
-                        task.wait(1.5)
-                        SpawnAndSit(hum)
+                        RestartCycle()
                     end
 
                 else
                     -- 120s with no event = job dropped server-side
                     SetStatus("Event timeout — recovering...")
-                    checkpointQueue = {}
-                    local bus = GetMyBus()
-                    if bus then bus:Destroy() end
-                    task.wait(2)
-
-                    hum = LP.Character and LP.Character:FindFirstChild("Humanoid")
-                    SpawnAndSit(hum)
-                    Remotes:WaitForChild("StartBusJob"):InvokeServer("Cirebon_Baranangsiang4", nil)
-                    task.wait(1)
-                    hum.Jump = true
-                    task.wait(1.5)
-                    SpawnAndSit(hum)
+                    RestartCycle()
                 end
 
                 task.wait(0.3)
             end
 
-            workspace.Gravity = 196.2
+            workspace.Gravity    = 196.2
+            _G.CycleForceRestart = false
             SetStatus("Idle")
         end)
     end,
@@ -630,10 +673,10 @@ ConfigTab:CreateInput({
     Callback = function(Text)
         _G.WebhookURL = Text
         Rayfield:Notify({
-            Title   = "Webhook Updated",
-            Content = "URL saved.",
+            Title    = "Webhook Updated",
+            Content  = "URL saved.",
             Duration = 3,
-            Image   = "link",
+            Image    = "link",
         })
     end,
 })
