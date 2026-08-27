@@ -5,80 +5,17 @@ local TweenService      = game:GetService("TweenService")
 local Players           = game:GetService("Players")
 local LP                = Players.LocalPlayer
 local Remotes           = game:GetService("ReplicatedStorage"):WaitForChild("Remotes")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StatsFolder       = LP:WaitForChild("PlayerData")
 local StartUang         = StatsFolder.Uang.Value
 local StartTime         = os.time()
 local CarData           = Remotes.GetClientCustomizationData:InvokeServer()
 local OwnedCarsFolder   = LP:WaitForChild("PlayerData"):WaitForChild("OwnedCars")
 local HttpService       = game:GetService("HttpService")
+local BusJobUpdate      = Remotes:WaitForChild("BusJobUpdate")
 
 -- ============================================================
--- BusJobUpdate listener — replaces all BillboardGui polling.
--- Server fires this every time a checkpoint opens.
--- Payload: { checkpointIndex, waitTime, totalCheckpoints, checkpointName }
+-- GLOBALS
 -- ============================================================
-local BusJobUpdate  = Remotes:WaitForChild("BusJobUpdate")
-local pendingSignal = nil   -- Instance.new("BindableEvent") set at farm start
-local lastPayload   = nil   -- most recent checkpoint payload
-
-BusJobUpdate.OnClientEvent:Connect(function(eventType, payload)
-    if eventType == "StartCheckpointWait" then
-        lastPayload = payload
-        if pendingSignal then
-            pendingSignal:Fire(payload)
-        end
-    end
-end)
-
--- ============================================================
--- WaitForCheckpoint
---   Yields until the next StartCheckpointWait fires or timeout.
---   Returns the payload table, or nil on timeout / farm stop.
--- ============================================================
-local function WaitForCheckpoint(timeoutSeconds)
-    local deadline = os.clock() + timeoutSeconds
-    while os.clock() < deadline and _G.AutoFull do
-        if lastPayload then
-            local p   = lastPayload
-            lastPayload = nil
-            return p
-        end
-        task.wait(0.25)
-    end
-    return nil
-end
-
--- ============================================================
--- GetCheckpointByIndex
---   Finds the workspace checkpoint whose name or attribute
---   matches checkpointIndex from the payload.
---   Falls back to ordered child index if no name match.
--- ============================================================
-local function GetCheckpointByIndex(idx)
-    local checkpoints = workspace:FindFirstChild("Checkpoints")
-    if not checkpoints then return nil end
-    for _, part in ipairs(checkpoints:GetChildren()) do
-        local attr = part:GetAttribute("CheckpointIndex")
-        if attr == idx then return part end
-    end
-    -- fallback: ordered index
-    local children = checkpoints:GetChildren()
-    return children[idx]
-end
-
--- ======================================================
--- Window + globals (unchanged from original)
--- ======================================================
-local Window = Rayfield:CreateWindow({
-    Name          = ".projectsion",
-    LoadingTitle  = "Bus Explorer Indonesia",
-    LoadingSubtitle = "by .projectsion",
-    Theme         = "Bloom",
-    ConfigurationSaving = { Enabled = true, FileName = "VoidlineConfig" },
-    KeySystem     = false,
-})
-
 _G.AutoFull        = false
 _G.AntiAFK         = true
 _G.AutoRejoin      = false
@@ -86,22 +23,26 @@ _G.blackscreen     = false
 _G.HideChar        = false
 _G.SelectedBus     = ""
 _G.WebhookURL      = ""
+_G.WebhookEnabled  = false
 _G.TotalEarning    = 0
 _G.CycleCount      = 0
 _G.StartTime       = os.time()
 _G.AutoKickEnabled = false
 
-local TargetUang        = 0
-local lastMoney         = StatsFolder.Uang.Value
-local SelectedBusToBuy  = ""
-local CarListData       = {}
-local pendingIncome     = 0
-local SelectedAction    = "Dealership"
-local SelectedTP        = "Dealership"
-local isRunning         = false
-local busOptions        = {}
+local TargetUang       = 0
+local lastMoney        = StatsFolder.Uang.Value
+local SelectedBusToBuy = ""
+local CarListData      = {}
+local pendingIncome    = 0
+local SelectedAction   = "Dealership"
+local SelectedTP       = "Dealership"
+local isRunning        = false
+local busOptions       = {}
+local checkpointQueue  = {}
 
--- black screen overlay
+-- ============================================================
+-- BLACK SCREEN OVERLAY
+-- ============================================================
 local BlackScreen = Instance.new("ScreenGui")
 local Frame       = Instance.new("Frame")
 BlackScreen.Name         = "ProjectsionBlackout"
@@ -120,7 +61,9 @@ task.spawn(function()
     end
 end)
 
--- auto-kick other players
+-- ============================================================
+-- AUTO-KICK OTHER PLAYERS
+-- ============================================================
 local function checkAndKick()
     if not _G.AutoKickEnabled then return end
     local playerList = Players:GetPlayers()
@@ -138,18 +81,24 @@ Players.PlayerAdded:Connect(function(player)
     task.wait(0.5)
     checkAndKick()
 end)
+
 task.spawn(function()
     while true do task.wait(3); checkAndKick() end
 end)
 
--- ======================================================
--- UI labels (assigned after tab creation below)
--- ======================================================
+-- ============================================================
+-- UI LABELS (assigned after tab creation)
+-- ============================================================
 local StatusLabel, UangLabel, EarningLabel, TimeLabel, FPSLabel, PingLabel
+
+local function SetStatus(text)
+    if StatusLabel then StatusLabel:Set("Status: " .. text) end
+end
 
 local function formatRS(amount)
     local formatted = tostring(amount)
     while true do
+        local k
         formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", '%1.%2')
         if k == 0 then break end
     end
@@ -176,6 +125,9 @@ task.spawn(function()
     end
 end)
 
+-- ============================================================
+-- BUS OPTIONS FROM GARAGE
+-- ============================================================
 for _, car in pairs(OwnedCarsFolder:GetChildren()) do
     local carID   = car.Name
     local carInfo = CarData.CarData_Cars[carID]
@@ -184,24 +136,31 @@ end
 if #busOptions == 0 then table.insert(busOptions, "Jetbus_3_RM _SHD") end
 _G.SelectedBus = busOptions[1]
 
--- ======================================================
--- Locations / utilities
--- ======================================================
+-- ============================================================
+-- CONSTANTS
+-- ============================================================
+local AERIAL_HEIGHT = 1000
+local DESCENT_TIME  = 8
+local HOLD_INTERVAL = 0.05
+
 local BaranangsangEndCF = CFrame.new(22732.02, 293.21, -39525.31)
     * CFrame.Angles(2.8307, -0.7276, 2.9293)
 
 local TP_Locations = {
     ["Dealership"]    = CFrame.new(19830.625,   266.913116, -27910.4844,
-                            0.999847949, 0,  0.017436387, 0, 1, 0,
+                             0.999847949, 0,  0.017436387, 0, 1, 0,
                             -0.017436387, 0,  0.999847949),
     ["Modifikasi"]    = CFrame.new(12035.499,   -21.3362789, 12740.0605,
                             -0.573599219, 0,  0.81913656,  0, 1, 0,
                             -0.81913656,  0, -0.573599219),
     ["Teleport City"] = CFrame.new(21795.2461,  292.439026, -40055.918,
-                            0.707134247, -0, -0.707079291, 0, 1, -0,
-                            0.707079291,  0,  0.707134247),
+                             0.707134247, -0, -0.707079291, 0, 1, -0,
+                             0.707079291,  0,  0.707134247),
 }
 
+-- ============================================================
+-- ANTI-AFK
+-- ============================================================
 game.Players.LocalPlayer.Idled:Connect(function()
     if _G.AntiAFK then
         VirtualUser:CaptureController()
@@ -209,19 +168,12 @@ game.Players.LocalPlayer.Idled:Connect(function()
     end
 end)
 
-local function SetStatus(text)
-    if StatusLabel then StatusLabel:Set("Status: " .. text) end
-end
-
+-- ============================================================
+-- CORE HELPERS
+-- ============================================================
 local function GetMyBus()
     return workspace.SpawnedVehicles:FindFirstChild(_G.SelectedBus)
 end
-
--- ======================================================
--- AerialTP (unchanged — gravity-0 lift/translate/tween)
--- ======================================================
-local AERIAL_HEIGHT = 1000
-local DESCENT_TIME  = 8
 
 local function AerialTP(targetCF)
     local bus = GetMyBus()
@@ -267,7 +219,6 @@ local function AerialTP(targetCF)
     bus:PivotTo(targetCF)
 end
 
-local HOLD_INTERVAL = 0.05
 local function HoldAtStop(duration)
     local bus     = GetMyBus()
     local elapsed = 0
@@ -285,21 +236,118 @@ local function HoldAtStop(duration)
     end
 end
 
--- ======================================================
--- Webhook (unchanged)
--- ======================================================
+local function SpawnAndSit(hum)
+    SetStatus("Spawning: " .. _G.SelectedBus)
+    Remotes:WaitForChild("SpawnCar"):FireServer(_G.SelectedBus)
+    task.wait(4)
+    local bus = GetMyBus()
+    if bus and bus:FindFirstChild("DriveSeat") then
+        bus.DriveSeat:Sit(hum)
+        task.wait(2)
+    end
+    return GetMyBus()
+end
+
+-- ============================================================
+-- CHECKPOINT EVENT — normalizer + queue
+--   Handles both StartCheckpointWait and JobResumed.
+--   Both map to the same shape so the farm loop never branches.
+-- ============================================================
+local function normalizePayload(eventType, payload)
+    if eventType == "StartCheckpointWait" then
+        return {
+            index     = payload.checkpointIndex,
+            total     = payload.totalCheckpoints,
+            name      = payload.checkpointName,
+            position  = nil,
+            partName  = nil,
+            waitTime  = payload.waitTime or 15,
+            isWaiting = true,
+        }
+    elseif eventType == "JobResumed" then
+        return {
+            index     = payload.checkpointIndex,
+            total     = payload.totalCheckpoints,
+            name      = payload.nextDestinationName,
+            position  = payload.nextCheckpointPosition,
+            partName  = payload.nextCheckpointPartName,
+            waitTime  = payload.waitTimeRemaining or 15,
+            isWaiting = payload.isWaiting,
+        }
+    end
+    return nil
+end
+
+BusJobUpdate.OnClientEvent:Connect(function(eventType, payload)
+    if not _G.AutoFull then return end
+    local normalized = normalizePayload(eventType, payload)
+    if normalized then
+        table.insert(checkpointQueue, normalized)
+    end
+end)
+
+local function ConsumeCheckpoint(timeout)
+    local deadline = os.clock() + timeout
+    while os.clock() < deadline and _G.AutoFull do
+        if #checkpointQueue > 0 then
+            return table.remove(checkpointQueue, 1)
+        end
+        task.wait(0.1)
+    end
+    return nil
+end
+
+local function ResolveCheckpointCF(cp)
+    -- JobResumed provides exact world position — use it directly
+    if cp.position then
+        return CFrame.new(cp.position)
+    end
+
+    local checkpoints = workspace:FindFirstChild("Checkpoints")
+    if checkpoints then
+        -- StartCheckpointWait: try part name first
+        if cp.partName then
+            local part = checkpoints:FindFirstChild(cp.partName)
+            if part then return part.CFrame end
+        end
+        -- attribute-based index lookup
+        if cp.index then
+            for _, part in ipairs(checkpoints:GetChildren()) do
+                if part:GetAttribute("CheckpointIndex") == cp.index then
+                    return part.CFrame
+                end
+            end
+            -- ordered fallback
+            local children = checkpoints:GetChildren()
+            if children[cp.index] then
+                return children[cp.index].CFrame
+            end
+        end
+    end
+
+    -- nothing resolved — no-op pivot
+    local bus = GetMyBus()
+    return bus and bus:GetPivot() or CFrame.new()
+end
+
+-- ============================================================
+-- WEBHOOK
+-- ============================================================
 local function getAvatar()
     return "https://www.roblox.com/headshot-thumbnail/image?userId="
         .. LP.UserId .. "&width=420&height=420&format=png"
 end
+
 local function formatRP(v)
     local formatted = tostring(v)
     while true do
+        local k
         formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", '%1.%2')
         if k == 0 then break end
     end
     return "Rp " .. formatted
 end
+
 local function getRunningTime()
     local diff = os.time() - _G.StartTime
     return string.format("%02d:%02d:%02d",
@@ -318,13 +366,13 @@ local function sendWebhook(income)
         ["title"]  = "Bus Route Completed",
         ["color"]  = 0xFFFFFF,
         ["fields"] = {
-            { ["name"] = "Player",        ["value"] = LP.Name,                         ["inline"] = false },
-            { ["name"] = "Cycle Income",  ["value"] = formatRP(income),                ["inline"] = false },
-            { ["name"] = "Route",         ["value"] = "Cirebon → Baranangsiang",       ["inline"] = false },
-            { ["name"] = "Current Money", ["value"] = formatRP(currentMoney),          ["inline"] = false },
-            { ["name"] = "Total Earning", ["value"] = formatRP(_G.TotalEarning),       ["inline"] = false },
-            { ["name"] = "Cycle Count",   ["value"] = tostring(_G.CycleCount),         ["inline"] = false },
-            { ["name"] = "Running Time",  ["value"] = getRunningTime(),                ["inline"] = false },
+            { ["name"] = "Player",        ["value"] = LP.Name,                  ["inline"] = false },
+            { ["name"] = "Cycle Income",  ["value"] = formatRP(income),         ["inline"] = false },
+            { ["name"] = "Route",         ["value"] = "Cirebon → Baranangsiang",["inline"] = false },
+            { ["name"] = "Current Money", ["value"] = formatRP(currentMoney),   ["inline"] = false },
+            { ["name"] = "Total Earning", ["value"] = formatRP(_G.TotalEarning),["inline"] = false },
+            { ["name"] = "Cycle Count",   ["value"] = tostring(_G.CycleCount),  ["inline"] = false },
+            { ["name"] = "Running Time",  ["value"] = getRunningTime(),         ["inline"] = false },
         },
         ["footer"] = { ["text"] = "Made By Projectsion | " .. os.date("%m/%d/%Y %I:%M %p") }
     }
@@ -365,6 +413,9 @@ StatsFolder.Uang:GetPropertyChangedSignal("Value"):Connect(function()
     lastMoney = newMoney
 end)
 
+-- ============================================================
+-- CAR LIST FOR BUY DROPDOWN
+-- ============================================================
 local ClientData = Remotes.GetClientCustomizationData:InvokeServer()
 if ClientData and ClientData.CarData_Cars then
     for carID in pairs(ClientData.CarData_Cars) do
@@ -373,14 +424,26 @@ if ClientData and ClientData.CarData_Cars then
     table.sort(CarListData)
 end
 
--- ======================================================
--- TABS
--- ======================================================
+-- ============================================================
+-- WINDOW
+-- ============================================================
+local Window = Rayfield:CreateWindow({
+    Name            = ".projectsion",
+    LoadingTitle    = "Bus Explorer Indonesia",
+    LoadingSubtitle = "by .projectsion",
+    Theme           = "Bloom",
+    ConfigurationSaving = { Enabled = true, FileName = "VoidlineConfig" },
+    KeySystem       = false,
+})
+
+-- ============================================================
+-- MAIN FARM TAB
+-- ============================================================
 local MainTab = Window:CreateTab("Main Farm", "play")
-MainTab:CreateSection("Autofarm bus")
+MainTab:CreateSection("Autofarm Bus")
 MainTab:CreateParagraph({
     Title   = "INFO",
-    Content = "Uses BusJobUpdate OnClientEvent — no billboard scanning. Auto-Kick enabled = private server only."
+    Content = "Event-driven via BusJobUpdate — handles StartCheckpointWait and JobResumed. No billboard scanning.",
 })
 
 MainTab:CreateToggle({
@@ -390,158 +453,97 @@ MainTab:CreateToggle({
         _G.AutoFull = Value
 
         if not Value then
-            lastPayload       = nil
+            checkpointQueue   = {}
             workspace.Gravity = 196.2
             SetStatus("Idle")
             return
         end
 
         workspace.Gravity = 0
+        checkpointQueue   = {}
 
         task.spawn(function()
-            -- ------------------------------------------------
-            -- PHASE 1 — spawn bus, get job, re-spawn bus
-            -- ------------------------------------------------
             local hum = LP.Character and LP.Character:FindFirstChild("Humanoid")
-            SetStatus("Spawning: " .. _G.SelectedBus)
-            Remotes:WaitForChild("SpawnCar"):FireServer(_G.SelectedBus)
-            task.wait(4)
 
-            local bus = GetMyBus()
-            if bus and bus:FindFirstChild("DriveSeat") then
-                bus.DriveSeat:Sit(hum)
-                task.wait(2)
-            end
-
+            SpawnAndSit(hum)
             SetStatus("Acquiring job...")
             Remotes:WaitForChild("StartBusJob"):InvokeServer("Cirebon_Baranangsiang4", nil)
             task.wait(1)
-
             hum.Jump = true
             task.wait(1.5)
-
-            Remotes:WaitForChild("SpawnCar"):FireServer(_G.SelectedBus)
-            task.wait(4)
-            bus = GetMyBus()
-            if bus and bus:FindFirstChild("DriveSeat") then
-                bus.DriveSeat:Sit(hum)
-            end
+            SpawnAndSit(hum)
 
             -- ------------------------------------------------
-            -- PHASE 2 — event-driven checkpoint loop
-            --   BusJobUpdate fires "StartCheckpointWait" with:
-            --     checkpointIndex   : 1-based stop number
-            --     waitTime          : seconds server expects presence
-            --     totalCheckpoints  : route length
-            --     checkpointName    : display name
+            -- MAIN EVENT LOOP
             -- ------------------------------------------------
-            local visitedCount = 0
-            lastPayload        = nil  -- clear any stale fire from before farm
-
             while _G.AutoFull do
-                SetStatus("Waiting for checkpoint signal...")
-
-                -- yield up to 120s for next checkpoint event
-                local payload = WaitForCheckpoint(120)
+                SetStatus("Waiting for checkpoint event...")
+                local cp = ConsumeCheckpoint(120)
 
                 if not _G.AutoFull then break end
 
-                if payload then
-                    visitedCount = visitedCount + 1
-                    SetStatus(string.format(
-                        "Stop %d/%d — %s",
-                        payload.checkpointIndex,
-                        payload.totalCheckpoints,
-                        payload.checkpointName
-                    ))
+                if cp then
+                    local targetCF = ResolveCheckpointCF(cp)
 
-                    -- resolve workspace part for this checkpoint
-                    local checkpointPart = GetCheckpointByIndex(payload.checkpointIndex)
-                    if checkpointPart then
-                        AerialTP(checkpointPart.CFrame)
-                    end
+                    SetStatus(string.format("[%d/%d] %s — approach",
+                        cp.index, cp.total, cp.name))
+                    AerialTP(targetCF)
 
-                    -- hold for server's declared waitTime + 5s buffer
-                    local holdSeconds = (payload.waitTime or 15) + 5
-                    for i = holdSeconds, 1, -1 do
+                    -- isWaiting=false (JobResumed mid-transit): short buffer only
+                    local holdTime = cp.isWaiting and (cp.waitTime + 5) or 5
+                    for i = holdTime, 1, -1 do
                         if not _G.AutoFull then break end
-                        SetStatus(string.format(
-                            "Holding stop %d — %ds remaining",
-                            payload.checkpointIndex, i
-                        ))
+                        SetStatus(string.format("[%d/%d] holding — %ds",
+                            cp.index, cp.total, i))
                         HoldAtStop(1)
                     end
 
-                    -- last checkpoint → finish the route
-                    if payload.checkpointIndex == payload.totalCheckpoints then
+                    -- final checkpoint → finish route + restart cycle
+                    if cp.index == cp.total then
                         SetStatus("Final stop — completing route...")
                         AerialTP(BaranangsangEndCF)
                         task.wait(3)
 
-                        bus = GetMyBus()
+                        local bus = GetMyBus()
                         if bus then bus:Destroy() end
 
-                        visitedCount = 0
-                        lastPayload  = nil
-
+                        checkpointQueue = {}
                         SetStatus("Route complete — restarting...")
                         task.wait(2)
 
-                        -- re-enter job for next cycle
                         hum = LP.Character and LP.Character:FindFirstChild("Humanoid")
-                        Remotes:WaitForChild("SpawnCar"):FireServer(_G.SelectedBus)
-                        task.wait(4)
-                        bus = GetMyBus()
-                        if bus and bus:FindFirstChild("DriveSeat") then
-                            bus.DriveSeat:Sit(hum)
-                            task.wait(2)
-                        end
+                        SpawnAndSit(hum)
                         Remotes:WaitForChild("StartBusJob"):InvokeServer("Cirebon_Baranangsiang4", nil)
                         task.wait(1)
                         hum.Jump = true
                         task.wait(1.5)
-                        Remotes:WaitForChild("SpawnCar"):FireServer(_G.SelectedBus)
-                        task.wait(4)
-                        bus = GetMyBus()
-                        if bus and bus:FindFirstChild("DriveSeat") then
-                            bus.DriveSeat:Sit(hum)
-                        end
+                        SpawnAndSit(hum)
                     end
+
                 else
-                    -- 120s with no checkpoint event = job dropped
-                    SetStatus("Signal timeout — restarting job...")
-                    lastPayload = nil
-                    bus = GetMyBus()
+                    -- 120s with no event = job dropped server-side
+                    SetStatus("Event timeout — recovering...")
+                    checkpointQueue = {}
+                    local bus = GetMyBus()
                     if bus then bus:Destroy() end
                     task.wait(2)
 
                     hum = LP.Character and LP.Character:FindFirstChild("Humanoid")
-                    Remotes:WaitForChild("SpawnCar"):FireServer(_G.SelectedBus)
-                    task.wait(4)
-                    bus = GetMyBus()
-                    if bus and bus:FindFirstChild("DriveSeat") then
-                        bus.DriveSeat:Sit(hum)
-                        task.wait(2)
-                    end
+                    SpawnAndSit(hum)
                     Remotes:WaitForChild("StartBusJob"):InvokeServer("Cirebon_Baranangsiang4", nil)
                     task.wait(1)
                     hum.Jump = true
                     task.wait(1.5)
-                    Remotes:WaitForChild("SpawnCar"):FireServer(_G.SelectedBus)
-                    task.wait(4)
-                    bus = GetMyBus()
-                    if bus and bus:FindFirstChild("DriveSeat") then
-                        bus.DriveSeat:Sit(hum)
-                    end
+                    SpawnAndSit(hum)
                 end
 
-                task.wait(0.5)
+                task.wait(0.3)
             end
 
             workspace.Gravity = 196.2
             SetStatus("Idle")
         end)
-    end
+    end,
 })
 
 MainTab:CreateToggle({
@@ -552,6 +554,7 @@ MainTab:CreateToggle({
 })
 
 MainTab:CreateSection("Auto Stop Settings")
+
 MainTab:CreateInput({
     Name                     = "Set Target Money",
     PlaceholderText          = "input your target",
@@ -579,7 +582,8 @@ MainTab:CreateToggle({
                     local currentMoney = StatsFolder.Uang.Value
                     if TargetUang > 0 and currentMoney >= TargetUang then
                         _G.AutoFull = false
-                        LP:Kick("\n[VoidlineHub]\nTarget reached!\nTotal: Rp " .. formatRS(currentMoney))
+                        LP:Kick("\n[VoidlineHub]\nTarget reached!\nTotal: Rp "
+                            .. formatRS(currentMoney))
                         break
                     end
                     task.wait(2)
@@ -589,9 +593,9 @@ MainTab:CreateToggle({
     end,
 })
 
--- ======================================================
--- Configuration tab
--- ======================================================
+-- ============================================================
+-- CONFIGURATION TAB
+-- ============================================================
 local ConfigTab = Window:CreateTab("Configuration", "settings")
 ConfigTab:CreateSection("Select Spawner Vehicle")
 
@@ -618,13 +622,19 @@ ConfigTab:CreateButton({
 })
 
 ConfigTab:CreateSection("Webhook")
+
 ConfigTab:CreateInput({
     Name                     = "Discord Webhook URL",
     PlaceholderText          = "Paste URL Here",
     RemoveTextAfterFocusLost = false,
     Callback = function(Text)
         _G.WebhookURL = Text
-        Rayfield:Notify({ Title = "Webhook Updated", Content = "URL saved.", Duration = 3, Image = "link" })
+        Rayfield:Notify({
+            Title   = "Webhook Updated",
+            Content = "URL saved.",
+            Duration = 3,
+            Image   = "link",
+        })
     end,
 })
 
@@ -644,22 +654,22 @@ ConfigTab:CreateToggle({
     end,
 })
 
--- ======================================================
--- Stats tab
--- ======================================================
-local StatsTab   = Window:CreateTab("Stats", "trending-up")
+-- ============================================================
+-- STATS TAB
+-- ============================================================
+local StatsTab = Window:CreateTab("Stats", "trending-up")
 StatsTab:CreateSection("Info Farm")
 StatusLabel  = StatsTab:CreateLabel("Status: Waiting", "clock")
-UangLabel    = StatsTab:CreateLabel("Uang: Rp " .. StartUang, "banknote")
+UangLabel    = StatsTab:CreateLabel("Uang: Rp " .. formatRS(StartUang), "banknote")
 EarningLabel = StatsTab:CreateLabel("Earning: Rp 0", "coins")
 TimeLabel    = StatsTab:CreateLabel("Time: 00:00:00", "timer")
 StatsTab:CreateSection("System Info")
 FPSLabel  = StatsTab:CreateLabel("FPS: Scanning...", "monitor")
 PingLabel = StatsTab:CreateLabel("Ping: Scanning...", "wifi")
 
--- ======================================================
--- More Features tab
--- ======================================================
+-- ============================================================
+-- MORE FEATURES TAB
+-- ============================================================
 local MoreTab = Window:CreateTab("More Features", "plus-circle")
 MoreTab:CreateSection("Important Features")
 
@@ -732,6 +742,7 @@ MoreTab:CreateButton({
 })
 
 MoreTab:CreateSection("Auto Buy Bus")
+
 MoreTab:CreateDropdown({
     Name            = "Select Bus to Purchase",
     Options         = CarListData,
@@ -756,6 +767,7 @@ MoreTab:CreateButton({
 })
 
 MoreTab:CreateSection("World Teleport")
+
 MoreTab:CreateDropdown({
     Name            = "Select TP Destination",
     Options         = { "Dealership", "Modifikasi", "Teleport City" },
@@ -776,6 +788,7 @@ MoreTab:CreateButton({
 })
 
 MoreTab:CreateSection("Open UI / Actions")
+
 MoreTab:CreateDropdown({
     Name            = "Select Menu to Open",
     Options         = { "Dealership", "Modifikasi", "Teleport City" },
