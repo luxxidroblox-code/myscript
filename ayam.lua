@@ -1,7 +1,7 @@
 -- lua, Client Script, Luau (Roblox Studio / Executor Runtime v590+)
--- listener added to ReplicatedStorage.NetworkContainer.RemoteEvents.Job.OnClientEvent
+-- teleport method: lift 2000 studs on seat entry → per-heartbeat step down
+-- step = (LIFT_HEIGHT / 49) * dt — arrives at dest in exactly 49s
 -- target filtering hard-coded exclusively to "malang"
--- teleport method: spoof-drop (lift 2000 studs → fall at 180 s/s → release)
 
 warn("sebelum loadstring")
 local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/luxxidroblox-code/myscript.lua/refs/heads/main/projectsionloader.lua'))()
@@ -28,11 +28,11 @@ BlackScreen.Name         = "ProjectsionBlackout"
 BlackScreen.Parent       = game:GetService("CoreGui")
 BlackScreen.DisplayOrder = -1
 BlackScreen.Enabled      = false
-Frame.Parent             = BlackScreen
-Frame.BackgroundColor3   = Color3.fromRGB(0, 0, 0)
-Frame.Size               = UDim2.new(1.5, 0, 1.5, 0)
-Frame.Position           = UDim2.new(-0.25, 0, -0.25, 0)
-Frame.BorderSizePixel    = 0
+Frame.Parent           = BlackScreen
+Frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+Frame.Size             = UDim2.new(1.5, 0, 1.5, 0)
+Frame.Position         = UDim2.new(-0.25, 0, -0.25, 0)
+Frame.BorderSizePixel  = 0
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace         = game:GetService("Workspace")
@@ -42,14 +42,14 @@ local lp                = Players.LocalPlayer
 
 warn("berhasil lewatin services")
 
-_G.Autofarm            = false
-_G.AutoWebhook         = false
-_G.DeleteMap           = false
-_G.WebhookURL          = _G.WebhookURL or ""
-_G.StartTime           = _G.StartTime or os.time()
-_G.CycleCount          = _G.CycleCount or 0
-_G.TotalEarning        = _G.TotalEarning or 0
-_G.TotalTeleportCount  = _G.TotalTeleportCount or 0
+_G.Autofarm           = false
+_G.AutoWebhook        = false
+_G.DeleteMap          = false
+_G.WebhookURL         = _G.WebhookURL or ""
+_G.StartTime          = _G.StartTime or os.time()
+_G.CycleCount         = _G.CycleCount or 0
+_G.TotalEarning       = _G.TotalEarning or 0
+_G.TotalTeleportCount = _G.TotalTeleportCount or 0
 
 warn("berhasil lewatin global")
 
@@ -59,21 +59,21 @@ local MoneyPath = lp.PlayerGui
 
 warn("berhasil lewatin moneypath")
 
-local StartMoney           = 0
-local EarnedMoney          = 0
-local NextTeleportIn       = 0
-local SessionStart         = nil
-local SessionMoneyStart    = 0
-local incomeLog            = {}
-local lastMoney            = 0
-local pendingIncome        = 0
-local isRunning            = false
+local StartMoney            = 0
+local EarnedMoney           = 0
+local NextTeleportIn        = 0
+local SessionStart          = nil
+local SessionMoneyStart     = 0
+local incomeLog             = {}
+local lastMoney             = 0
+local pendingIncome         = 0
+local isRunning             = false
 local destinationTimestamps = {}
-local activePlatforms      = {}
-local mapDeleted           = false
-local lastDestEarned       = 0
-local lastDestName         = "—"
-local cycleMoneySnapshot   = 0
+local activePlatforms       = {}
+local mapDeleted            = false
+local lastDestEarned        = 0
+local lastDestName          = "—"
+local cycleMoneySnapshot    = 0
 
 warn("berhasil lewatin global 2")
 
@@ -144,13 +144,6 @@ local function uprightCF(cf, yOffset)
     return CFrame.new(pos) * CFrame.Angles(0, yaw, 0)
 end
 
-local function clearPlatforms()
-    for _, p in ipairs(activePlatforms) do
-        if p and p.Parent then p:Destroy() end
-    end
-    activePlatforms = {}
-end
-
 local function deleteMap()
     mapDeleted = false
     cleanMap()
@@ -206,7 +199,7 @@ local function formatRP(v)
 end
 
 local function formatDuration(sec)
-    sec    = math.max(0, math.floor(sec))
+    sec     = math.max(0, math.floor(sec))
     local h = math.floor(sec / 3600)
     local m = math.floor((sec % 3600) / 60)
     local s = sec % 60
@@ -259,29 +252,22 @@ task.spawn(function()
 end)
 local function getFPS() return _currentFPS end
 
--- ─── spoof-drop teleport ──────────────────────────────────────────────────────
--- lua, method: Bus Explorer Indonesia style
--- lifts truck LIFT_HEIGHT studs above dest → falls at DROP_SPEED studs/s
--- arrives within ARRIVE_THRESHOLD studs of dest Y → zeroes velocity, releases
-local LIFT_HEIGHT      = 2000  -- studs above destination to place truck
-local DROP_SPEED       = 180   -- studs/s downward
-local ARRIVE_THRESHOLD = 6     -- studs from dest Y triggers release
-local DT_CAP           = 0.05  -- clamp per-heartbeat dt to avoid overshoot on hitch
+-- ─── per-heartbeat spoof-drop ─────────────────────────────────────────────────
+-- lua, Bus Explorer Indonesia style
+-- on call: lifts truck LIFT_HEIGHT studs above dest instantly
+-- every Heartbeat: truck steps down by (LIFT_HEIGHT / DROP_DURATION) * dt
+-- sum of all dt over DROP_DURATION seconds = LIFT_HEIGHT → exact arrival
+-- *setsimulationradius must be executor-supported; silent-pcall on unsupported
+local LIFT_HEIGHT    = 2000  -- studs above dest placed at call time
+local DROP_DURATION  = 49    -- seconds — matches game delivery countdown
+local ARRIVE_SNAP    = 4     -- studs from dest Y triggers final snap
 
 local function spoofDropTeleport(truck, targetCF)
     if not truck or not truck.Parent then return end
     local primary = truck.PrimaryPart
     if not primary then return end
 
-    if DelayLabel then
-        DelayLabel:Set({
-            Title   = "Status / Next TP:",
-            Content = string.format("Spoofing up... (%.0f fps)", getFPS()),
-        })
-    end
-
-    -- ── disable collisions so the sky-position doesn't clip geometry ──────────
-    -- *CanCollide writes are client-local; geometry is still server-authoritative
+    -- disable collisions client-side so sky position doesn't detonate on geometry
     local savedCollide = {}
     for _, part in ipairs(truck:GetDescendants()) do
         if part:IsA("BasePart") then
@@ -290,21 +276,23 @@ local function spoofDropTeleport(truck, targetCF)
         end
     end
 
-    -- ── claim network ownership so CFrame writes register ─────────────────────
     pcall(function() setsimulationradius(math.huge, math.huge) end)
-    pcall(function()
-        if primary then primary:SetNetworkOwner(lp) end
-    end)
+    pcall(function() primary:SetNetworkOwner(lp) end)
 
-    -- ── 1. lift to sky position ───────────────────────────────────────────────
-    local skyPos = targetCF.Position + Vector3.new(0, LIFT_HEIGHT, 0)
-    local lookDir  = targetCF.LookVector
-    local yaw      = math.atan2(lookDir.X, lookDir.Z)
-    local skyCF    = CFrame.new(skyPos) * CFrame.Angles(0, yaw, 0)
+    -- 1. lift instantly to sky
+    local lookDir = targetCF.LookVector
+    local yaw     = math.atan2(lookDir.X, lookDir.Z)
+    local destX   = targetCF.Position.X
+    local destY   = targetCF.Position.Y
+    local destZ   = targetCF.Position.Z
+    local skyCF   = CFrame.new(Vector3.new(destX, destY + LIFT_HEIGHT, destZ))
+                  * CFrame.Angles(0, yaw, 0)
+
     truck:PivotTo(skyCF)
-    primary.AssemblyLinearVelocity  = Vector3.zero
-    primary.AssemblyAngularVelocity = Vector3.zero
-    task.wait(0.1)
+    pcall(function()
+        primary.AssemblyLinearVelocity  = Vector3.zero
+        primary.AssemblyAngularVelocity = Vector3.zero
+    end)
 
     if DelayLabel then
         DelayLabel:Set({
@@ -313,10 +301,10 @@ local function spoofDropTeleport(truck, targetCF)
         })
     end
 
-    -- ── 2. drop loop: move DOWN each Heartbeat until close to dest Y ──────────
-    local destY = targetCF.Position.Y
-    local done  = false
-
+    -- 2. per-heartbeat drop — step = (LIFT_HEIGHT / DROP_DURATION) * dt
+    -- each tick moves exactly its fair share of the 2000-stud distance
+    -- arrival = when curY - destY <= ARRIVE_SNAP, not a timer cutoff
+    local done = false
     local conn
     conn = RunService.Heartbeat:Connect(function(dt)
         if not truck or not truck.Parent or not _G.Autofarm then
@@ -328,12 +316,11 @@ local function spoofDropTeleport(truck, targetCF)
         pcall(function() setsimulationradius(math.huge, math.huge) end)
         pcall(function() primary:SetNetworkOwner(lp) end)
 
-        local step    = math.min(dt, DT_CAP) * DROP_SPEED
-        local current = truck:GetPivot()
-        local curY    = current.Position.Y
+        local curY = truck:GetPivot().Position.Y
+        local step = (LIFT_HEIGHT / DROP_DURATION) * dt  -- studs this tick
 
-        if curY - destY <= ARRIVE_THRESHOLD then
-            -- arrived — snap to exact dest, zero everything
+        if curY - destY <= ARRIVE_SNAP then
+            -- snap exact, zero all motion, release
             truck:PivotTo(targetCF)
             pcall(function()
                 primary.AssemblyLinearVelocity  = Vector3.zero
@@ -344,14 +331,11 @@ local function spoofDropTeleport(truck, targetCF)
             return
         end
 
-        -- step downward, preserve horizontal position aligned to dest XZ
-        local newY  = curY - step
-        local newPos = Vector3.new(
-            targetCF.Position.X,
-            newY,
-            targetCF.Position.Z
+        -- step down, keep XZ locked to dest so truck doesn't drift
+        truck:PivotTo(
+            CFrame.new(Vector3.new(destX, curY - step, destZ))
+            * CFrame.Angles(0, yaw, 0)
         )
-        truck:PivotTo(CFrame.new(newPos) * CFrame.Angles(0, yaw, 0))
         pcall(function()
             primary.AssemblyLinearVelocity  = Vector3.zero
             primary.AssemblyAngularVelocity = Vector3.zero
@@ -360,7 +344,7 @@ local function spoofDropTeleport(truck, targetCF)
 
     while not done do task.wait() end
 
-    -- ── 3. restore collisions ─────────────────────────────────────────────────
+    -- 3. restore collisions
     for part, was in pairs(savedCollide) do
         pcall(function() part.CanCollide = was end)
     end
@@ -578,8 +562,8 @@ local function rollUntilTarget(remote, etc, hrp)
 end
 
 local function runAutofarm()
-    StartMoney      = getCleanMoney()
-    SessionStart    = os.time()
+    StartMoney        = getCleanMoney()
+    SessionStart      = os.time()
     SessionMoneyStart = StartMoney
 
     _G.DeleteMap = true
@@ -638,107 +622,55 @@ local function runAutofarm()
             fireproximityprompt(myTruck.DriveSeat:WaitForChild("PromptDriveSeat"))
             task.wait(0.3)
 
-            -- ── immediately spoof truck to sky above dest on seat entry ────────
+            -- ── grab dest, snapshot money, start drop immediately on seat entry ──
             local waypointFolder = Workspace:WaitForChild("Etc"):WaitForChild("Waypoint")
             local waypoint       = waypointFolder:FindFirstChild("Waypoint")
-            if waypoint and isTargetDestination(waypoint) then
-                local targetCFrame = waypoint:IsA("Model") and waypoint:GetPivot() or waypoint.CFrame
-                -- lift now — drop loop runs immediately inside spoofDropTeleport
-                -- 49-second wait is replaced: the drop takes (~2000/180) ≈ 11 s naturally
-                -- timer label still counts down for UI parity
-                NextTeleportIn = 49
+
+            if waypoint and isTargetDestination(waypoint) and _G.Autofarm then
+                local targetCFrame    = waypoint:IsA("Model") and waypoint:GetPivot() or waypoint.CFrame
+                local currentDestName = getWaypointName(waypoint)
+
+                cycleMoneySnapshot = getCleanMoney()
+                EarnedMoney        = cycleMoneySnapshot - StartMoney
+                NextTeleportIn     = DROP_DURATION
+
+                -- countdown label runs in parallel with the drop loop
                 task.spawn(function()
                     while NextTeleportIn > 0 and _G.Autofarm do
                         task.wait(1)
-                        NextTeleportIn = NextTeleportIn - 1
-                        if DelayLabel then
-                            DelayLabel:Set({
-                                Title   = "Status / Next TP:",
-                                Content = string.format("Spoofing drop — ~%ds", NextTeleportIn),
-                            })
-                        end
+                        NextTeleportIn = math.max(0, NextTeleportIn - 1)
                     end
                 end)
+
+                -- blocking: every heartbeat steps truck down until dest Y reached
                 spoofDropTeleport(myTruck, targetCFrame)
                 NextTeleportIn = 0
-            end
 
-            pcall(function() setsimulationradius(math.huge, math.huge) end)
-            pcall(function()
-                if myTruck.PrimaryPart then myTruck.PrimaryPart:SetNetworkOwner(lp) end
-            end)
+                _G.TotalTeleportCount = _G.TotalTeleportCount + 1
+                logDestinationComplete()
 
-            while _G.Autofarm do
-                if not myTruck or not myTruck.Parent then break end
-
-                local waypointFolder2 = Workspace:WaitForChild("Etc"):WaitForChild("Waypoint")
-                local waypoint2       = waypointFolder2:FindFirstChild("Waypoint")
-                if not waypoint2 then task.wait(1) continue end
-
-                if isTargetDestination(waypoint2) then
-                    local targetCFrame     = waypoint2:IsA("Model") and waypoint2:GetPivot() or waypoint2.CFrame
-                    local primary          = myTruck.PrimaryPart
-                    local currentDestName  = getWaypointName(waypoint2)
-
-                    if primary then
-                        local dir = targetCFrame.Position - primary.Position
-                        if dir.Magnitude > 5 then
-                            primary.AssemblyLinearVelocity = dir.Unit * 70
-                        end
-                        primary.AssemblyAngularVelocity = Vector3.zero
-                    end
-
-                    cycleMoneySnapshot = getCleanMoney()
-                    EarnedMoney        = cycleMoneySnapshot - StartMoney
-                    NextTeleportIn     = 49
-
-                    repeat
-                        task.wait(1)
-                        NextTeleportIn = NextTeleportIn - 1
-                        if NextTeleportIn <= 2 and myTruck and primary then
-                            primary.AssemblyLinearVelocity = Vector3.new(0, 0.05, 0)
-                        end
-                    until NextTeleportIn <= 0 or not _G.Autofarm
-
-                    if _G.Autofarm and myTruck and myTruck.Parent then
-                        local oldWaypointPos = targetCFrame.Position
-
-                        if primary then
-                            primary.AssemblyLinearVelocity  = Vector3.zero
-                            primary.AssemblyAngularVelocity = Vector3.zero
-                        end
-
-                        spoofDropTeleport(myTruck, targetCFrame)
-                        _G.TotalTeleportCount = _G.TotalTeleportCount + 1
-                        logDestinationComplete()
-
-                        local timeout = 0
-                        repeat
-                            task.wait(0.5)
-                            timeout     = timeout + 0.5
-                            local wCheck = waypointFolder2:FindFirstChild("Waypoint")
-                            if not wCheck or (wCheck:GetPivot().Position - oldWaypointPos).Magnitude > 10 then
-                                break
-                            end
-                        until timeout >= 2
-
-                        task.wait(0.35)
-
-                        if remote then remote:FireServer("Unemployed") end
-
-                        if DelayLabel then
-                            DelayLabel:Set({ Title = "Status:", Content = "Waiting payment..." })
-                        end
-                        task.wait(0.3)
-
-                        local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
-                        updateCycleLabels(earned, currentDestName)
-
+                -- wait for server to clear the waypoint
+                local oldWaypointPos = targetCFrame.Position
+                local timeout        = 0
+                repeat
+                    task.wait(0.5)
+                    timeout = timeout + 0.5
+                    local wCheck = waypointFolder:FindFirstChild("Waypoint")
+                    if not wCheck or (wCheck:GetPivot().Position - oldWaypointPos).Magnitude > 10 then
                         break
                     end
-                else
-                    break
+                until timeout >= 2
+
+                task.wait(0.35)
+                if remote then remote:FireServer("Unemployed") end
+
+                if DelayLabel then
+                    DelayLabel:Set({ Title = "Status:", Content = "Waiting payment..." })
                 end
+                task.wait(0.3)
+
+                local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
+                updateCycleLabels(earned, currentDestName)
             end
 
             if DelayLabel then
@@ -794,8 +726,8 @@ FarmTab:CreateToggle({
 
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 StatsTab:CreateSection("Cycle")
-CycleEarnedLabel = StatsTab:CreateParagraph({ Title = "Cycle Earned:",     Content = "RP. 0" })
-LastDestLabel    = StatsTab:CreateParagraph({ Title = "Last Destination:",  Content = "—" })
+CycleEarnedLabel = StatsTab:CreateParagraph({ Title = "Cycle Earned:",    Content = "RP. 0" })
+LastDestLabel    = StatsTab:CreateParagraph({ Title = "Last Destination:", Content = "—" })
 
 StatsTab:CreateSection("Session")
 SessionTimeLabel   = StatsTab:CreateParagraph({ Title = "Session Time:",   Content = "—" })
@@ -815,11 +747,11 @@ FpsLabel        = StatsTab:CreateParagraph({ Title = "Current FPS:",            
 local ProxTab = Window:CreateTab("Misc", "bot")
 ProxTab:CreateSection("Open NPC")
 ProxTab:CreateDropdown({
-    Name           = "Select NPC",
-    Options        = { "Npc upgrade slot Npc", "Npc Box Shop", "Daily quest npc" },
-    CurrentOption  = { "Npc job select" },
+    Name            = "Select NPC",
+    Options         = { "Npc upgrade slot Npc", "Npc Box Shop", "Daily quest npc" },
+    CurrentOption   = { "Npc job select" },
     MultipleOptions = false,
-    Callback       = function(v) SelectedNPC = v[1] end,
+    Callback        = function(v) SelectedNPC = v[1] end,
 })
 ProxTab:CreateButton({
     Name     = "Open NPC UI",
@@ -830,11 +762,11 @@ ProxTab:CreateButton({
 })
 ProxTab:CreateSection("Open Dealership")
 ProxTab:CreateDropdown({
-    Name           = "Select Dealer",
-    Options        = { "Toyota","Suzuki","Premium","Nissan","Mercedes","Komersial","KIA","Hyundai","Honda","Daihatsu","Chery","Bandung","Dealer 77" },
-    CurrentOption  = { "" },
+    Name            = "Select Dealer",
+    Options         = { "Toyota","Suzuki","Premium","Nissan","Mercedes","Komersial","KIA","Hyundai","Honda","Daihatsu","Chery","Bandung","Dealer 77" },
+    CurrentOption   = { "" },
     MultipleOptions = false,
-    Callback       = function(v) SelectedDealer = v[1] end,
+    Callback        = function(v) SelectedDealer = v[1] end,
 })
 ProxTab:CreateSection("Map / Performance")
 ProxTab:CreateButton({
@@ -863,11 +795,11 @@ WebhookTab:CreateToggle({
 local TpTab = Window:CreateTab("Teleport", "map-pin")
 TpTab:CreateSection("Teleport Player")
 local PlayerDropdown = TpTab:CreateDropdown({
-    Name           = "Select Player",
-    Options        = {},
-    CurrentOption  = { "" },
+    Name            = "Select Player",
+    Options         = {},
+    CurrentOption   = { "" },
     MultipleOptions = false,
-    Callback       = function(v) SelectedPlayer = v[1] end,
+    Callback        = function(v) SelectedPlayer = v[1] end,
 })
 local function refreshPlayers()
     local list = {}
@@ -925,7 +857,7 @@ task.spawn(function()
         if _G.Autofarm and DelayLabel and NextTeleportIn > 0 then
             DelayLabel:Set({
                 Title   = "Status / Next TP:",
-                Content = string.format("Teleport In: %ds", NextTeleportIn),
+                Content = string.format("Dropping: %ds remaining", NextTeleportIn),
             })
         end
     end
