@@ -1,6 +1,7 @@
 -- lua, Client Script, Luau (Roblox Studio / Executor Runtime v590+)
--- teleport method: lift 2000 studs on seat entry → per-heartbeat step down
--- step = (LIFT_HEIGHT / 49) * dt — arrives at dest in exactly 49s
+-- teleport: lift 2000 studs → heartbeat-stepped drop → stop when waypoint clears
+-- no AssemblyLinearVelocity writes — gravity untouched throughout
+-- XZ drifts toward dest + per-tick jitter + yaw wobble for organic spoof look
 -- target filtering hard-coded exclusively to "malang"
 
 warn("sebelum loadstring")
@@ -69,7 +70,6 @@ local lastMoney             = 0
 local pendingIncome         = 0
 local isRunning             = false
 local destinationTimestamps = {}
-local activePlatforms       = {}
 local mapDeleted            = false
 local lastDestEarned        = 0
 local lastDestName          = "—"
@@ -252,22 +252,32 @@ task.spawn(function()
 end)
 local function getFPS() return _currentFPS end
 
--- ─── per-heartbeat spoof-drop ─────────────────────────────────────────────────
--- lua, Bus Explorer Indonesia style
--- on call: lifts truck LIFT_HEIGHT studs above dest instantly
--- every Heartbeat: truck steps down by (LIFT_HEIGHT / DROP_DURATION) * dt
--- sum of all dt over DROP_DURATION seconds = LIFT_HEIGHT → exact arrival
--- *setsimulationradius must be executor-supported; silent-pcall on unsupported
-local LIFT_HEIGHT    = 2000  -- studs above dest placed at call time
-local DROP_DURATION  = 49    -- seconds — matches game delivery countdown
-local ARRIVE_SNAP    = 4     -- studs from dest Y triggers final snap
+-- ─── spoof-drop teleport ──────────────────────────────────────────────────────
+-- lifts truck LIFT_HEIGHT studs above dest on call
+-- every Heartbeat: Y steps down by (LIFT_HEIGHT / DROP_DURATION) * dt * speedMul
+-- XZ lerps toward dest + per-tick jitter; yaw wobbles slightly each tick
+-- stop condition: waypoint folder clears (server confirmed delivery)
+--   fallback: Y within ARRIVE_SNAP studs of dest
+-- no AssemblyLinearVelocity writes — gravity state untouched
+-- *setsimulationradius: executor-specific, silenced in pcall on unsupported builds
+local LIFT_HEIGHT   = 2000  -- studs above dest for sky placement
+local DROP_DURATION = 49    -- seconds nominal — actual exit is waypoint-gated
+local ARRIVE_SNAP   = 6     -- fallback snap threshold (studs from dest Y)
+local XZ_LERP_RATE  = 0.12  -- per-tick XZ convergence fraction toward dest
+local XZ_JITTER     = 0.45  -- ± studs of random XZ noise per tick
+local YAW_WOBBLE    = 0.045 -- ± radians of random yaw noise per tick
 
-local function spoofDropTeleport(truck, targetCF)
+local function spoofDropTeleport(truck, targetCF, waypointFolder, anchorPos)
     if not truck or not truck.Parent then return end
     local primary = truck.PrimaryPart
     if not primary then return end
 
-    -- disable collisions client-side so sky position doesn't detonate on geometry
+    local lookDir = targetCF.LookVector
+    local destYaw = math.atan2(lookDir.X, lookDir.Z)
+    local destPos = targetCF.Position
+
+    -- disable collisions only during the instant sky-lift to avoid geometry detonation
+    -- *CanCollide writes are client-local — no server effect
     local savedCollide = {}
     for _, part in ipairs(truck:GetDescendants()) do
         if part:IsA("BasePart") then
@@ -279,31 +289,22 @@ local function spoofDropTeleport(truck, targetCF)
     pcall(function() setsimulationradius(math.huge, math.huge) end)
     pcall(function() primary:SetNetworkOwner(lp) end)
 
-    -- 1. lift instantly to sky
-    local lookDir = targetCF.LookVector
-    local yaw     = math.atan2(lookDir.X, lookDir.Z)
-    local destX   = targetCF.Position.X
-    local destY   = targetCF.Position.Y
-    local destZ   = targetCF.Position.Z
-    local skyCF   = CFrame.new(Vector3.new(destX, destY + LIFT_HEIGHT, destZ))
-                  * CFrame.Angles(0, yaw, 0)
+    -- place at sky instantly; XZ already aligned to dest so drop is vertical
+    truck:PivotTo(
+        CFrame.new(Vector3.new(destPos.X, destPos.Y + LIFT_HEIGHT, destPos.Z))
+        * CFrame.Angles(0, destYaw, 0)
+    )
+    task.wait(0.05)
 
-    truck:PivotTo(skyCF)
-    pcall(function()
-        primary.AssemblyLinearVelocity  = Vector3.zero
-        primary.AssemblyAngularVelocity = Vector3.zero
-    end)
-
-    if DelayLabel then
-        DelayLabel:Set({
-            Title   = "Status / Next TP:",
-            Content = string.format("Spoofing down... (%.0f fps)", getFPS()),
-        })
+    -- restore collisions — truck is in sky, no geometry conflict from here
+    for part, was in pairs(savedCollide) do
+        pcall(function() part.CanCollide = was end)
     end
 
-    -- 2. per-heartbeat drop — step = (LIFT_HEIGHT / DROP_DURATION) * dt
-    -- each tick moves exactly its fair share of the 2000-stud distance
-    -- arrival = when curY - destY <= ARRIVE_SNAP, not a timer cutoff
+    if DelayLabel then
+        DelayLabel:Set({ Title = "Status / Next TP:", Content = "Spoofing down..." })
+    end
+
     local done = false
     local conn
     conn = RunService.Heartbeat:Connect(function(dt)
@@ -316,38 +317,51 @@ local function spoofDropTeleport(truck, targetCF)
         pcall(function() setsimulationradius(math.huge, math.huge) end)
         pcall(function() primary:SetNetworkOwner(lp) end)
 
-        local curY = truck:GetPivot().Position.Y
-        local step = (LIFT_HEIGHT / DROP_DURATION) * dt  -- studs this tick
+        -- primary exit: waypoint cleared = server confirmed delivery
+        if waypointFolder and anchorPos then
+            local wCheck = waypointFolder:FindFirstChild("Waypoint")
+            if not wCheck
+            or (wCheck:GetPivot().Position - anchorPos).Magnitude > 10 then
+                truck:PivotTo(targetCF)
+                conn:Disconnect()
+                done = true
+                return
+            end
+        end
 
-        if curY - destY <= ARRIVE_SNAP then
-            -- snap exact, zero all motion, release
+        local curPos = truck:GetPivot().Position
+
+        -- fallback exit: close enough in Y
+        if curPos.Y - destPos.Y <= ARRIVE_SNAP then
             truck:PivotTo(targetCF)
-            pcall(function()
-                primary.AssemblyLinearVelocity  = Vector3.zero
-                primary.AssemblyAngularVelocity = Vector3.zero
-            end)
             conn:Disconnect()
             done = true
             return
         end
 
-        -- step down, keep XZ locked to dest so truck doesn't drift
+        -- per-tick Y step with ±10% speed variation — looks like road bumps
+        local speedMul = 0.9 + math.random() * 0.2
+        local newY     = curPos.Y - (LIFT_HEIGHT / DROP_DURATION) * dt * speedMul
+
+        -- XZ converges toward dest with jitter — mimics steering drift
+        local newX = curPos.X
+            + (destPos.X - curPos.X) * XZ_LERP_RATE
+            + (math.random() - 0.5) * XZ_JITTER
+        local newZ = curPos.Z
+            + (destPos.Z - curPos.Z) * XZ_LERP_RATE
+            + (math.random() - 0.5) * XZ_JITTER
+
+        -- yaw drifts toward dest heading with micro-wobble
+        local yawWobble = destYaw + (math.random() - 0.5) * YAW_WOBBLE
+
         truck:PivotTo(
-            CFrame.new(Vector3.new(destX, curY - step, destZ))
-            * CFrame.Angles(0, yaw, 0)
+            CFrame.new(Vector3.new(newX, newY, newZ))
+            * CFrame.Angles(0, yawWobble, 0)
         )
-        pcall(function()
-            primary.AssemblyLinearVelocity  = Vector3.zero
-            primary.AssemblyAngularVelocity = Vector3.zero
-        end)
+        -- no velocity writes — gravity runs unmodified
     end)
 
     while not done do task.wait() end
-
-    -- 3. restore collisions
-    for part, was in pairs(savedCollide) do
-        pcall(function() part.CanCollide = was end)
-    end
 end
 -- ─────────────────────────────────────────────────────────────────────────────
 
@@ -423,15 +437,18 @@ task.spawn(function()
 end)
 
 local function getAvatar()
-    return "https://www.roblox.com/headshot-thumbnail/image?userId=" .. lp.UserId .. "&width=420&height=420&format=png"
+    return "https://www.roblox.com/headshot-thumbnail/image?userId="
+        .. lp.UserId .. "&width=420&height=420&format=png"
 end
 
 local function sendWebhook(income)
     if _G.WebhookURL == "" or not _G.WebhookURL:find("discord.com") then return end
     _G.CycleCount   = _G.CycleCount + 1
     _G.TotalEarning = _G.TotalEarning + income
-    local http_request = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
-    local HttpService  = game:GetService("HttpService")
+    local http_request = request or http_request
+        or (syn and syn.request)
+        or (fluxus and fluxus.request)
+    local HttpService = game:GetService("HttpService")
     local embed = {
         author = { name = "Projectsion Webhook", icon_url = getAvatar() },
         title  = "Cycle Completed",
@@ -465,7 +482,8 @@ end
 
 local function getWaypointName(waypoint)
     if not waypoint then return "Unknown" end
-    local gui = waypoint:FindFirstChildOfClass("BillboardGui") or waypoint:FindFirstChildOfClass("SurfaceGui")
+    local gui = waypoint:FindFirstChildOfClass("BillboardGui")
+             or waypoint:FindFirstChildOfClass("SurfaceGui")
     if gui then
         local tl = gui:FindFirstChildOfClass("TextLabel")
         if tl and tl.Text ~= "" then return tl.Text end
@@ -477,13 +495,13 @@ local function isTargetDestination(waypoint)
     if not waypoint then return false end
     local wpName  = waypoint.Name:lower()
     local wpLabel = ""
-    local gui = waypoint:FindFirstChildOfClass("BillboardGui") or waypoint:FindFirstChildOfClass("SurfaceGui")
+    local gui = waypoint:FindFirstChildOfClass("BillboardGui")
+             or waypoint:FindFirstChildOfClass("SurfaceGui")
     if gui then
         local tl = gui:FindFirstChildOfClass("TextLabel")
         if tl then wpLabel = tl.Text:lower() end
     end
-    if wpName:find("malang") or wpLabel:find("malang") then return true end
-    return false
+    return wpName:find("malang") ~= nil or wpLabel:find("malang") ~= nil
 end
 
 local function updateCycleLabels(earned, destName)
@@ -493,7 +511,10 @@ local function updateCycleLabels(earned, destName)
         CycleEarnedLabel:Set({ Title = "Cycle Earned:", Content = "RP. " .. formatNominal(earned) })
     end
     if LastDestLabel then
-        LastDestLabel:Set({ Title = "Last Destination:", Content = destName .. "  →  RP. " .. formatNominal(earned) })
+        LastDestLabel:Set({
+            Title   = "Last Destination:",
+            Content = destName .. "  →  RP. " .. formatNominal(earned),
+        })
     end
 end
 
@@ -530,7 +551,8 @@ local function rollUntilTarget(remote, etc, hrp)
 
         local wpName  = wp.Name:lower()
         local wpLabel = ""
-        local gui = wp:FindFirstChildOfClass("BillboardGui") or wp:FindFirstChildOfClass("SurfaceGui")
+        local gui = wp:FindFirstChildOfClass("BillboardGui")
+                 or wp:FindFirstChildOfClass("SurfaceGui")
         if gui then
             local tl = gui:FindFirstChildOfClass("TextLabel")
             if tl then wpLabel = tl.Text:lower() end
@@ -551,7 +573,8 @@ local function rollUntilTarget(remote, etc, hrp)
         end
 
         if isMalang then
-            lastDestName = wpLabel ~= "" and gui:FindFirstChildOfClass("TextLabel").Text or wp.Name
+            lastDestName = (wpLabel ~= "" and gui:FindFirstChildOfClass("TextLabel").Text)
+                        or wp.Name
             return true
         end
 
@@ -622,19 +645,19 @@ local function runAutofarm()
             fireproximityprompt(myTruck.DriveSeat:WaitForChild("PromptDriveSeat"))
             task.wait(0.3)
 
-            -- ── grab dest, snapshot money, start drop immediately on seat entry ──
             local waypointFolder = Workspace:WaitForChild("Etc"):WaitForChild("Waypoint")
             local waypoint       = waypointFolder:FindFirstChild("Waypoint")
 
             if waypoint and isTargetDestination(waypoint) and _G.Autofarm then
                 local targetCFrame    = waypoint:IsA("Model") and waypoint:GetPivot() or waypoint.CFrame
                 local currentDestName = getWaypointName(waypoint)
+                local anchorPos       = targetCFrame.Position
 
                 cycleMoneySnapshot = getCleanMoney()
                 EarnedMoney        = cycleMoneySnapshot - StartMoney
                 NextTeleportIn     = DROP_DURATION
 
-                -- countdown label runs in parallel with the drop loop
+                -- countdown label parallel to drop — purely cosmetic
                 task.spawn(function()
                     while NextTeleportIn > 0 and _G.Autofarm do
                         task.wait(1)
@@ -642,25 +665,15 @@ local function runAutofarm()
                     end
                 end)
 
-                -- blocking: every heartbeat steps truck down until dest Y reached
-                spoofDropTeleport(myTruck, targetCFrame)
+                -- blocking drop — exits when waypointFolder clears (money received)
+                -- or falls back to Y snap if server is slow
+                spoofDropTeleport(myTruck, targetCFrame, waypointFolder, anchorPos)
                 NextTeleportIn = 0
 
                 _G.TotalTeleportCount = _G.TotalTeleportCount + 1
                 logDestinationComplete()
 
-                -- wait for server to clear the waypoint
-                local oldWaypointPos = targetCFrame.Position
-                local timeout        = 0
-                repeat
-                    task.wait(0.5)
-                    timeout = timeout + 0.5
-                    local wCheck = waypointFolder:FindFirstChild("Waypoint")
-                    if not wCheck or (wCheck:GetPivot().Position - oldWaypointPos).Magnitude > 10 then
-                        break
-                    end
-                until timeout >= 2
-
+                -- brief settle wait then fire Unemployed
                 task.wait(0.35)
                 if remote then remote:FireServer("Unemployed") end
 
@@ -671,6 +684,10 @@ local function runAutofarm()
 
                 local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
                 updateCycleLabels(earned, currentDestName)
+
+                if _G.AutoWebhook then
+                    task.spawn(function() sendWebhook(earned) end)
+                end
             end
 
             if DelayLabel then
@@ -686,7 +703,6 @@ local function runAutofarm()
 
         task.wait(0.3)
 
-        continue
     until not _G.Autofarm
 
     _G.DeleteMap = false
@@ -735,14 +751,14 @@ SessionEarnedLabel = StatsTab:CreateParagraph({ Title = "Session Earned:", Conte
 SessionIPHLabel    = StatsTab:CreateParagraph({ Title = "Session / Hour:", Content = "RP. 0/h" })
 
 StatsTab:CreateSection("Overall")
-DelayLabel      = StatsTab:CreateParagraph({ Title = "Status / Next TP:",           Content = "Waiting Job..." })
-TeleportLabel   = StatsTab:CreateParagraph({ Title = "Total Teleport Done:",         Content = "0 Times" })
-DestMinLabel    = StatsTab:CreateParagraph({ Title = "Destinations (Last 1 Min):",   Content = "0" })
-Dest5MinLabel   = StatsTab:CreateParagraph({ Title = "Destinations (Last 5 Mins):",  Content = "0" })
-IncomeHourLabel = StatsTab:CreateParagraph({ Title = "Est. Income / Hour:",          Content = "RP. 0/h" })
-EarnedLabel     = StatsTab:CreateParagraph({ Title = "Total Earned:",                Content = "RP. 0" })
-CurrentLabel    = StatsTab:CreateParagraph({ Title = "Current Money:",               Content = "RP. 0" })
-FpsLabel        = StatsTab:CreateParagraph({ Title = "Current FPS:",                 Content = "-- fps" })
+DelayLabel      = StatsTab:CreateParagraph({ Title = "Status / Next TP:",          Content = "Waiting Job..." })
+TeleportLabel   = StatsTab:CreateParagraph({ Title = "Total Teleport Done:",        Content = "0 Times" })
+DestMinLabel    = StatsTab:CreateParagraph({ Title = "Destinations (Last 1 Min):",  Content = "0" })
+Dest5MinLabel   = StatsTab:CreateParagraph({ Title = "Destinations (Last 5 Mins):", Content = "0" })
+IncomeHourLabel = StatsTab:CreateParagraph({ Title = "Est. Income / Hour:",         Content = "RP. 0/h" })
+EarnedLabel     = StatsTab:CreateParagraph({ Title = "Total Earned:",               Content = "RP. 0" })
+CurrentLabel    = StatsTab:CreateParagraph({ Title = "Current Money:",              Content = "RP. 0" })
+FpsLabel        = StatsTab:CreateParagraph({ Title = "Current FPS:",               Content = "-- fps" })
 
 local ProxTab = Window:CreateTab("Misc", "bot")
 ProxTab:CreateSection("Open NPC")
@@ -780,10 +796,10 @@ ProxTab:CreateButton({
 local WebhookTab = Window:CreateTab("Webhook", "webhook")
 WebhookTab:CreateSection("Webhook Farm")
 WebhookTab:CreateInput({
-    Name                    = "Webhook Link",
-    PlaceholderText         = "Enter link webhook",
+    Name                     = "Webhook Link",
+    PlaceholderText          = "Enter link webhook",
     RemoveTextAfterFocusLost = false,
-    Callback                = function(t) _G.WebhookURL = t end,
+    Callback                 = function(t) _G.WebhookURL = t end,
 })
 WebhookTab:CreateToggle({
     Name         = "Enable Webhook",
@@ -829,10 +845,17 @@ task.spawn(function()
             local sessionEarned = math.max(0, current - SessionMoneyStart)
             SessionTimeLabel:Set({
                 Title   = "Session Time:",
-                Content = formatDuration(os.time() - SessionStart) .. (_G.Autofarm and "" or "  (paused)"),
+                Content = formatDuration(os.time() - SessionStart)
+                    .. (_G.Autofarm and "" or "  (paused)"),
             })
-            SessionEarnedLabel:Set({ Title = "Session Earned:", Content = "RP. " .. formatNominal(sessionEarned) })
-            SessionIPHLabel:Set({ Title = "Session / Hour:", Content = "RP. " .. formatShort(getSessionIPH()) })
+            SessionEarnedLabel:Set({
+                Title   = "Session Earned:",
+                Content = "RP. " .. formatNominal(sessionEarned),
+            })
+            SessionIPHLabel:Set({
+                Title   = "Session / Hour:",
+                Content = "RP. " .. formatShort(getSessionIPH()),
+            })
         end
         if not _G.Autofarm then continue end
         EarnedMoney = current - StartMoney
