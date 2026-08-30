@@ -598,7 +598,7 @@ MainTab:CreateToggle({
                         HoldAtStop(1)
                     end
 
-                    for i = 60, 1, -1 do
+                    for i = 64, 1, -1 do
                         if not _G.AutoFull then break end
                         SetStatus("Delay TP: " .. i .. "s")
                         HoldAtStop(1)
