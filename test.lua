@@ -95,12 +95,12 @@ end)
 -- ─────────────────────────────────────────────────────────────────────────────
 
 local Window = Rayfield:CreateWindow({
-    Name          = ".projectsion",
-    LoadingTitle  = "Bus Explorer Indonesia",
+    Name            = ".projectsion",
+    LoadingTitle    = "Bus Explorer Indonesia",
     LoadingSubtitle = "by .projectsion",
-    Theme         = "Bloom",
+    Theme           = "Bloom",
     ConfigurationSaving = { Enabled = true, FileName = "VoidlineConfig" },
-    KeySystem     = false,
+    KeySystem       = false,
 })
 
 local VirtualUser     = game:GetService("VirtualUser")
@@ -136,7 +136,28 @@ local SelectedTP       = "Dealership"
 local isRunning        = false
 local busOptions       = {}
 
--- ─── Self-Kick — tendang diri sendiri kalau ada yang join ────────────────────
+-- last stop Baranangsiang — dipakai setelah CP#7 billboard hilang
+local BaranangsangEndCF = CFrame.new(22732.02, 293.21, -39525.31)
+    * CFrame.Angles(2.8307, -0.7276, 2.9293)
+
+-- ─── OnClientEvent — BusJobUpdate fallback ───────────────────────────────────
+local _jobEventArg = nil
+local _jobResumed  = false
+
+local busJobUpdate = Remotes:FindFirstChild("BusJobUpdate")
+if busJobUpdate and busJobUpdate:IsA("RemoteEvent") then
+    busJobUpdate.OnClientEvent:Connect(function(eventType, data)
+        if eventType == "StartCheckpointWait" then
+            _jobEventArg = data
+        elseif eventType == "JobResumed" then
+            _jobResumed = true
+            task.delay(2, function() _jobResumed = false end)
+        end
+    end)
+end
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- ─── Self-Kick ────────────────────────────────────────────────────────────────
 local function selfKickIfIntruder()
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LP then
@@ -159,23 +180,6 @@ task.spawn(function()
         selfKickIfIntruder()
     end
 end)
--- ─────────────────────────────────────────────────────────────────────────────
-
--- ─── OnClientEvent — BusJobUpdate fallback ───────────────────────────────────
-local _jobEventArg = nil
-local _jobResumed  = false
-
-local busJobUpdate = Remotes:FindFirstChild("BusJobUpdate")
-if busJobUpdate and busJobUpdate:IsA("RemoteEvent") then
-    busJobUpdate.OnClientEvent:Connect(function(eventType, data)
-        if eventType == "StartCheckpointWait" then
-            _jobEventArg = data
-        elseif eventType == "JobResumed" then
-            _jobResumed = true
-            task.delay(2, function() _jobResumed = false end)
-        end
-    end)
-end
 -- ─────────────────────────────────────────────────────────────────────────────
 
 local BlackScreen = Instance.new("ScreenGui")
@@ -210,8 +214,8 @@ task.spawn(function()
         if UangLabel then
             pcall(function()
                 local currentUang = StatsFolder.Uang.Value
-                UangLabel:Set("Uang: Rp "      .. formatRS(currentUang))
-                EarningLabel:Set("Earning: Rp " .. formatRS(currentUang - StartUang))
+                UangLabel:Set("Uang: Rp "       .. formatRS(currentUang))
+                EarningLabel:Set("Earning: Rp "  .. formatRS(currentUang - StartUang))
                 local diff = os.time() - StartTime
                 TimeLabel:Set(string.format("Time: %02d:%02d:%02d",
                     math.floor(diff / 3600), math.floor((diff % 3600) / 60), diff % 60))
@@ -265,12 +269,6 @@ local function GetPrimaryPart(bus)
 end
 
 -- ─── SpoofTP ─────────────────────────────────────────────────────────────────
--- 1. NetworkOwnership → nil (matiin koreksi server-side physics)
--- 2. BodyGyro lock rotasi ke targetCF sejak awal
--- 3. angkat 500 studs via tween cepat
--- 4. geser horizontal ke atas target via tween
--- 5. turun ke targetCF dalam 7 detik via tween
--- 6. cleanup BodyGyro, restore gravity
 local function SpoofTP(targetCF)
     local bus = GetMyBus()
     if not bus then return end
@@ -300,26 +298,24 @@ local function SpoofTP(targetCF)
         primaryPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
     end)
 
-    local currentPos  = primaryPart.CFrame.Position
-    local liftTarget  = CFrame.new(currentPos + Vector3.new(0, 500, 0)) * (targetCF - targetCF.Position)
-    local highTarget  = CFrame.new(
+    local currentPos = primaryPart.CFrame.Position
+    local liftTarget = CFrame.new(currentPos + Vector3.new(0, 500, 0))
+        * (targetCF - targetCF.Position)
+    local highTarget = CFrame.new(
         targetCF.Position + Vector3.new(0, 500, 0),
         targetCF.Position + Vector3.new(0, 500, 0) + targetCF.LookVector
     )
 
-    -- fase 1: angkat 500 studs
     local t1 = TweenService:Create(cfVal,
         TweenInfo.new(1.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
         { Value = liftTarget })
     t1:Play(); t1.Completed:Wait()
 
-    -- fase 2: geser horizontal ke atas target
     local t2 = TweenService:Create(cfVal,
         TweenInfo.new(1.2, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut),
         { Value = highTarget })
     t2:Play(); t2.Completed:Wait()
 
-    -- fase 3: turun ke target dalam 7 detik
     local t3 = TweenService:Create(cfVal,
         TweenInfo.new(7, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut),
         { Value = targetCF })
@@ -366,8 +362,8 @@ local function sendWebhook(income)
     if _G.WebhookURL == "" or not _G.WebhookURL:find("discord.com") then return end
     _G.CycleCount   = _G.CycleCount + 1
     _G.TotalEarning = _G.TotalEarning + income
-    local currentMoney  = StatsFolder.Uang.Value
-    local http_request  = request or http_request
+    local currentMoney = StatsFolder.Uang.Value
+    local http_request = request or http_request
         or (syn and syn.request) or (fluxus and fluxus.request)
     local embed = {
         ["author"] = { ["name"] = "Projectsion Webhook", ["icon_url"] = getAvatar() },
@@ -385,7 +381,10 @@ local function sendWebhook(income)
         ["image"]  = { ["url"] = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&" },
         ["footer"] = { ["text"] = "Made By Projectsion | " .. os.date("%m/%d/%Y %I:%M %p") },
     }
-    local payload = HttpService:JSONEncode({ ["username"] = "Projectsion Reports", ["embeds"] = { embed } })
+    local payload = HttpService:JSONEncode({
+        ["username"] = "Projectsion Reports",
+        ["embeds"]   = { embed },
+    })
     if http_request then
         pcall(function()
             http_request({
@@ -435,10 +434,11 @@ MainTab:CreateParagraph({
     Content = "USE JB5 ONLY, IF U USE OTHER BUS IT WILL DETECTED, TURN ON AUTO KICK WHEN STAFF JOINED",
 })
 
-local lastTarget      = nil
-local noBillboardTime = 0
-local jobStarted      = false
-local checkpointCount = 0
+local lastTarget        = nil
+local noBillboardTime   = 0
+local jobStarted        = false
+local checkpointCount   = 0
+local lastStopSpoofed   = false  -- guard biar SpoofTP end cuma sekali per cycle
 
 MainTab:CreateToggle({
     Name         = "On Autofarm",
@@ -447,15 +447,17 @@ MainTab:CreateToggle({
         _G.AutoFull = Value
 
         if not Value then
-            lastTarget        = nil
-            jobStarted        = false
-            checkpointCount   = 0
+            lastTarget      = nil
+            jobStarted      = false
+            checkpointCount = 0
+            lastStopSpoofed = false
             workspace.Gravity = 196.2
             SetStatus("Idle")
             return
         end
 
         checkpointCount = 0
+        lastStopSpoofed = false
 
         while _G.AutoFull do
             pcall(function()
@@ -498,21 +500,26 @@ MainTab:CreateToggle({
 
                     if bus and bus:FindFirstChild("DriveSeat") then
                         bus.DriveSeat:Sit(hum)
-                        jobStarted = true
+                        jobStarted      = true
+                        lastStopSpoofed = false
                     end
                 end
             end
 
             local target = GetActiveStop()
+
             if target then
+                -- ada billboard aktif = masih di tengah route (CP#1–CP#7)
                 noBillboardTime = 0
+                lastStopSpoofed = false
+
                 if target ~= lastTarget then
                     checkpointCount = checkpointCount + 1
                     SetStatus("Spoofing to CP#" .. checkpointCount .. ": " .. target.Name)
                     SpoofTP(target.CFrame)
                     lastTarget = target
 
-                    for i = 1, 30 do
+                    for i = 1, 20 do
                         if not _G.AutoFull then break end
                         if infoLabel and string.find(
                             string.upper(infoLabel.Text), "RETURN TO THE CHECKPOINT"
@@ -520,7 +527,7 @@ MainTab:CreateToggle({
                             SetStatus("Correction: Spoof Again!")
                             SpoofTP(target.CFrame)
                         else
-                            SetStatus("Position Secure... " .. i .. "/30")
+                            SetStatus("Position Secure... " .. i .. "/20")
                         end
                         task.wait(1)
                     end
@@ -537,10 +544,18 @@ MainTab:CreateToggle({
                         task.wait(1)
                     end
                 end
+
             else
                 if jobStarted then
+                    -- billboard hilang setelah CP#7 = last stop
+                    if not lastStopSpoofed then
+                        SetStatus("Last Stop — Spoofing to Baranangsiang End...")
+                        SpoofTP(BaranangsangEndCF)
+                        lastStopSpoofed = true
+                    end
+
                     noBillboardTime = noBillboardTime + 1
-                    SetStatus("Waiting Last Stop: " .. (30 - noBillboardTime) .. "s")
+                    SetStatus("Waiting finish: " .. (30 - noBillboardTime) .. "s")
 
                     if noBillboardTime >= 30 then
                         SetStatus("Job Done! Restarting...")
@@ -548,6 +563,7 @@ MainTab:CreateToggle({
                         lastTarget      = nil
                         noBillboardTime = 0
                         checkpointCount = 0
+                        lastStopSpoofed = false
                         workspace.Gravity = 196.2
 
                         local bus = GetMyBus()
@@ -556,6 +572,7 @@ MainTab:CreateToggle({
                     end
                 end
             end
+
             task.wait(1)
         end
     end,
@@ -571,15 +588,15 @@ MainTab:CreateToggle({
 MainTab:CreateSection("Auto Stop Settings")
 
 MainTab:CreateInput({
-    Name                    = "Set Target Money",
-    PlaceholderText         = "input your target",
+    Name                     = "Set Target Money",
+    PlaceholderText          = "input your target",
     RemoveTextAfterFocusLost = false,
     Callback = function(Text)
         local cleanNumber = Text:gsub("%.", "")
         TargetUang = tonumber(cleanNumber) or 0
         Rayfield:Notify({
-            Title   = "Target Set",
-            Content = "money target is set to: Rp " .. formatRS(TargetUang),
+            Title    = "Target Set",
+            Content  = "money target is set to: Rp " .. formatRS(TargetUang),
             Duration = 3,
         })
     end,
@@ -636,8 +653,8 @@ ConfigTab:CreateButton({
 ConfigTab:CreateSection("Webhook")
 
 ConfigTab:CreateInput({
-    Name                    = "Discord Webhook URL",
-    PlaceholderText         = "Paste URL Here",
+    Name                     = "Discord Webhook URL",
+    PlaceholderText          = "Paste URL Here",
     RemoveTextAfterFocusLost = false,
     Callback = function(Text)
         _G.WebhookURL = Text
@@ -673,12 +690,12 @@ ConfigTab:CreateToggle({
 -- ─── Stats Tab ────────────────────────────────────────────────────────────────
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 StatsTab:CreateSection("Info Farm")
-StatusLabel  = StatsTab:CreateLabel("Status: Waiting",   "clock")
+StatusLabel  = StatsTab:CreateLabel("Status: Waiting",              "clock")
 UangLabel    = StatsTab:CreateLabel("Uang: Rp " .. formatRS(StartUang), "banknote")
-EarningLabel = StatsTab:CreateLabel("Earning: Rp 0",     "coins")
-TimeLabel    = StatsTab:CreateLabel("Time: 00:00:00",     "timer")
+EarningLabel = StatsTab:CreateLabel("Earning: Rp 0",                "coins")
+TimeLabel    = StatsTab:CreateLabel("Time: 00:00:00",               "timer")
 StatsTab:CreateSection("System Info")
-FPSLabel  = StatsTab:CreateLabel("FPS: Scanning...", "monitor")
+FPSLabel  = StatsTab:CreateLabel("FPS: Scanning...",  "monitor")
 PingLabel = StatsTab:CreateLabel("Ping: Scanning...", "wifi")
 
 -- ─── More Tab ─────────────────────────────────────────────────────────────────
