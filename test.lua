@@ -161,7 +161,7 @@ end
 local function selfKickIfIntruder()
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LP then
-            LP:Kick("⚠️ SOMEONE JOINED — AUTO ESCAPED\nPlayer: " .. p.Name)
+            LP:Kick(" SOMEONE JOINED — AUTO ESCAPED\nPlayer: " .. p.Name)
             return
         end
     end
