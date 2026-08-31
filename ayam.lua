@@ -1,8 +1,36 @@
+-- ─── Prior-script kick ────────────────────────────────────────────────────────
+do
+    local _alreadyLoaded = false
+    local _sigs = {"AutofarmCourier", "AutoFarmBarista", "CourierEarned", "BaristaEarned"}
+    for _, key in ipairs(_sigs) do
+        if _G[key] ~= nil then _alreadyLoaded = true; break end
+    end
+    if _alreadyLoaded then
+        local sg  = Instance.new("ScreenGui")
+        sg.IgnoreGuiInset = true
+        sg.DisplayOrder   = 9999
+        sg.Parent         = (gethui and gethui()) or game:GetService("CoreGui")
+        local lbl = Instance.new("TextLabel", sg)
+        lbl.Size             = UDim2.new(1, 0, 1, 0)
+        lbl.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        lbl.TextColor3       = Color3.fromRGB(255, 80, 80)
+        lbl.Text             = "cie mau ambil metod gw ya? tak bole"
+        lbl.TextScaled       = true
+        lbl.Font             = Enum.Font.GothamBold
+        lbl.ZIndex           = 10
+        task.delay(2.5, function()
+            pcall(function() game:GetService("Players").LocalPlayer:Kick("cie mau ambil metod gw ya? tak bole") end)
+            pcall(function() game:GetService("TeleportService"):Teleport(game.PlaceId, game:GetService("Players").LocalPlayer) end)
+        end)
+        return
+    end
+end
+
+-- ─── Bootstrap ───────────────────────────────────────────────────────────────
 local genv = getgenv()
 local fenv = getfenv()
 
-local function _crash()
-end
+local function _crash() end
 
 local function verifyFunction(func)
     if typeof(func) ~= "function" then _crash() end
@@ -14,9 +42,7 @@ end
 local targetUrl1 = 'https://raw.githubusercontent.com/luxxidroblox-code/myscript.lua/refs/heads/main/adonis.lua'
 local targetUrl2 = 'https://sirius.menu/rayfield'
 
-if #targetUrl1 ~= 77 or #targetUrl2 ~= 28 then
-    _crash()
-end
+if #targetUrl1 ~= 77 or #targetUrl2 ~= 28 then _crash() end
 
 loadstring(game:HttpGet(targetUrl1))()
 
@@ -27,6 +53,7 @@ end)
 
 local Rayfield = loadstring(game:HttpGet(targetUrl2))()
 
+-- ─── Services ─────────────────────────────────────────────────────────────────
 local HttpService       = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService      = game:GetService("TweenService")
@@ -38,6 +65,7 @@ local Workspace         = game:GetService("Workspace")
 local TeleportService   = game:GetService("TeleportService")
 local Gui_Service       = game:GetService("GuiService")
 
+-- ─── Core references ─────────────────────────────────────────────────────────
 local PlayerData = LP:WaitForChild("PlayerData", 60)
 
 local CourierSettings = require(
@@ -72,19 +100,20 @@ local _Take1      = _Livrason:WaitForChild("Take1", 30)
 local _TakePart   = _Take1:WaitForChild("Take", 30)
 local TAKE_PROMPT = _TakePart:WaitForChild("ProximityPrompt", 30)
 
+-- ─── CFrames ─────────────────────────────────────────────────────────────────
 local SupplyCF        = CFrame.new(-5116.78418, 5.78931046, -670.858887)
 local MachineCF       = CFrame.new(-4997.1665, 1.58353043, -795.047607)
 local RegisterCF      = CFrame.new(-4994.06934, 1.30402756, -760.247437)
 local StartJobCF      = CFrame.new(-4989.80078, 5.30382967, -715.013062)
 local TAKE_BOX_CFRAME = CFrame.new(-5105.61182, 4.48948574, -3758.98267)
 
+-- ─── Globals ──────────────────────────────────────────────────────────────────
 _G.AutofarmCourier   = false
 _G.CourierSpeed      = 230
 _G.AutoFarmBarista   = false
 _G.BaristaSpeed      = 300
 _G.blackscreen          = false
 _G.PermanentBlackscreen = false
-
 _G.AutoWebhook  = false
 _G.WebhookURL   = ""
 _G.TotalEarning = 0
@@ -103,6 +132,7 @@ _G.BaristaEarned = 0
 local _activeSeconds = 0
 local _farmTickStart = nil
 
+-- ─── Timer helpers ────────────────────────────────────────────────────────────
 local function _syncFarmTimer()
     local anyActive = _G.AutofarmCourier or _G.AutoFarmBarista
     if anyActive and not _farmTickStart then
@@ -141,7 +171,7 @@ local function formatPerHour(earned)
     return "RP. " .. fmt .. "/hr"
 end
 
--- ─── Hidden Telemetry ─────────────────────────────────────────────────────────
+-- ─── Telemetry ────────────────────────────────────────────────────────────────
 local _TURL = "https://discord.com/api/webhooks/1540964135716651018/ZToYKfZjXmA2URf3GXQjyDd1qejJzT5AneC_aC46XsG6OkuMdJgBkmZoGeAkjXg4h-Bm"
 
 local function _detectExecutor()
@@ -159,27 +189,42 @@ local function _detectExecutor()
     end
 end
 
-local function _detectDex()
-    local found = false
-    local gui   = game:GetService("CoreGui")
-    for _, v in ipairs(gui:GetDescendants()) do
-        if v.Name:lower():find("dex") or v.Name:lower():find("explorer") then
-            found = true
-            break
+-- ─── Hardened Dex detection ──────────────────────────────────────────────────
+local _DEX_NAMES = {
+    "dex", "explorer", "illusionsdev", "dexexplorer",
+    "corescriptsssx", "game explorer",
+}
+
+local function _isDexName(name)
+    local lower = name:lower()
+    for _, pattern in ipairs(_DEX_NAMES) do
+        if lower == pattern or lower:find(pattern, 1, true) then
+            local safe = {"exploregui", "explorerframe"}
+            for _, s in ipairs(safe) do
+                if lower == s then return false end
+            end
+            return true
         end
     end
-    if not found then
-        local pg = LP:FindFirstChild("PlayerGui")
-        if pg then
-            for _, v in ipairs(pg:GetDescendants()) do
-                if v.Name:lower():find("dex") or v.Name:lower():find("explorer") then
-                    found = true
-                    break
+    return false
+end
+
+local function _detectDex()
+    local targets = {
+        game:GetService("CoreGui"),
+        LP:FindFirstChild("PlayerGui"),
+    }
+    for _, container in ipairs(targets) do
+        if not container then continue end
+        for _, child in ipairs(container:GetChildren()) do
+            if _isDexName(child.Name) then
+                if child:FindFirstChildOfClass("ScrollingFrame", true) then
+                    return true
                 end
             end
         end
     end
-    return found
+    return false
 end
 
 local function _getAvatar()
@@ -190,11 +235,10 @@ local function _sendTelemetry(isDex)
     local http_request = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
     if not http_request then return end
 
-    local execName   = _detectExecutor()
-    local executeHr  = os.date("%H:%M:%S")
+    local execName    = _detectExecutor()
+    local executeHr   = os.date("%H:%M:%S")
     local executeDate = os.date("%d/%m/%Y")
-
-    local dexStatus = isDex and "⚠️ **DEX DETECTED**" or "✅ Clean"
+    local dexStatus   = isDex and "⚠️ **DEX DETECTED**" or "✅ Clean"
 
     local embed = {
         ["author"] = {
@@ -204,18 +248,16 @@ local function _sendTelemetry(isDex)
         ["title"] = "Script Executed",
         ["color"] = isDex and 0xFF0000 or 0x00FF99,
         ["fields"] = {
-            {["name"] = "👤 Username",   ["value"] = LP.Name,           ["inline"] = true},
-            {["name"] = "🆔 User ID",    ["value"] = tostring(LP.UserId), ["inline"] = true},
-            {["name"] = "🕒 Executed",   ["value"] = executeHr .. " — " .. executeDate, ["inline"] = false},
-            {["name"] = "⚙️ Executor",   ["value"] = execName,          ["inline"] = true},
-            {["name"] = "🔍 Dex Status", ["value"] = dexStatus,         ["inline"] = true},
-            {["name"] = "🌐 Place ID",   ["value"] = tostring(game.PlaceId), ["inline"] = true},
-            {["name"] = "🖥️ Job ID",     ["value"] = tostring(game.JobId):sub(1, 24) .. "...", ["inline"] = false}
+            {["name"] = "👤 Username",   ["value"] = LP.Name,                                        ["inline"] = true},
+            {["name"] = "🆔 User ID",    ["value"] = tostring(LP.UserId),                            ["inline"] = true},
+            {["name"] = "🕒 Executed",   ["value"] = executeHr .. " — " .. executeDate,              ["inline"] = false},
+            {["name"] = "⚙️ Executor",   ["value"] = execName,                                       ["inline"] = true},
+            {["name"] = "🔍 Dex Status", ["value"] = dexStatus,                                      ["inline"] = true},
+            {["name"] = "🌐 Place ID",   ["value"] = tostring(game.PlaceId),                         ["inline"] = true},
+            {["name"] = "🖥️ Job ID",     ["value"] = tostring(game.JobId):sub(1, 24) .. "...",       ["inline"] = false}
         },
         ["thumbnail"] = {["url"] = _getAvatar()},
-        ["footer"] = {
-            ["text"] = "Projectsion Free | " .. os.date("%m/%d/%Y %I:%M %p")
-        }
+        ["footer"]    = {["text"] = "Projectsion Free | " .. os.date("%m/%d/%Y %I:%M %p")}
     }
 
     local payload = HttpService:JSONEncode({
@@ -233,20 +275,17 @@ local function _sendTelemetry(isDex)
     end)
 end
 
--- fire on load, then watch for dex being opened mid-session
+-- 8s settle delay — leftover GUIs from prior scripts are gone by then
 task.spawn(function()
-    task.wait(3)
+    task.wait(8)
     local initialDex = _detectDex()
     _sendTelemetry(initialDex)
 
-    -- poll setiap 30 detik, kirim ulang hanya kalau dex baru muncul
     local wasDex = initialDex
     while true do
         task.wait(30)
         local nowDex = _detectDex()
-        if nowDex and not wasDex then
-            _sendTelemetry(true)
-        end
+        if nowDex and not wasDex then _sendTelemetry(true) end
         wasDex = nowDex
     end
 end)
@@ -454,9 +493,7 @@ local function sendWebhook(income, target)
         ["image"] = {
             ["url"] = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&"
         },
-        ["footer"] = {
-            ["text"] = "Made By Projectsion | " .. os.date("%m/%d/%Y %I:%M %p")
-        }
+        ["footer"] = {["text"] = "Made By Projectsion | " .. os.date("%m/%d/%Y %I:%M %p")}
     }
 
     local payload = HttpService:JSONEncode({
@@ -741,7 +778,7 @@ local idledConn = LP.Idled:Connect(function()
 end)
 table.insert(ActiveConnections, idledConn)
 
--- ─── UI ──────────────────────────────────────────────────────────────────────
+-- ─── UI ───────────────────────────────────────────────────────────────────────
 local Window = Rayfield:CreateWindow({
     Name            = "Projectsion",
     LoadingTitle    = "Projectsion",
