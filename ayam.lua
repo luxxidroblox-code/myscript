@@ -87,10 +87,15 @@ task.spawn(function()
 end)
 
 -- ── anti-afk ─────────────────────────────────────────────────────────────
+for _, c in getconnections(LP.Idled) do
+    pcall(c.Disable, c)
+    pcall(c.Disconnect, c)
+end
+
 LP.Idled:Connect(function()
     if _G.AntiAFK then
         VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.new())
+        VirtualUser:ClickButton2(Vector2.zero)
     end
 end)
 
@@ -137,10 +142,6 @@ end
 
 local function SetStatus(text)
     if StatusLabel then StatusLabel:Set("Status: " .. text) end
-end
-
-local function GetMyBus()
-    return workspace.SpawnedVehicles:FindFirstChild(_G.SelectedBus)
 end
 
 -- ── bus list ──────────────────────────────────────────────────────────────
@@ -218,9 +219,55 @@ end
 fetchRoutes()
 
 -- ══════════════════════════════════════════════════════════════════════════
--- moveTo — bounce fix
--- vehicle parts: never restore CanCollide (that was the bounce trigger)
--- velocity zeroed before noclip disconnects, then again after anchor releases
+-- PREPARE VEHICLE — DX-SR method
+-- root teleport into seat + ProximityPrompt fire instead of :Sit()
+-- keeps physics assembly clean, no velocity spike on seat entry
+-- ══════════════════════════════════════════════════════════════════════════
+local function prepareVehicle()
+    Remotes.SpawnCar:FireServer(_G.SelectedBus)
+    task.wait(2)
+
+    local spawnedFolder = workspace:FindFirstChild("SpawnedVehicles")
+    if not spawnedFolder then return end
+
+    local bus = nil
+    for _, veh in ipairs(spawnedFolder:GetChildren()) do
+        local ownerAttr = veh:GetAttribute("Owner")
+        local ownerVal  = veh:FindFirstChild("Owner")
+        if (ownerAttr and tostring(ownerAttr) == LP.Name)
+        or (ownerVal  and tostring(ownerVal.Value) == LP.Name)
+        or veh.Name:find(LP.Name) then
+            bus = veh
+            break
+        end
+    end
+
+    if not bus then
+        -- fallback: last spawned vehicle
+        local vehicles = spawnedFolder:GetChildren()
+        bus = vehicles[#vehicles]
+    end
+
+    if not bus then return end
+
+    local seat = bus:FindFirstChild("DriveSeat", true)
+    if seat then
+        local char = LP.Character or LP.CharacterAdded:Wait()
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then
+            root.CFrame = seat.CFrame + Vector3.new(0, 2, 0)
+        end
+        task.wait(0.3)
+        local prompt = seat:FindFirstChildWhichIsA("ProximityPrompt", true)
+                    or bus:FindFirstChildWhichIsA("ProximityPrompt", true)
+        if prompt and fireproximityprompt then
+            fireproximityprompt(prompt)
+        end
+    end
+end
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- moveTo — DX-SR collision pattern (restore all parts, not char-only)
 -- ══════════════════════════════════════════════════════════════════════════
 local function getPart(name, folderName)
     local folder = workspace:WaitForChild(folderName, 5)
@@ -238,14 +285,10 @@ local function moveTo(targetPart)
     local char = LP.Character or LP.CharacterAdded:Wait()
     local hum  = char:FindFirstChildOfClass("Humanoid")
     local targetModel = char
-    local isInVehicle = false
 
     if hum and hum.SeatPart then
         local veh = hum.SeatPart:FindFirstAncestorOfClass("Model")
-        if veh then
-            targetModel = veh
-            isInVehicle = true
-        end
+        if veh then targetModel = veh end
     end
 
     local rootPart = targetModel.PrimaryPart or targetModel:FindFirstChildWhichIsA("BasePart")
@@ -256,38 +299,28 @@ local function moveTo(targetPart)
     local distance     = (targetCFrame.Position - startCFrame.Position).Magnitude
     local duration     = math.max(distance / TWEEN_SPEED, 0.1)
 
-    -- snapshot character collision only — vehicle parts are never restored
-    local charCollisions = {}
-    for _, p in ipairs(char:GetDescendants()) do
-        if p:IsA("BasePart") then charCollisions[p] = p.CanCollide end
+    -- snapshot entire model collision state (DX-SR style — restore all, not char-only)
+    local originalCollisions = {}
+    for _, p in ipairs(targetModel:GetDescendants()) do
+        if p:IsA("BasePart") then
+            originalCollisions[p] = p.CanCollide
+        end
     end
 
     local wasAnchored = rootPart.Anchored
     rootPart.Anchored = true
 
-    -- kill all velocity before lerp
-    for _, p in ipairs(targetModel:GetDescendants()) do
-        if p:IsA("BasePart") then
-            p.AssemblyLinearVelocity  = Vector3.zero
-            p.AssemblyAngularVelocity = Vector3.zero
-        end
-    end
-
     local noclipConn = RunService.Stepped:Connect(function()
-        if isInVehicle then
-            for _, p in ipairs(targetModel:GetDescendants()) do
-                if p:IsA("BasePart") then
-                    p.CanCollide              = false
-                    p.AssemblyLinearVelocity  = Vector3.zero
-                    p.AssemblyAngularVelocity = Vector3.zero
-                end
+        for p in pairs(originalCollisions) do
+            if p and p.Parent then
+                p.CanCollide              = false
+                p.AssemblyLinearVelocity  = Vector3.zero
+                p.AssemblyAngularVelocity = Vector3.zero
             end
         end
         for _, p in ipairs(char:GetDescendants()) do
             if p:IsA("BasePart") then
-                p.CanCollide              = false
-                p.AssemblyLinearVelocity  = Vector3.zero
-                p.AssemblyAngularVelocity = Vector3.zero
+                p.CanCollide = false
             end
         end
     end)
@@ -302,53 +335,29 @@ local function moveTo(targetPart)
     end
 
     targetModel:PivotTo(targetCFrame)
-
-    -- zero velocity BEFORE disconnecting noclip
-    for _, p in ipairs(targetModel:GetDescendants()) do
-        if p:IsA("BasePart") then
-            p.AssemblyLinearVelocity  = Vector3.zero
-            p.AssemblyAngularVelocity = Vector3.zero
-        end
-    end
-
     noclipConn:Disconnect()
 
-    -- one frame gap so physics engine settles
-    RunService.Heartbeat:Wait()
-
-    -- zero again after the gap
-    for _, p in ipairs(targetModel:GetDescendants()) do
-        if p:IsA("BasePart") then
-            p.AssemblyLinearVelocity  = Vector3.zero
-            p.AssemblyAngularVelocity = Vector3.zero
-        end
-    end
-
-    -- restore character collision only — never touch vehicle parts
-    for p, cc in pairs(charCollisions) do
+    -- restore all parts with zeroed velocity (DX-SR exact pattern)
+    for p, cc in pairs(originalCollisions) do
         if p and p.Parent then
-            p.CanCollide = cc
-        end
-    end
-
-    -- release anchor after everything settles
-    task.wait(0.3)
-    rootPart.Anchored = wasAnchored
-
-    -- final velocity kill post-anchor-release
-    RunService.Heartbeat:Wait()
-    for _, p in ipairs(targetModel:GetDescendants()) do
-        if p:IsA("BasePart") then
+            p.CanCollide              = cc
             p.AssemblyLinearVelocity  = Vector3.zero
             p.AssemblyAngularVelocity = Vector3.zero
         end
     end
 
-    task.wait(0.5)
+    for _, p in ipairs(char:GetDescendants()) do
+        if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then
+            p.CanCollide = true
+        end
+    end
+
+    task.wait(0.8)
     if not isWaitingInZone then
         targetModel:PivotTo(targetPart.CFrame + Vector3.new(0, 3, 0))
-        task.wait(0.1)
+        task.wait(0.2)
     end
+    rootPart.Anchored = wasAnchored
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
@@ -361,36 +370,24 @@ local function startJob()
         return
     end
 
-    local hum = LP.Character and LP.Character:FindFirstChild("Humanoid")
+    SetStatus("Preparing vehicle...")
+    prepareVehicle()
+    task.wait(2)
 
-    SetStatus("Spawning: " .. _G.SelectedBus)
-    Remotes:WaitForChild("SpawnCar"):FireServer(_G.SelectedBus)
-    task.wait(4)
+    if not _G.AutoFull then return end
 
-    local bus = GetMyBus()
-    if bus and bus:FindFirstChild("DriveSeat") then
-        bus.DriveSeat:Sit(hum)
-        task.wait(2)
+    SetStatus("Invoke job: " .. SelectedRouteKey)
+    local res = Remotes:WaitForChild("StartBusJob"):InvokeServer(SelectedRouteKey, nil)
 
-        SetStatus("Invoke job: " .. SelectedRouteKey)
-        Remotes:WaitForChild("StartBusJob"):InvokeServer(SelectedRouteKey, nil)
-        task.wait(1)
-
-        hum.Jump = true
-        task.wait(1.5)
-
-        SetStatus("Spawning vehicle..")
-        Remotes:WaitForChild("SpawnCar"):FireServer(_G.SelectedBus)
-        task.wait(4)
-
-        bus = GetMyBus()
-        if bus and bus:FindFirstChild("DriveSeat") then
-            bus.DriveSeat:Sit(hum)
-            jobStarted = true
-            SetStatus("Job started — waiting for checkpoints...")
-        end
+    if type(res) == "table" and res.success and res.nextCheckpointPartName then
+        jobStarted = true
+        SetStatus("Job started — moving to first checkpoint...")
+        local part = getPart(res.nextCheckpointPartName, "Checkpoints")
+        if part then moveTo(part) end
     else
-        SetStatus("Bus not found, retrying...")
+        SetStatus("Job invoke failed, retrying...")
+        task.wait(2)
+        if _G.AutoFull then startJob() end
     end
 end
 
