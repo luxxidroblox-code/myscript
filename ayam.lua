@@ -49,6 +49,7 @@ local ARRIVE_DELAY = 60
 -- ── state ─────────────────────────────────────────────────────────────────
 local isWaitingInZone  = false
 local jobStarted       = false
+local isFirstCheckpoint = false
 local TargetUang       = 0
 local lastMoney        = StatsFolder.Uang.Value
 local SelectedBusToBuy = ""
@@ -163,7 +164,36 @@ local TP_Locations = {
 }
 
 -- ══════════════════════════════════════════════════════════════════════════
--- DX-SR moveTo (lerp noclip)
+-- InstantTP — 3x PivotTo, no anchor, zero velocity
+-- ══════════════════════════════════════════════════════════════════════════
+local function InstantTP(targetCF)
+    local char = LP.Character or LP.CharacterAdded:Wait()
+    local hum  = char:FindFirstChildOfClass("Humanoid")
+    local targetModel = char
+
+    if hum and hum.SeatPart then
+        local veh = hum.SeatPart:FindFirstAncestorOfClass("Model")
+        if veh then targetModel = veh end
+    end
+
+    if not (targetModel.PrimaryPart or targetModel:FindFirstChildWhichIsA("BasePart")) then return end
+
+    for _, p in ipairs(targetModel:GetDescendants()) do
+        if p:IsA("BasePart") then
+            p.Anchored                = false
+            p.AssemblyLinearVelocity  = Vector3.zero
+            p.AssemblyAngularVelocity = Vector3.zero
+        end
+    end
+
+    for i = 1, 3 do
+        targetModel:PivotTo(targetCF)
+        task.wait(0.05)
+    end
+end
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- moveTo — lerp noclip tween (DX-SR)
 -- ══════════════════════════════════════════════════════════════════════════
 local function getPart(name, folderName)
     local folder = workspace:WaitForChild(folderName, 5)
@@ -250,7 +280,7 @@ local function moveTo(targetPart)
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
--- PROJECTSION JOB START (Cirebon_Baranangsiang4) — preserved intact
+-- PROJECTSION JOB START — Cirebon_Baranangsiang4
 -- ══════════════════════════════════════════════════════════════════════════
 local function startJob()
     if jobStarted then return end
@@ -280,16 +310,22 @@ local function startJob()
         bus = GetMyBus()
         if bus and bus:FindFirstChild("DriveSeat") then
             bus.DriveSeat:Sit(hum)
-            jobStarted = true
+            task.wait(0.5)
+
+            jobStarted        = true
+            isFirstCheckpoint = true
             SetStatus("Job started — waiting for checkpoints...")
         end
     else
         SetStatus("Bus not found, retrying...")
+        task.wait(3)
+        if _G.AutoFull then startJob() end
     end
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
--- DX-SR BusJobUpdate — drives checkpoint navigation after job start
+-- BusJobUpdate — checkpoint navigation
+-- checkpoint pertama = InstantTP, sisanya = moveTo tween
 -- ══════════════════════════════════════════════════════════════════════════
 Remotes:WaitForChild("BusJobUpdate").OnClientEvent:Connect(function(action, data)
     if not _G.AutoFull then return end
@@ -301,8 +337,9 @@ Remotes:WaitForChild("BusJobUpdate").OnClientEvent:Connect(function(action, data
     end
 
     if action == "JobSuccess" or action == "JobCancelled" then
-        isWaitingInZone = false
-        jobStarted      = false
+        isWaitingInZone   = false
+        jobStarted        = false
+        isFirstCheckpoint = false
         SetStatus(action == "JobSuccess" and "Job success! Restarting..." or "Cancelled. Restarting...")
         task.wait(1)
         if _G.AutoFull then startJob() end
@@ -333,9 +370,17 @@ Remotes:WaitForChild("BusJobUpdate").OnClientEvent:Connect(function(action, data
                 end
             end
             if not _G.AutoFull then return end
-            SetStatus("Moving to: " .. targetName)
             local part = getPart(targetName, folder)
-            if part then moveTo(part) end
+            if part then
+                if isFirstCheckpoint then
+                    SetStatus("Teleporting to Cirebon terminal...")
+                    InstantTP(part.CFrame + Vector3.new(0, 3, 0))
+                    isFirstCheckpoint = false
+                else
+                    SetStatus("Moving to: " .. targetName)
+                    moveTo(part)
+                end
+            end
         end)
     end
 end)
@@ -360,13 +405,13 @@ local function sendWebhook(income)
         ["title"]  = "Bus Route Completed",
         ["color"]  = 0xFFFFFF,
         ["fields"] = {
-            { ["name"] = "Player",        ["value"] = LP.Name,                           ["inline"] = false },
-            { ["name"] = "Cycle Income",  ["value"] = formatRP(income),                  ["inline"] = false },
-            { ["name"] = "Route",         ["value"] = "Cirebon → Baranangsiang",         ["inline"] = false },
-            { ["name"] = "Current Money", ["value"] = formatRP(StatsFolder.Uang.Value),  ["inline"] = false },
-            { ["name"] = "Total Earning", ["value"] = formatRP(_G.TotalEarning),         ["inline"] = false },
-            { ["name"] = "Cycle Count",   ["value"] = tostring(_G.CycleCount),           ["inline"] = false },
-            { ["name"] = "Running Time",  ["value"] = getRunningTime(),                  ["inline"] = false },
+            { ["name"] = "Player",        ["value"] = LP.Name,                          ["inline"] = false },
+            { ["name"] = "Cycle Income",  ["value"] = formatRP(income),                 ["inline"] = false },
+            { ["name"] = "Route",         ["value"] = "Cirebon → Baranangsiang",        ["inline"] = false },
+            { ["name"] = "Current Money", ["value"] = formatRP(StatsFolder.Uang.Value), ["inline"] = false },
+            { ["name"] = "Total Earning", ["value"] = formatRP(_G.TotalEarning),        ["inline"] = false },
+            { ["name"] = "Cycle Count",   ["value"] = tostring(_G.CycleCount),          ["inline"] = false },
+            { ["name"] = "Running Time",  ["value"] = getRunningTime(),                 ["inline"] = false },
         },
         ["footer"] = { ["text"] = "Made By Projectsion | " .. os.date("%m/%d/%Y %I:%M %p") }
     }
@@ -445,12 +490,14 @@ MainTab:CreateToggle({
     Callback     = function(Value)
         _G.AutoFull = Value
         if Value then
-            isWaitingInZone = false
-            jobStarted      = false
+            isWaitingInZone   = false
+            jobStarted        = false
+            isFirstCheckpoint = false
             task.spawn(startJob)
         else
-            isWaitingInZone = false
-            jobStarted      = false
+            isWaitingInZone   = false
+            jobStarted        = false
+            isFirstCheckpoint = false
             SetStatus("Idle")
         end
     end,
@@ -491,8 +538,8 @@ MainTab:CreateInput({
         local cleanNumber = Text:gsub("%.", "")
         TargetUang = tonumber(cleanNumber) or 0
         Rayfield:Notify({
-            Title   = "Target Set",
-            Content = "Target: Rp " .. formatRS(TargetUang),
+            Title    = "Target Set",
+            Content  = "Target: Rp " .. formatRS(TargetUang),
             Duration = 3,
         })
     end,
@@ -579,10 +626,10 @@ ConfigTab:CreateToggle({
 -- ══════════════════════════════════════════════════════════════════════════
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 StatsTab:CreateSection("Info Farm")
-StatusLabel  = StatsTab:CreateLabel("Status: Waiting",                    "clock")
-UangLabel    = StatsTab:CreateLabel("Uang: Rp " .. formatRS(StartUang),   "banknote")
-EarningLabel = StatsTab:CreateLabel("Earning: Rp 0",                      "coins")
-TimeLabel    = StatsTab:CreateLabel("Time: 00:00:00",                      "timer")
+StatusLabel  = StatsTab:CreateLabel("Status: Waiting",                  "clock")
+UangLabel    = StatsTab:CreateLabel("Uang: Rp " .. formatRS(StartUang), "banknote")
+EarningLabel = StatsTab:CreateLabel("Earning: Rp 0",                    "coins")
+TimeLabel    = StatsTab:CreateLabel("Time: 00:00:00",                    "timer")
 
 StatsTab:CreateSection("System Info")
 FPSLabel     = StatsTab:CreateLabel("FPS: Scanning...",  "monitor")
