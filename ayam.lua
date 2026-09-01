@@ -43,25 +43,25 @@ _G.AutoKickEnabled = false
 _G.WebhookEnabled  = false
 
 -- ── tunables ──────────────────────────────────────────────────────────────
-local TWEEN_SPEED   = 100   -- studs/s for moveTo lerp
-local ARRIVE_DELAY  = 60    -- seconds to wait at final destination
+local TWEEN_SPEED  = 100
+local ARRIVE_DELAY = 60
 
 -- ── state ─────────────────────────────────────────────────────────────────
-local isWaitingInZone = false
-local TargetUang      = 0
-local lastMoney       = StatsFolder.Uang.Value
+local isWaitingInZone  = false
+local jobStarted       = false
+local TargetUang       = 0
+local lastMoney        = StatsFolder.Uang.Value
 local SelectedBusToBuy = ""
-local CarListData     = {}
-local pendingIncome   = 0
-local SelectedAction  = "Dealership"
-local SelectedTP      = "Dealership"
+local CarListData      = {}
+local pendingIncome    = 0
+local SelectedAction   = "Dealership"
+local SelectedTP       = "Dealership"
 local isWebhookRunning = false
-local busOptions      = {}
+local busOptions       = {}
 
 local StatusLabel, UangLabel, EarningLabel, TimeLabel, FPSLabel, PingLabel
-local countdownPara, timePara, termCountdownPara, checkpointPara, earningPara
 
--- ── blackscreen (manual toggle only) ─────────────────────────────────────
+-- ── blackscreen ───────────────────────────────────────────────────────────
 local BlackScreen      = Instance.new("ScreenGui")
 BlackScreen.Name         = "ProjectsionBlackout"
 BlackScreen.Parent       = game:GetService("CoreGui")
@@ -134,6 +134,10 @@ local function SetStatus(text)
     if StatusLabel then StatusLabel:Set("Status: " .. text) end
 end
 
+local function GetMyBus()
+    return workspace.SpawnedVehicles:FindFirstChild(_G.SelectedBus)
+end
+
 -- ── bus list ──────────────────────────────────────────────────────────────
 for _, car in pairs(OwnedCarsFolder:GetChildren()) do
     local carID   = car.Name
@@ -153,51 +157,14 @@ end
 
 -- ── TP locations ──────────────────────────────────────────────────────────
 local TP_Locations = {
-    ["Dealership"]    = CFrame.new(19830.625,  266.913116, -27910.4844,  0.999847949, 0,  0.017436387, 0, 1, 0, -0.017436387, 0, 0.999847949),
-    ["Modifikasi"]    = CFrame.new(12035.499,  -21.3362789, 12740.0605, -0.573599219, 0,  0.81913656,  0, 1, 0, -0.81913656,  0, -0.573599219),
-    ["Teleport City"] = CFrame.new(21795.2461, 292.439026, -40055.918,   0.707134247, 0, -0.707079291, 0, 1, 0,  0.707079291, 0,  0.707134247),
+    ["Dealership"]    = CFrame.new(19830.625,  266.913116,  -27910.4844,  0.999847949, 0,  0.017436387, 0, 1, 0, -0.017436387, 0,  0.999847949),
+    ["Modifikasi"]    = CFrame.new(12035.499,  -21.3362789,  12740.0605, -0.573599219, 0,  0.81913656,  0, 1, 0, -0.81913656,  0, -0.573599219),
+    ["Teleport City"] = CFrame.new(21795.2461, 292.439026,  -40055.918,   0.707134247, 0, -0.707079291, 0, 1, 0,  0.707079291, 0,  0.707134247),
 }
 
 -- ══════════════════════════════════════════════════════════════════════════
--- DX-SR CORE: prepareVehicle + moveTo + startJob + BusJobUpdate listener
+-- DX-SR moveTo (lerp noclip)
 -- ══════════════════════════════════════════════════════════════════════════
-
-local function prepareVehicle()
-    Remotes.SpawnCar:FireServer(_G.SelectedBus)
-    task.wait(2)
-
-    local spawnedFolder = workspace:FindFirstChild("SpawnedVehicles")
-    if not spawnedFolder then return end
-
-    local bus = nil
-    for _, veh in ipairs(spawnedFolder:GetChildren()) do
-        local ownerAttr = veh:GetAttribute("Owner")
-        local ownerVal  = veh:FindFirstChild("Owner")
-        if  (ownerAttr and tostring(ownerAttr) == LP.Name)
-         or (ownerVal  and tostring(ownerVal.Value) == LP.Name)
-         or  veh.Name:find(LP.Name) then
-            bus = veh break
-        end
-    end
-    if not bus then
-        local v = spawnedFolder:GetChildren()
-        bus = v[#v]
-    end
-
-    if bus then
-        local seat = bus:FindFirstChild("DriveSeat", true)
-        if seat then
-            local char = LP.Character or LP.CharacterAdded:Wait()
-            local root = char:FindFirstChild("HumanoidRootPart")
-            if root then root.CFrame = seat.CFrame + Vector3.new(0, 2, 0) end
-            task.wait(0.3)
-            local prompt = seat:FindFirstChildWhichIsA("ProximityPrompt", true)
-                        or bus:FindFirstChildWhichIsA("ProximityPrompt", true)
-            if prompt and fireproximityprompt then fireproximityprompt(prompt) end
-        end
-    end
-end
-
 local function getPart(name, folderName)
     local folder = workspace:WaitForChild(folderName, 5)
     if not folder then return nil end
@@ -282,38 +249,48 @@ local function moveTo(targetPart)
     rootPart.Anchored = wasAnchored
 end
 
+-- ══════════════════════════════════════════════════════════════════════════
+-- PROJECTSION JOB START (Cirebon_Baranangsiang4) — preserved intact
+-- ══════════════════════════════════════════════════════════════════════════
 local function startJob()
-    local triggers  = CollectionService:GetTagged("BusJobTrigger")
-    local terminalId = nil
-    for _, trigger in ipairs(triggers) do
-        local id = trigger:GetAttribute("TerminalId")
-        if id then terminalId = id break end
-    end
-    if not terminalId then return false end
+    if jobStarted then return end
 
-    local routes = Remotes.GetAvailableBusRoutes:InvokeServer(terminalId)
-    if type(routes) ~= "table" then return false end
+    local hum = LP.Character and LP.Character:FindFirstChild("Humanoid")
 
-    local bestRouteId = nil
-    local maxReward   = -1
-    for id, info in pairs(routes) do
-        if type(info) == "table" and info.Reward and info.Reward > maxReward then
-            maxReward   = info.Reward
-            bestRouteId = id
+    SetStatus("Spawning: " .. _G.SelectedBus)
+    Remotes:WaitForChild("SpawnCar"):FireServer(_G.SelectedBus)
+    task.wait(4)
+
+    local bus = GetMyBus()
+    if bus and bus:FindFirstChild("DriveSeat") then
+        bus.DriveSeat:Sit(hum)
+        task.wait(2)
+
+        SetStatus("Invoke job: Cirebon_Baranangsiang4")
+        Remotes:WaitForChild("StartBusJob"):InvokeServer("Cirebon_Baranangsiang4", nil)
+        task.wait(1)
+
+        hum.Jump = true
+        task.wait(1.5)
+
+        SetStatus("Spawning vehicle..")
+        Remotes:WaitForChild("SpawnCar"):FireServer(_G.SelectedBus)
+        task.wait(4)
+
+        bus = GetMyBus()
+        if bus and bus:FindFirstChild("DriveSeat") then
+            bus.DriveSeat:Sit(hum)
+            jobStarted = true
+            SetStatus("Job started — waiting for checkpoints...")
         end
+    else
+        SetStatus("Bus not found, retrying...")
     end
-    if not bestRouteId then return false end
-
-    SetStatus("Starting job: " .. bestRouteId)
-    local res = Remotes.StartBusJob:InvokeServer(bestRouteId, terminalId)
-    if type(res) == "table" and res.success and res.nextCheckpointPartName then
-        local part = getPart(res.nextCheckpointPartName, "Checkpoints")
-        if part then moveTo(part) end
-    end
-    return true
 end
 
--- BusJobUpdate drives the checkpoint loop
+-- ══════════════════════════════════════════════════════════════════════════
+-- DX-SR BusJobUpdate — drives checkpoint navigation after job start
+-- ══════════════════════════════════════════════════════════════════════════
 Remotes:WaitForChild("BusJobUpdate").OnClientEvent:Connect(function(action, data)
     if not _G.AutoFull then return end
 
@@ -325,7 +302,8 @@ Remotes:WaitForChild("BusJobUpdate").OnClientEvent:Connect(function(action, data
 
     if action == "JobSuccess" or action == "JobCancelled" then
         isWaitingInZone = false
-        SetStatus(action == "JobSuccess" and "Job success! Restarting..." or "Job cancelled. Restarting...")
+        jobStarted      = false
+        SetStatus(action == "JobSuccess" and "Job success! Restarting..." or "Cancelled. Restarting...")
         task.wait(1)
         if _G.AutoFull then startJob() end
         return
@@ -382,19 +360,26 @@ local function sendWebhook(income)
         ["title"]  = "Bus Route Completed",
         ["color"]  = 0xFFFFFF,
         ["fields"] = {
-            { ["name"] = "Player",        ["value"] = LP.Name,                      ["inline"] = false },
-            { ["name"] = "Cycle Income",  ["value"] = formatRP(income),             ["inline"] = false },
-            { ["name"] = "Current Money", ["value"] = formatRP(StatsFolder.Uang.Value), ["inline"] = false },
-            { ["name"] = "Total Earning", ["value"] = formatRP(_G.TotalEarning),    ["inline"] = false },
-            { ["name"] = "Cycle Count",   ["value"] = tostring(_G.CycleCount),      ["inline"] = false },
-            { ["name"] = "Running Time",  ["value"] = getRunningTime(),             ["inline"] = false },
+            { ["name"] = "Player",        ["value"] = LP.Name,                           ["inline"] = false },
+            { ["name"] = "Cycle Income",  ["value"] = formatRP(income),                  ["inline"] = false },
+            { ["name"] = "Route",         ["value"] = "Cirebon → Baranangsiang",         ["inline"] = false },
+            { ["name"] = "Current Money", ["value"] = formatRP(StatsFolder.Uang.Value),  ["inline"] = false },
+            { ["name"] = "Total Earning", ["value"] = formatRP(_G.TotalEarning),         ["inline"] = false },
+            { ["name"] = "Cycle Count",   ["value"] = tostring(_G.CycleCount),           ["inline"] = false },
+            { ["name"] = "Running Time",  ["value"] = getRunningTime(),                  ["inline"] = false },
         },
         ["footer"] = { ["text"] = "Made By Projectsion | " .. os.date("%m/%d/%Y %I:%M %p") }
     }
-    local payload = HttpService:JSONEncode({ ["username"] = "Projectsion Reports", ["embeds"] = { embed } })
+
+    local payload = HttpService:JSONEncode({
+        ["username"] = "Projectsion Reports",
+        ["embeds"]   = { embed }
+    })
+
     if http_request then
         pcall(function()
-            http_request({ Url = _G.WebhookURL, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = payload })
+            http_request({ Url = _G.WebhookURL, Method = "POST",
+                Headers = { ["Content-Type"] = "application/json" }, Body = payload })
         end)
     end
 end
@@ -427,7 +412,7 @@ task.spawn(function()
     while task.wait(1) do
         if UangLabel then
             pcall(function()
-                local cur  = StatsFolder.Uang.Value
+                local cur = StatsFolder.Uang.Value
                 UangLabel:Set("Uang: Rp " .. formatRS(cur))
                 EarningLabel:Set("Earning: Rp " .. formatRS(cur - StartUang))
                 local diff = os.time() - StartTime
@@ -450,8 +435,8 @@ local MainTab = Window:CreateTab("Main Farm", "play")
 MainTab:CreateSection("Autofarm Bus")
 
 MainTab:CreateParagraph({
-    Title   = "Method",
-    Content = "Remote-driven checkpoint navigation (DX-SR core). Server pushes next checkpoint via BusJobUpdate — no billboard scanning needed.",
+    Title   = "WARNING",
+    Content = "USE JB5 ONLY. Turn on Auto-Kick when staff joins.",
 })
 
 MainTab:CreateToggle({
@@ -461,51 +446,39 @@ MainTab:CreateToggle({
         _G.AutoFull = Value
         if Value then
             isWaitingInZone = false
-            SetStatus("Preparing vehicle...")
-            task.spawn(function()
-                prepareVehicle()
-                if not _G.AutoFull then return end
-                task.wait(1)
-                if not _G.AutoFull then return end
-                SetStatus("Starting job...")
-                startJob()
-            end)
+            jobStarted      = false
+            task.spawn(startJob)
         else
             isWaitingInZone = false
+            jobStarted      = false
             SetStatus("Idle")
         end
     end,
 })
 
 MainTab:CreateSlider({
-    Name     = "Move Speed (studs/s)",
-    Range    = { 50, 500 },
-    Increment = 10,
+    Name         = "Move Speed (studs/s)",
+    Range        = { 50, 500 },
+    Increment    = 10,
     CurrentValue = TWEEN_SPEED,
-    Flag     = "TweenSpeed",
-    Callback = function(Value)
-        TWEEN_SPEED = Value
-    end,
+    Flag         = "TweenSpeed",
+    Callback     = function(Value) TWEEN_SPEED = Value end,
 })
 
 MainTab:CreateSlider({
-    Name     = "Arrive Delay (seconds)",
-    Range    = { 5, 120 },
-    Increment = 5,
+    Name         = "Arrive Delay (seconds)",
+    Range        = { 5, 120 },
+    Increment    = 5,
     CurrentValue = ARRIVE_DELAY,
-    Flag     = "ArriveDelay",
-    Callback = function(Value)
-        ARRIVE_DELAY = Value
-    end,
+    Flag         = "ArriveDelay",
+    Callback     = function(Value) ARRIVE_DELAY = Value end,
 })
 
 MainTab:CreateToggle({
     Name         = "Black Screen",
     CurrentValue = false,
     Flag         = "BlackScreen",
-    Callback     = function(Value)
-        _G.blackscreen = Value
-    end,
+    Callback     = function(Value) _G.blackscreen = Value end,
 })
 
 MainTab:CreateSection("Auto Stop Settings")
@@ -606,13 +579,13 @@ ConfigTab:CreateToggle({
 -- ══════════════════════════════════════════════════════════════════════════
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 StatsTab:CreateSection("Info Farm")
-StatusLabel  = StatsTab:CreateLabel("Status: Waiting",       "clock")
-UangLabel    = StatsTab:CreateLabel("Uang: Rp " .. formatRS(StartUang), "banknote")
-EarningLabel = StatsTab:CreateLabel("Earning: Rp 0",         "coins")
-TimeLabel    = StatsTab:CreateLabel("Time: 00:00:00",         "timer")
+StatusLabel  = StatsTab:CreateLabel("Status: Waiting",                    "clock")
+UangLabel    = StatsTab:CreateLabel("Uang: Rp " .. formatRS(StartUang),   "banknote")
+EarningLabel = StatsTab:CreateLabel("Earning: Rp 0",                      "coins")
+TimeLabel    = StatsTab:CreateLabel("Time: 00:00:00",                      "timer")
 
 StatsTab:CreateSection("System Info")
-FPSLabel     = StatsTab:CreateLabel("FPS: Scanning...", "monitor")
+FPSLabel     = StatsTab:CreateLabel("FPS: Scanning...",  "monitor")
 PingLabel    = StatsTab:CreateLabel("Ping: Scanning...", "wifi")
 
 -- ══════════════════════════════════════════════════════════════════════════
