@@ -49,7 +49,6 @@ local ARRIVE_DELAY = 60
 -- ── state ─────────────────────────────────────────────────────────────────
 local isWaitingInZone  = false
 local jobStarted       = false
-local isFirstCheckpoint = false
 local TargetUang       = 0
 local lastMoney        = StatsFolder.Uang.Value
 local SelectedBusToBuy = ""
@@ -60,21 +59,28 @@ local SelectedTP       = "Dealership"
 local isWebhookRunning = false
 local busOptions       = {}
 
+-- ── route state ───────────────────────────────────────────────────────────
+local RouteData        = {}
+local RouteSortedKeys  = {}
+local SelectedRouteKey = ""
+local LabelToKey       = {}
+
 local StatusLabel, UangLabel, EarningLabel, TimeLabel, FPSLabel, PingLabel
+local RouteRewardLabel
 
 -- ── blackscreen ───────────────────────────────────────────────────────────
-local BlackScreen      = Instance.new("ScreenGui")
+local BlackScreen        = Instance.new("ScreenGui")
 BlackScreen.Name         = "ProjectsionBlackout"
 BlackScreen.Parent       = game:GetService("CoreGui")
 BlackScreen.DisplayOrder = -1
 BlackScreen.Enabled      = false
 
-local BSFrame = Instance.new("Frame")
-BSFrame.Parent           = BlackScreen
-BSFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-BSFrame.Size             = UDim2.new(1.5, 0, 1.5, 0)
-BSFrame.Position         = UDim2.new(-0.25, 0, -0.25, 0)
-BSFrame.BorderSizePixel  = 0
+local BSFrame                  = Instance.new("Frame")
+BSFrame.Parent                 = BlackScreen
+BSFrame.BackgroundColor3       = Color3.fromRGB(0, 0, 0)
+BSFrame.Size                   = UDim2.new(1.5, 0, 1.5, 0)
+BSFrame.Position               = UDim2.new(-0.25, 0, -0.25, 0)
+BSFrame.BorderSizePixel        = 0
 
 task.spawn(function()
     while task.wait(0.5) do
@@ -164,36 +170,60 @@ local TP_Locations = {
 }
 
 -- ══════════════════════════════════════════════════════════════════════════
--- InstantTP — 3x PivotTo, no anchor, zero velocity
+-- ROUTE FETCH + SORT
 -- ══════════════════════════════════════════════════════════════════════════
-local function InstantTP(targetCF)
-    local char = LP.Character or LP.CharacterAdded:Wait()
-    local hum  = char:FindFirstChildOfClass("Humanoid")
-    local targetModel = char
-
-    if hum and hum.SeatPart then
-        local veh = hum.SeatPart:FindFirstAncestorOfClass("Model")
-        if veh then targetModel = veh end
-    end
-
-    if not (targetModel.PrimaryPart or targetModel:FindFirstChildWhichIsA("BasePart")) then return end
-
-    for _, p in ipairs(targetModel:GetDescendants()) do
-        if p:IsA("BasePart") then
-            p.Anchored                = false
-            p.AssemblyLinearVelocity  = Vector3.zero
-            p.AssemblyAngularVelocity = Vector3.zero
-        end
-    end
-
-    for i = 1, 3 do
-        targetModel:PivotTo(targetCF)
-        task.wait(0.05)
-    end
+local function buildLabelForKey(key)
+    local info = RouteData[key]
+    if not info then return key end
+    return (info.DisplayName or key) .. "  |  " .. formatRP(info.Reward or 0)
+        .. "  (" .. tostring(info.TotalCheckpoints or "?") .. " CP)"
 end
 
+local function fetchRoutes()
+    local ok, result = pcall(function()
+        return Remotes:WaitForChild("GetAvailableBusRoutes"):InvokeServer("Baranangsiang")
+    end)
+    if not ok or type(result) ~= "table" then return false end
+
+    RouteData       = {}
+    RouteSortedKeys = {}
+    LabelToKey      = {}
+
+    for key, info in pairs(result) do
+        RouteData[key] = info
+        table.insert(RouteSortedKeys, key)
+    end
+
+    -- sort highest reward first
+    table.sort(RouteSortedKeys, function(a, b)
+        return (RouteData[a].Reward or 0) > (RouteData[b].Reward or 0)
+    end)
+
+    -- default to top route only if nothing selected yet
+    if SelectedRouteKey == "" and #RouteSortedKeys > 0 then
+        SelectedRouteKey = RouteSortedKeys[1]
+    end
+
+    -- rebuild label ↔ key map
+    for _, key in ipairs(RouteSortedKeys) do
+        LabelToKey[buildLabelForKey(key)] = key
+    end
+
+    return true
+end
+
+local function buildRouteOptions()
+    local opts = {}
+    for _, key in ipairs(RouteSortedKeys) do
+        table.insert(opts, buildLabelForKey(key))
+    end
+    return opts
+end
+
+fetchRoutes()
+
 -- ══════════════════════════════════════════════════════════════════════════
--- moveTo — lerp noclip tween (DX-SR)
+-- DX-SR moveTo (lerp noclip)
 -- ══════════════════════════════════════════════════════════════════════════
 local function getPart(name, folderName)
     local folder = workspace:WaitForChild(folderName, 5)
@@ -280,10 +310,14 @@ local function moveTo(targetPart)
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
--- PROJECTSION JOB START — Cirebon_Baranangsiang4
+-- START JOB — uses SelectedRouteKey
 -- ══════════════════════════════════════════════════════════════════════════
 local function startJob()
     if jobStarted then return end
+    if SelectedRouteKey == "" then
+        SetStatus("No route selected.")
+        return
+    end
 
     local hum = LP.Character and LP.Character:FindFirstChild("Humanoid")
 
@@ -296,8 +330,8 @@ local function startJob()
         bus.DriveSeat:Sit(hum)
         task.wait(2)
 
-        SetStatus("Invoke job: Cirebon_Baranangsiang4")
-        Remotes:WaitForChild("StartBusJob"):InvokeServer("Cirebon_Baranangsiang4", nil)
+        SetStatus("Invoke job: " .. SelectedRouteKey)
+        Remotes:WaitForChild("StartBusJob"):InvokeServer(SelectedRouteKey, nil)
         task.wait(1)
 
         hum.Jump = true
@@ -310,22 +344,16 @@ local function startJob()
         bus = GetMyBus()
         if bus and bus:FindFirstChild("DriveSeat") then
             bus.DriveSeat:Sit(hum)
-            task.wait(0.5)
-
-            jobStarted        = true
-            isFirstCheckpoint = true
+            jobStarted = true
             SetStatus("Job started — waiting for checkpoints...")
         end
     else
         SetStatus("Bus not found, retrying...")
-        task.wait(3)
-        if _G.AutoFull then startJob() end
     end
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
--- BusJobUpdate — checkpoint navigation
--- checkpoint pertama = InstantTP, sisanya = moveTo tween
+-- BusJobUpdate handler
 -- ══════════════════════════════════════════════════════════════════════════
 Remotes:WaitForChild("BusJobUpdate").OnClientEvent:Connect(function(action, data)
     if not _G.AutoFull then return end
@@ -337,9 +365,8 @@ Remotes:WaitForChild("BusJobUpdate").OnClientEvent:Connect(function(action, data
     end
 
     if action == "JobSuccess" or action == "JobCancelled" then
-        isWaitingInZone   = false
-        jobStarted        = false
-        isFirstCheckpoint = false
+        isWaitingInZone = false
+        jobStarted      = false
         SetStatus(action == "JobSuccess" and "Job success! Restarting..." or "Cancelled. Restarting...")
         task.wait(1)
         if _G.AutoFull then startJob() end
@@ -370,17 +397,9 @@ Remotes:WaitForChild("BusJobUpdate").OnClientEvent:Connect(function(action, data
                 end
             end
             if not _G.AutoFull then return end
+            SetStatus("Moving to: " .. targetName)
             local part = getPart(targetName, folder)
-            if part then
-                if isFirstCheckpoint then
-                    SetStatus("Teleporting to Cirebon terminal...")
-                    InstantTP(part.CFrame + Vector3.new(0, 3, 0))
-                    isFirstCheckpoint = false
-                else
-                    SetStatus("Moving to: " .. targetName)
-                    moveTo(part)
-                end
-            end
+            if part then moveTo(part) end
         end)
     end
 end)
@@ -400,6 +419,9 @@ local function sendWebhook(income)
     local http_request = request or http_request
         or (syn and syn.request) or (fluxus and fluxus.request)
 
+    local routeDisplay = (RouteData[SelectedRouteKey] and RouteData[SelectedRouteKey].DisplayName)
+                      or SelectedRouteKey
+
     local embed = {
         ["author"] = { ["name"] = "Projectsion Webhook", ["icon_url"] = getAvatar() },
         ["title"]  = "Bus Route Completed",
@@ -407,7 +429,7 @@ local function sendWebhook(income)
         ["fields"] = {
             { ["name"] = "Player",        ["value"] = LP.Name,                          ["inline"] = false },
             { ["name"] = "Cycle Income",  ["value"] = formatRP(income),                 ["inline"] = false },
-            { ["name"] = "Route",         ["value"] = "Cirebon → Baranangsiang",        ["inline"] = false },
+            { ["name"] = "Route",         ["value"] = routeDisplay,                     ["inline"] = false },
             { ["name"] = "Current Money", ["value"] = formatRP(StatsFolder.Uang.Value), ["inline"] = false },
             { ["name"] = "Total Earning", ["value"] = formatRP(_G.TotalEarning),        ["inline"] = false },
             { ["name"] = "Cycle Count",   ["value"] = tostring(_G.CycleCount),          ["inline"] = false },
@@ -490,14 +512,12 @@ MainTab:CreateToggle({
     Callback     = function(Value)
         _G.AutoFull = Value
         if Value then
-            isWaitingInZone   = false
-            jobStarted        = false
-            isFirstCheckpoint = false
+            isWaitingInZone = false
+            jobStarted      = false
             task.spawn(startJob)
         else
-            isWaitingInZone   = false
-            jobStarted        = false
-            isFirstCheckpoint = false
+            isWaitingInZone = false
+            jobStarted      = false
             SetStatus("Idle")
         end
     end,
@@ -566,6 +586,91 @@ MainTab:CreateToggle({
 })
 
 -- ══════════════════════════════════════════════════════════════════════════
+-- UI — ROUTE TAB
+-- ══════════════════════════════════════════════════════════════════════════
+local RouteTab = Window:CreateTab("Routes", "map-pin")
+RouteTab:CreateSection("Select Bus Route")
+
+RouteTab:CreateParagraph({
+    Title   = "Route Info",
+    Content = "Routes sorted by reward (highest first). Reward and checkpoint count shown per entry.",
+})
+
+local routeOpts    = buildRouteOptions()
+local defaultLabel = routeOpts[1] or "No routes loaded"
+
+local RouteDropdown = RouteTab:CreateDropdown({
+    Name            = "Available Routes",
+    Options         = routeOpts,
+    CurrentOption   = { defaultLabel },
+    MultipleOptions = false,
+    Callback        = function(Option)
+        local label = Option[1]
+        local key   = LabelToKey[label]
+        if key then
+            SelectedRouteKey = key
+            local info = RouteData[key]
+            if RouteRewardLabel then
+                RouteRewardLabel:Set(
+                    "Selected: " .. (info.DisplayName or key)
+                    .. "  |  Reward: " .. formatRP(info.Reward or 0)
+                    .. "  |  " .. tostring(info.TotalCheckpoints or "?") .. " checkpoints"
+                )
+            end
+            SetStatus("Route: " .. (info.DisplayName or key))
+            Rayfield:Notify({
+                Title    = "Route Selected",
+                Content  = (info.DisplayName or key)
+                        .. "\nReward: " .. formatRP(info.Reward or 0)
+                        .. "\nCheckpoints: " .. tostring(info.TotalCheckpoints or "?"),
+                Duration = 4,
+                Image    = "map-pin",
+            })
+        end
+    end,
+})
+
+RouteRewardLabel = RouteTab:CreateLabel(
+    #RouteSortedKeys > 0
+        and ("Selected: " .. (RouteData[SelectedRouteKey] and RouteData[SelectedRouteKey].DisplayName or SelectedRouteKey)
+            .. "  |  Reward: " .. formatRP(RouteData[SelectedRouteKey] and RouteData[SelectedRouteKey].Reward or 0)
+            .. "  |  " .. tostring(RouteData[SelectedRouteKey] and RouteData[SelectedRouteKey].TotalCheckpoints or "?") .. " checkpoints")
+        or "No route loaded.",
+    "coins"
+)
+
+RouteTab:CreateButton({
+    Name     = "Refresh Route List",
+    Callback = function()
+        if fetchRoutes() then
+            local newOpts = buildRouteOptions()
+            RouteDropdown:Set(newOpts)
+            if RouteRewardLabel and SelectedRouteKey ~= "" and RouteData[SelectedRouteKey] then
+                local info = RouteData[SelectedRouteKey]
+                RouteRewardLabel:Set(
+                    "Selected: " .. (info.DisplayName or SelectedRouteKey)
+                    .. "  |  Reward: " .. formatRP(info.Reward or 0)
+                    .. "  |  " .. tostring(info.TotalCheckpoints or "?") .. " checkpoints"
+                )
+            end
+            Rayfield:Notify({
+                Title    = "Routes Refreshed",
+                Content  = tostring(#RouteSortedKeys) .. " routes loaded.",
+                Duration = 3,
+                Image    = "refresh-cw",
+            })
+        else
+            Rayfield:Notify({
+                Title    = "Fetch Failed",
+                Content  = "Could not reach GetAvailableBusRoutes.",
+                Duration = 4,
+                Image    = "alert-triangle",
+            })
+        end
+    end,
+})
+
+-- ══════════════════════════════════════════════════════════════════════════
 -- UI — CONFIGURATION TAB
 -- ══════════════════════════════════════════════════════════════════════════
 local ConfigTab = Window:CreateTab("Configuration", "settings")
@@ -626,14 +731,14 @@ ConfigTab:CreateToggle({
 -- ══════════════════════════════════════════════════════════════════════════
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 StatsTab:CreateSection("Info Farm")
-StatusLabel  = StatsTab:CreateLabel("Status: Waiting",                  "clock")
-UangLabel    = StatsTab:CreateLabel("Uang: Rp " .. formatRS(StartUang), "banknote")
-EarningLabel = StatsTab:CreateLabel("Earning: Rp 0",                    "coins")
-TimeLabel    = StatsTab:CreateLabel("Time: 00:00:00",                    "timer")
+StatusLabel  = StatsTab:CreateLabel("Status: Waiting",                    "clock")
+UangLabel    = StatsTab:CreateLabel("Uang: Rp " .. formatRS(StartUang),   "banknote")
+EarningLabel = StatsTab:CreateLabel("Earning: Rp 0",                      "coins")
+TimeLabel    = StatsTab:CreateLabel("Time: 00:00:00",                      "timer")
 
 StatsTab:CreateSection("System Info")
-FPSLabel     = StatsTab:CreateLabel("FPS: Scanning...",  "monitor")
-PingLabel    = StatsTab:CreateLabel("Ping: Scanning...", "wifi")
+FPSLabel  = StatsTab:CreateLabel("FPS: Scanning...",  "monitor")
+PingLabel = StatsTab:CreateLabel("Ping: Scanning...", "wifi")
 
 -- ══════════════════════════════════════════════════════════════════════════
 -- UI — MORE FEATURES TAB
