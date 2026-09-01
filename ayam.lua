@@ -14,10 +14,8 @@ local Window = Rayfield:CreateWindow({
 
 -- ── services ──────────────────────────────────────────────────────────────
 local VirtualUser       = game:GetService("VirtualUser")
-local TweenService      = game:GetService("TweenService")
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
-local CollectionService = game:GetService("CollectionService")
 local HttpService       = game:GetService("HttpService")
 
 local LP                = Players.LocalPlayer
@@ -75,12 +73,12 @@ BlackScreen.Parent       = game:GetService("CoreGui")
 BlackScreen.DisplayOrder = -1
 BlackScreen.Enabled      = false
 
-local BSFrame                  = Instance.new("Frame")
-BSFrame.Parent                 = BlackScreen
-BSFrame.BackgroundColor3       = Color3.fromRGB(0, 0, 0)
-BSFrame.Size                   = UDim2.new(1.5, 0, 1.5, 0)
-BSFrame.Position               = UDim2.new(-0.25, 0, -0.25, 0)
-BSFrame.BorderSizePixel        = 0
+local BSFrame            = Instance.new("Frame")
+BSFrame.Parent           = BlackScreen
+BSFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+BSFrame.Size             = UDim2.new(1.5, 0, 1.5, 0)
+BSFrame.Position         = UDim2.new(-0.25, 0, -0.25, 0)
+BSFrame.BorderSizePixel  = 0
 
 task.spawn(function()
     while task.wait(0.5) do
@@ -194,17 +192,14 @@ local function fetchRoutes()
         table.insert(RouteSortedKeys, key)
     end
 
-    -- sort highest reward first
     table.sort(RouteSortedKeys, function(a, b)
         return (RouteData[a].Reward or 0) > (RouteData[b].Reward or 0)
     end)
 
-    -- default to top route only if nothing selected yet
     if SelectedRouteKey == "" and #RouteSortedKeys > 0 then
         SelectedRouteKey = RouteSortedKeys[1]
     end
 
-    -- rebuild label ↔ key map
     for _, key in ipairs(RouteSortedKeys) do
         LabelToKey[buildLabelForKey(key)] = key
     end
@@ -223,7 +218,9 @@ end
 fetchRoutes()
 
 -- ══════════════════════════════════════════════════════════════════════════
--- DX-SR moveTo (lerp noclip)
+-- moveTo — bounce fix
+-- vehicle parts: never restore CanCollide (that was the bounce trigger)
+-- velocity zeroed before noclip disconnects, then again after anchor releases
 -- ══════════════════════════════════════════════════════════════════════════
 local function getPart(name, folderName)
     local folder = workspace:WaitForChild(folderName, 5)
@@ -241,10 +238,14 @@ local function moveTo(targetPart)
     local char = LP.Character or LP.CharacterAdded:Wait()
     local hum  = char:FindFirstChildOfClass("Humanoid")
     local targetModel = char
+    local isInVehicle = false
 
     if hum and hum.SeatPart then
         local veh = hum.SeatPart:FindFirstAncestorOfClass("Model")
-        if veh then targetModel = veh end
+        if veh then
+            targetModel = veh
+            isInVehicle = true
+        end
     end
 
     local rootPart = targetModel.PrimaryPart or targetModel:FindFirstChildWhichIsA("BasePart")
@@ -255,24 +256,39 @@ local function moveTo(targetPart)
     local distance     = (targetCFrame.Position - startCFrame.Position).Magnitude
     local duration     = math.max(distance / TWEEN_SPEED, 0.1)
 
-    local originalCollisions = {}
-    for _, p in ipairs(targetModel:GetDescendants()) do
-        if p:IsA("BasePart") then originalCollisions[p] = p.CanCollide end
+    -- snapshot character collision only — vehicle parts are never restored
+    local charCollisions = {}
+    for _, p in ipairs(char:GetDescendants()) do
+        if p:IsA("BasePart") then charCollisions[p] = p.CanCollide end
     end
 
     local wasAnchored = rootPart.Anchored
     rootPart.Anchored = true
 
+    -- kill all velocity before lerp
+    for _, p in ipairs(targetModel:GetDescendants()) do
+        if p:IsA("BasePart") then
+            p.AssemblyLinearVelocity  = Vector3.zero
+            p.AssemblyAngularVelocity = Vector3.zero
+        end
+    end
+
     local noclipConn = RunService.Stepped:Connect(function()
-        for p in pairs(originalCollisions) do
-            if p and p.Parent then
-                p.CanCollide = false
-                p.AssemblyLinearVelocity  = Vector3.zero
-                p.AssemblyAngularVelocity = Vector3.zero
+        if isInVehicle then
+            for _, p in ipairs(targetModel:GetDescendants()) do
+                if p:IsA("BasePart") then
+                    p.CanCollide              = false
+                    p.AssemblyLinearVelocity  = Vector3.zero
+                    p.AssemblyAngularVelocity = Vector3.zero
+                end
             end
         end
         for _, p in ipairs(char:GetDescendants()) do
-            if p:IsA("BasePart") then p.CanCollide = false end
+            if p:IsA("BasePart") then
+                p.CanCollide              = false
+                p.AssemblyLinearVelocity  = Vector3.zero
+                p.AssemblyAngularVelocity = Vector3.zero
+            end
         end
     end)
 
@@ -286,31 +302,57 @@ local function moveTo(targetPart)
     end
 
     targetModel:PivotTo(targetCFrame)
-    noclipConn:Disconnect()
 
-    for p, cc in pairs(originalCollisions) do
-        if p and p.Parent then
-            p.CanCollide = cc
+    -- zero velocity BEFORE disconnecting noclip
+    for _, p in ipairs(targetModel:GetDescendants()) do
+        if p:IsA("BasePart") then
             p.AssemblyLinearVelocity  = Vector3.zero
             p.AssemblyAngularVelocity = Vector3.zero
         end
     end
-    for _, p in ipairs(char:GetDescendants()) do
-        if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then
-            p.CanCollide = true
+
+    noclipConn:Disconnect()
+
+    -- one frame gap so physics engine settles
+    RunService.Heartbeat:Wait()
+
+    -- zero again after the gap
+    for _, p in ipairs(targetModel:GetDescendants()) do
+        if p:IsA("BasePart") then
+            p.AssemblyLinearVelocity  = Vector3.zero
+            p.AssemblyAngularVelocity = Vector3.zero
         end
     end
 
-    task.wait(0.8)
+    -- restore character collision only — never touch vehicle parts
+    for p, cc in pairs(charCollisions) do
+        if p and p.Parent then
+            p.CanCollide = cc
+        end
+    end
+
+    -- release anchor after everything settles
+    task.wait(0.3)
+    rootPart.Anchored = wasAnchored
+
+    -- final velocity kill post-anchor-release
+    RunService.Heartbeat:Wait()
+    for _, p in ipairs(targetModel:GetDescendants()) do
+        if p:IsA("BasePart") then
+            p.AssemblyLinearVelocity  = Vector3.zero
+            p.AssemblyAngularVelocity = Vector3.zero
+        end
+    end
+
+    task.wait(0.5)
     if not isWaitingInZone then
         targetModel:PivotTo(targetPart.CFrame + Vector3.new(0, 3, 0))
-        task.wait(0.2)
+        task.wait(0.1)
     end
-    rootPart.Anchored = wasAnchored
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
--- START JOB — uses SelectedRouteKey
+-- START JOB
 -- ══════════════════════════════════════════════════════════════════════════
 local function startJob()
     if jobStarted then return end
@@ -632,7 +674,8 @@ local RouteDropdown = RouteTab:CreateDropdown({
 
 RouteRewardLabel = RouteTab:CreateLabel(
     #RouteSortedKeys > 0
-        and ("Selected: " .. (RouteData[SelectedRouteKey] and RouteData[SelectedRouteKey].DisplayName or SelectedRouteKey)
+        and ("Selected: "
+            .. (RouteData[SelectedRouteKey] and RouteData[SelectedRouteKey].DisplayName or SelectedRouteKey)
             .. "  |  Reward: " .. formatRP(RouteData[SelectedRouteKey] and RouteData[SelectedRouteKey].Reward or 0)
             .. "  |  " .. tostring(RouteData[SelectedRouteKey] and RouteData[SelectedRouteKey].TotalCheckpoints or "?") .. " checkpoints")
         or "No route loaded.",
