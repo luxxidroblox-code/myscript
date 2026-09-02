@@ -66,7 +66,7 @@ local lastCheckpointFolder = "Checkpoints"
 local isRecovering         = false
 
 -- ── route state ───────────────────────────────────────────────────────────
-local RouteData        = {}
+local RouteData        = {}   -- key → { Reward, TotalCheckpoints, DisplayName, Terminal }
 local RouteSortedKeys  = {}
 local SelectedRouteKey = ""
 local LabelToKey       = {}
@@ -75,10 +75,11 @@ local StatusLabel, UangLabel, EarningLabel, TimeLabel, FPSLabel, PingLabel
 local RouteRewardLabel
 
 -- ── terminal registry ─────────────────────────────────────────────────────
+-- Terminal string harus match persis dengan arg InvokeServer("Baranangsiang") dll
 local TERMINALS = {
     {
         id    = "Baranangsiang",
-        spawn = CFrame.new(0, 0, 0),
+        spawn = CFrame.new(0, 0, 0),   -- default; karakter sudah di sini saat awal
         useTP = false,
     },
     {
@@ -91,6 +92,7 @@ local TERMINALS = {
     },
 }
 
+-- lookup terminal by route key
 local function getTerminalForKey(key)
     local info = RouteData[key]
     if not info then return TERMINALS[1] end
@@ -213,7 +215,7 @@ local TP_Locations = {
 }
 
 -- ══════════════════════════════════════════════════════════════════════════
--- ROUTE FETCH + SORT
+-- ROUTE FETCH + SORT  (semua terminal sekaligus)
 -- ══════════════════════════════════════════════════════════════════════════
 local function buildLabelForKey(key)
     local info = RouteData[key]
@@ -421,13 +423,27 @@ local function moveTo(targetPart)
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
--- START JOB  (bersih — tanpa blok TP, TP sudah di doCycleReset)
+-- START JOB  — TP ke terminal dulu kalau perlu
 -- ══════════════════════════════════════════════════════════════════════════
 local function startJob()
     if jobStarted then return end
     if SelectedRouteKey == "" then
         SetStatus("No route selected.")
         return
+    end
+
+    local terminal = getTerminalForKey(SelectedRouteKey)
+
+    -- ── TP karakter ke terminal spawn point ───────────────────────────────
+    if terminal.useTP then
+        SetStatus("Teleporting to terminal " .. terminal.id .. "...")
+        local char = LP.Character or LP.CharacterAdded:Wait()
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then
+            root.CFrame = terminal.spawn
+        end
+        task.wait(1.5)
+        if not _G.AutoFull then return end
     end
 
     SetStatus("Preparing vehicle...")
@@ -454,7 +470,7 @@ local function startJob()
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
--- CYCLE RESET  — TP ke terminal setelah HRP idle, lalu startJob
+-- CYCLE RESET
 -- ══════════════════════════════════════════════════════════════════════════
 local function doCycleReset()
     if isCycleResetting then return end
@@ -468,43 +484,24 @@ local function doCycleReset()
     SetStatus("Income detected — resetting character...")
 
     local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-    if hum then hum.Health = 0 end
-
-    local newChar = LP.CharacterAdded:Wait()
-    local root    = newChar:WaitForChild("HumanoidRootPart", 10)
-    local humNew  = newChar:WaitForChild("Humanoid", 10)
-
-    -- tunggu humanoid state idle
-    if humNew then
-        local waited = 0
-        repeat
-            task.wait(0.1)
-            waited = waited + 0.1
-        until humNew:GetState() == Enum.HumanoidStateType.Landed
-           or humNew:GetState() == Enum.HumanoidStateType.Running
-           or waited >= 5
+    if hum then
+        hum.Health = 0
     end
 
-    -- TP ke terminal kalau rute dari Cirebon
-    local terminal = getTerminalForKey(SelectedRouteKey)
-    if terminal.useTP and root then
-        root.Anchored                = false
-        root.AssemblyLinearVelocity  = Vector3.zero
-        root.AssemblyAngularVelocity = Vector3.zero
-        root.CFrame                  = terminal.spawn
-        SetStatus("Teleported to " .. terminal.id .. " — starting job...")
-    end
+    LP.CharacterAdded:Wait()
+    task.wait(2)
 
     if not _G.AutoFull then
         isCycleResetting = false
         return
     end
 
+    SetStatus("Character ready — starting next cycle...")
     isCycleResetting = false
     startJob()
 end
 
--- ── detect uang masuk → trigger cycle reset ───────────────────────────────
+-- ── detect uang masuk → trigger cycle reset (minimum 30 juta) ────────────
 StatsFolder.Uang:GetPropertyChangedSignal("Value"):Connect(function()
     local newMoney = StatsFolder.Uang.Value
     if newMoney > lastMoney then
