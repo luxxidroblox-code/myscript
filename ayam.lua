@@ -41,8 +41,9 @@ _G.AutoKickEnabled = false
 _G.WebhookEnabled  = false
 
 -- ── tunables ──────────────────────────────────────────────────────────────
-local TWEEN_SPEED  = 100
-local ARRIVE_DELAY = 60
+local TWEEN_SPEED      = 100
+local ARRIVE_DELAY     = 60
+local INCOME_THRESHOLD = 30_000_000
 
 -- ── state ─────────────────────────────────────────────────────────────────
 local isWaitingInZone      = false
@@ -65,13 +66,41 @@ local lastCheckpointFolder = "Checkpoints"
 local isRecovering         = false
 
 -- ── route state ───────────────────────────────────────────────────────────
-local RouteData        = {}
+local RouteData        = {}   -- key → { Reward, TotalCheckpoints, DisplayName, Terminal }
 local RouteSortedKeys  = {}
 local SelectedRouteKey = ""
 local LabelToKey       = {}
 
 local StatusLabel, UangLabel, EarningLabel, TimeLabel, FPSLabel, PingLabel
 local RouteRewardLabel
+
+-- ── terminal registry ─────────────────────────────────────────────────────
+-- Terminal string harus match persis dengan arg InvokeServer("Baranangsiang") dll
+local TERMINALS = {
+    {
+        id    = "Baranangsiang",
+        spawn = CFrame.new(0, 0, 0),   -- default; karakter sudah di sini saat awal
+        useTP = false,
+    },
+    {
+        id    = "Cirebon",
+        spawn = CFrame.new(-26455.625, -216.685, 33480.039,
+                           -0.744, -0.147, -0.651,
+                            0.000,  0.975, -0.221,
+                            0.668, -0.165, -0.726),
+        useTP = true,
+    },
+}
+
+-- lookup terminal by route key
+local function getTerminalForKey(key)
+    local info = RouteData[key]
+    if not info then return TERMINALS[1] end
+    for _, t in ipairs(TERMINALS) do
+        if t.id == info.Terminal then return t end
+    end
+    return TERMINALS[1]
+end
 
 -- ── blackscreen ───────────────────────────────────────────────────────────
 local BlackScreen        = Instance.new("ScreenGui")
@@ -186,29 +215,39 @@ local TP_Locations = {
 }
 
 -- ══════════════════════════════════════════════════════════════════════════
--- ROUTE FETCH + SORT
+-- ROUTE FETCH + SORT  (semua terminal sekaligus)
 -- ══════════════════════════════════════════════════════════════════════════
 local function buildLabelForKey(key)
     local info = RouteData[key]
     if not info then return key end
-    return (info.DisplayName or key) .. "  |  " .. formatRP(info.Reward or 0)
+    return (info.DisplayName or key)
+        .. "  |  " .. formatRP(info.Reward or 0)
         .. "  (" .. tostring(info.TotalCheckpoints or "?") .. " CP)"
+        .. "  [" .. (info.Terminal or "?") .. "]"
 end
 
 local function fetchRoutes()
-    local ok, result = pcall(function()
-        return Remotes:WaitForChild("GetAvailableBusRoutes"):InvokeServer("Baranangsiang")
-    end)
-    if not ok or type(result) ~= "table" then return false end
-
     RouteData       = {}
     RouteSortedKeys = {}
     LabelToKey      = {}
 
-    for key, info in pairs(result) do
-        RouteData[key] = info
-        table.insert(RouteSortedKeys, key)
+    local anyLoaded = false
+
+    for _, terminal in ipairs(TERMINALS) do
+        local ok, result = pcall(function()
+            return Remotes:WaitForChild("GetAvailableBusRoutes"):InvokeServer(terminal.id)
+        end)
+        if ok and type(result) == "table" then
+            anyLoaded = true
+            for key, info in pairs(result) do
+                info.Terminal  = terminal.id
+                RouteData[key] = info
+                table.insert(RouteSortedKeys, key)
+            end
+        end
     end
+
+    if not anyLoaded then return false end
 
     table.sort(RouteSortedKeys, function(a, b)
         return (RouteData[a].Reward or 0) > (RouteData[b].Reward or 0)
@@ -384,13 +423,27 @@ local function moveTo(targetPart)
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
--- START JOB
+-- START JOB  — TP ke terminal dulu kalau perlu
 -- ══════════════════════════════════════════════════════════════════════════
 local function startJob()
     if jobStarted then return end
     if SelectedRouteKey == "" then
         SetStatus("No route selected.")
         return
+    end
+
+    local terminal = getTerminalForKey(SelectedRouteKey)
+
+    -- ── TP karakter ke terminal spawn point ───────────────────────────────
+    if terminal.useTP then
+        SetStatus("Teleporting to terminal " .. terminal.id .. "...")
+        local char = LP.Character or LP.CharacterAdded:Wait()
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then
+            root.CFrame = terminal.spawn
+        end
+        task.wait(1.5)
+        if not _G.AutoFull then return end
     end
 
     SetStatus("Preparing vehicle...")
@@ -449,8 +502,6 @@ local function doCycleReset()
 end
 
 -- ── detect uang masuk → trigger cycle reset (minimum 30 juta) ────────────
-local INCOME_THRESHOLD = 30_000_000
-
 StatsFolder.Uang:GetPropertyChangedSignal("Value"):Connect(function()
     local newMoney = StatsFolder.Uang.Value
     if newMoney > lastMoney then
@@ -470,7 +521,6 @@ StatsFolder.Uang:GetPropertyChangedSignal("Value"):Connect(function()
             end)
         end
 
-        -- Reset hanya kalau satu transaksi income >= 30 juta
         if _G.AutoFull and not isCycleResetting and income >= INCOME_THRESHOLD then
             task.spawn(doCycleReset)
         end
@@ -754,7 +804,7 @@ RouteTab:CreateSection("Select Bus Route")
 
 RouteTab:CreateParagraph({
     Title   = "Route Info",
-    Content = "Routes sorted by reward (highest first). Reward and checkpoint count shown per entry.",
+    Content = "Routes sorted by reward (highest first). Terminal shown in brackets. Refresh to reload all terminals.",
 })
 
 local routeOpts    = buildRouteOptions()
@@ -776,6 +826,7 @@ local RouteDropdown = RouteTab:CreateDropdown({
                     "Selected: " .. (info.DisplayName or key)
                     .. "  |  Reward: " .. formatRP(info.Reward or 0)
                     .. "  |  " .. tostring(info.TotalCheckpoints or "?") .. " checkpoints"
+                    .. "  [" .. (info.Terminal or "?") .. "]"
                 )
             end
             SetStatus("Route: " .. (info.DisplayName or key))
@@ -783,7 +834,8 @@ local RouteDropdown = RouteTab:CreateDropdown({
                 Title    = "Route Selected",
                 Content  = (info.DisplayName or key)
                         .. "\nReward: " .. formatRP(info.Reward or 0)
-                        .. "\nCheckpoints: " .. tostring(info.TotalCheckpoints or "?"),
+                        .. "\nCheckpoints: " .. tostring(info.TotalCheckpoints or "?")
+                        .. "\nTerminal: " .. (info.Terminal or "?"),
                 Duration = 4,
                 Image    = "map-pin",
             })
@@ -796,7 +848,8 @@ RouteRewardLabel = RouteTab:CreateLabel(
         and ("Selected: "
             .. (RouteData[SelectedRouteKey] and RouteData[SelectedRouteKey].DisplayName or SelectedRouteKey)
             .. "  |  Reward: " .. formatRP(RouteData[SelectedRouteKey] and RouteData[SelectedRouteKey].Reward or 0)
-            .. "  |  " .. tostring(RouteData[SelectedRouteKey] and RouteData[SelectedRouteKey].TotalCheckpoints or "?") .. " checkpoints")
+            .. "  |  " .. tostring(RouteData[SelectedRouteKey] and RouteData[SelectedRouteKey].TotalCheckpoints or "?") .. " checkpoints"
+            .. "  [" .. (RouteData[SelectedRouteKey] and RouteData[SelectedRouteKey].Terminal or "?") .. "]")
         or "No route loaded.",
     "coins"
 )
@@ -813,11 +866,12 @@ RouteTab:CreateButton({
                     "Selected: " .. (info.DisplayName or SelectedRouteKey)
                     .. "  |  Reward: " .. formatRP(info.Reward or 0)
                     .. "  |  " .. tostring(info.TotalCheckpoints or "?") .. " checkpoints"
+                    .. "  [" .. (info.Terminal or "?") .. "]"
                 )
             end
             Rayfield:Notify({
                 Title    = "Routes Refreshed",
-                Content  = tostring(#RouteSortedKeys) .. " routes loaded.",
+                Content  = tostring(#RouteSortedKeys) .. " routes loaded from all terminals.",
                 Duration = 3,
                 Image    = "refresh-cw",
             })
