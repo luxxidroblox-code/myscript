@@ -57,6 +57,7 @@ local SelectedTP           = "Dealership"
 local isWebhookRunning     = false
 local busOptions           = {}
 local isCycleResetting     = false
+local lockedRootPart       = nil   -- tracks the currently anchored vehicle rootPart
 
 -- ── recovery state ────────────────────────────────────────────────────────
 local lastCheckpointName   = ""
@@ -148,6 +149,16 @@ end
 
 local function SetStatus(text)
     if StatusLabel then StatusLabel:Set("Status: " .. text) end
+end
+
+-- ── unlock helper — dipake di doCycleReset dan awal moveTo ───────────────
+local function unlockVehicle()
+    if lockedRootPart and lockedRootPart.Parent then
+        lockedRootPart.Anchored                = false
+        lockedRootPart.AssemblyLinearVelocity  = Vector3.zero
+        lockedRootPart.AssemblyAngularVelocity = Vector3.zero
+    end
+    lockedRootPart = nil
 end
 
 -- ── bus list ──────────────────────────────────────────────────────────────
@@ -270,7 +281,7 @@ local function prepareVehicle()
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
--- moveTo  — anchored-at-rest fix
+-- moveTo — brief release on arrival lalu lock, unlock dulu sebelum gerak
 -- ══════════════════════════════════════════════════════════════════════════
 local function getPart(name, folderName)
     local folder = workspace:WaitForChild(folderName, 5)
@@ -285,6 +296,10 @@ end
 
 local function moveTo(targetPart)
     if not targetPart then return end
+
+    -- ── Unlock vehicle dari arrival sebelumnya supaya bisa gerak ──────────
+    unlockVehicle()
+
     local char = LP.Character or LP.CharacterAdded:Wait()
     local hum  = char:FindFirstChildOfClass("Humanoid")
     local targetModel = char
@@ -296,11 +311,6 @@ local function moveTo(targetPart)
 
     local rootPart = targetModel.PrimaryPart or targetModel:FindFirstChildWhichIsA("BasePart")
     if not rootPart then return end
-
-    -- ── Release anchor from previous arrival before moving ────────────────
-    rootPart.Anchored                = false
-    rootPart.AssemblyLinearVelocity  = Vector3.zero
-    rootPart.AssemblyAngularVelocity = Vector3.zero
 
     local startCFrame  = targetModel:GetPivot()
     local targetCFrame = targetPart.CFrame + Vector3.new(0, 3, 0)
@@ -314,7 +324,7 @@ local function moveTo(targetPart)
         end
     end
 
-    -- Anchor during tween — physics can't fight the lerp
+    -- Anchor selama tween biar physics ga ganggu
     rootPart.Anchored = true
 
     local noclipConn = RunService.Stepped:Connect(function()
@@ -364,10 +374,17 @@ local function moveTo(targetPart)
         task.wait(0.2)
     end
 
-    -- ── Lock in place after arrival — slope drift prevention ──────────────
+    -- ── Sampe di CP: lepas gravity sebentar biar trigger detect ──────────
+    rootPart.Anchored                = false
+    rootPart.AssemblyLinearVelocity  = Vector3.zero
+    rootPart.AssemblyAngularVelocity = Vector3.zero
+    task.wait(0.25)
+
+    -- ── Lock lagi biar ga ngeslide di turunan ─────────────────────────────
     rootPart.Anchored                = true
     rootPart.AssemblyLinearVelocity  = Vector3.zero
     rootPart.AssemblyAngularVelocity = Vector3.zero
+    lockedRootPart = rootPart
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
@@ -404,7 +421,7 @@ local function startJob()
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
--- CYCLE RESET
+-- CYCLE RESET — unlock vehicle dulu sebelum reset char
 -- ══════════════════════════════════════════════════════════════════════════
 local function doCycleReset()
     if isCycleResetting then return end
@@ -412,6 +429,9 @@ local function doCycleReset()
     isWaitingInZone    = false
     jobStarted         = false
     lastCheckpointName = ""
+
+    -- ── Wajib unlock sebelum reset, biar prepareVehicle next cycle clean ──
+    unlockVehicle()
 
     SetStatus("Income detected — resetting character...")
 
@@ -656,6 +676,7 @@ MainTab:CreateToggle({
             isCycleResetting = false
             task.spawn(startJob)
         else
+            unlockVehicle()
             isWaitingInZone    = false
             jobStarted         = false
             isCycleResetting   = false
