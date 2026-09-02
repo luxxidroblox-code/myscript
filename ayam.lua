@@ -12,7 +12,7 @@ local Window = Rayfield:CreateWindow({
     KeySystem = false,
 })
 
--- ── services ──────────────────────────────────────────────────────────────
+-- â”€â”€ services â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 local VirtualUser       = game:GetService("VirtualUser")
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
@@ -26,7 +26,7 @@ local CarData           = Remotes.GetClientCustomizationData:InvokeServer()
 local StartUang         = StatsFolder.Uang.Value
 local StartTime         = os.time()
 
--- ── globals ───────────────────────────────────────────────────────────────
+-- â”€â”€ globals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _G.AutoFull        = false
 _G.AntiAFK         = true
 _G.AutoRejoin      = false
@@ -40,12 +40,12 @@ _G.StartTime       = os.time()
 _G.AutoKickEnabled = false
 _G.WebhookEnabled  = false
 
--- ── tunables ──────────────────────────────────────────────────────────────
+-- â”€â”€ tunables â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 local TWEEN_SPEED      = 100
 local ARRIVE_DELAY     = 60
 local INCOME_THRESHOLD = 30_000_000
 
--- ── state ─────────────────────────────────────────────────────────────────
+-- â”€â”€ state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 local isWaitingInZone      = false
 local jobStarted           = false
 local TargetUang           = 0
@@ -60,13 +60,13 @@ local busOptions           = {}
 local isCycleResetting     = false
 local lockedRootPart       = nil
 
--- ── recovery state ────────────────────────────────────────────────────────
+-- â”€â”€ recovery state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 local lastCheckpointName   = ""
 local lastCheckpointFolder = "Checkpoints"
 local isRecovering         = false
 
--- ── route state ───────────────────────────────────────────────────────────
-local RouteData        = {}   -- key → { Reward, TotalCheckpoints, DisplayName, Terminal }
+-- â”€â”€ route state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+local RouteData        = {}
 local RouteSortedKeys  = {}
 local SelectedRouteKey = ""
 local LabelToKey       = {}
@@ -74,12 +74,11 @@ local LabelToKey       = {}
 local StatusLabel, UangLabel, EarningLabel, TimeLabel, FPSLabel, PingLabel
 local RouteRewardLabel
 
--- ── terminal registry ─────────────────────────────────────────────────────
--- Terminal string harus match persis dengan arg InvokeServer("Baranangsiang") dll
+-- â”€â”€ terminal registry â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 local TERMINALS = {
     {
         id    = "Baranangsiang",
-        spawn = CFrame.new(0, 0, 0),   -- default; karakter sudah di sini saat awal
+        spawn = CFrame.new(0, 0, 0),
         useTP = false,
     },
     {
@@ -92,7 +91,6 @@ local TERMINALS = {
     },
 }
 
--- lookup terminal by route key
 local function getTerminalForKey(key)
     local info = RouteData[key]
     if not info then return TERMINALS[1] end
@@ -102,7 +100,7 @@ local function getTerminalForKey(key)
     return TERMINALS[1]
 end
 
--- ── blackscreen ───────────────────────────────────────────────────────────
+-- â”€â”€ blackscreen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 local BlackScreen        = Instance.new("ScreenGui")
 BlackScreen.Name         = "ProjectsionBlackout"
 BlackScreen.Parent       = game:GetService("CoreGui")
@@ -122,7 +120,7 @@ task.spawn(function()
     end
 end)
 
--- ── anti-afk ─────────────────────────────────────────────────────────────
+-- â”€â”€ anti-afk â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 for _, c in getconnections(LP.Idled) do
     pcall(c.Disable, c)
     pcall(c.Disconnect, c)
@@ -135,7 +133,7 @@ LP.Idled:Connect(function()
     end
 end)
 
--- ── auto kick intruders ───────────────────────────────────────────────────
+-- â”€â”€ auto kick intruders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 local function checkAndKick()
     local playerList = Players:GetPlayers()
     if #playerList > 1 then
@@ -157,7 +155,7 @@ task.spawn(function()
     while true do task.wait(3) checkAndKick() end
 end)
 
--- ── format helpers ────────────────────────────────────────────────────────
+-- â”€â”€ format helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 local function formatRS(amount)
     local f = tostring(math.floor(amount))
     local k
@@ -180,7 +178,7 @@ local function SetStatus(text)
     if StatusLabel then StatusLabel:Set("Status: " .. text) end
 end
 
--- ── unlock helper ─────────────────────────────────────────────────────────
+-- â”€â”€ unlock helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 local function unlockVehicle()
     if lockedRootPart and lockedRootPart.Parent then
         lockedRootPart.Anchored                = false
@@ -190,7 +188,7 @@ local function unlockVehicle()
     lockedRootPart = nil
 end
 
--- ── bus list ──────────────────────────────────────────────────────────────
+-- â”€â”€ bus list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 for _, car in pairs(OwnedCarsFolder:GetChildren()) do
     local carID   = car.Name
     local carInfo = CarData and CarData.CarData_Cars and CarData.CarData_Cars[carID]
@@ -207,16 +205,16 @@ if ClientData and ClientData.CarData_Cars then
     table.sort(CarListData)
 end
 
--- ── TP locations ──────────────────────────────────────────────────────────
+-- â”€â”€ TP locations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 local TP_Locations = {
     ["Dealership"]    = CFrame.new(19830.625,  266.913116,  -27910.4844,  0.999847949, 0,  0.017436387, 0, 1, 0, -0.017436387, 0,  0.999847949),
     ["Modifikasi"]    = CFrame.new(12035.499,  -21.3362789,  12740.0605, -0.573599219, 0,  0.81913656,  0, 1, 0, -0.81913656,  0, -0.573599219),
     ["Teleport City"] = CFrame.new(21795.2461, 292.439026,  -40055.918,   0.707134247, 0, -0.707079291, 0, 1, 0,  0.707079291, 0,  0.707134247),
 }
 
--- ══════════════════════════════════════════════════════════════════════════
--- ROUTE FETCH + SORT  (semua terminal sekaligus)
--- ══════════════════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- ROUTE FETCH + SORT
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 local function buildLabelForKey(key)
     local info = RouteData[key]
     if not info then return key end
@@ -274,9 +272,9 @@ end
 
 fetchRoutes()
 
--- ══════════════════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 -- PREPARE VEHICLE
--- ══════════════════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 local function prepareVehicle()
     Remotes.SpawnCar:FireServer(_G.SelectedBus)
     task.wait(2)
@@ -319,9 +317,9 @@ local function prepareVehicle()
     end
 end
 
--- ══════════════════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 -- moveTo
--- ══════════════════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 local function getPart(name, folderName)
     local folder = workspace:WaitForChild(folderName, 5)
     if not folder then return nil end
@@ -422,9 +420,9 @@ local function moveTo(targetPart)
     lockedRootPart = rootPart
 end
 
--- ══════════════════════════════════════════════════════════════════════════
--- START JOB  — TP ke terminal dulu kalau perlu
--- ══════════════════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- START JOB
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 local function startJob()
     if jobStarted then return end
     if SelectedRouteKey == "" then
@@ -434,7 +432,6 @@ local function startJob()
 
     local terminal = getTerminalForKey(SelectedRouteKey)
 
-    -- ── TP karakter ke terminal spawn point ───────────────────────────────
     if terminal.useTP then
         SetStatus("Teleporting to terminal " .. terminal.id .. "...")
         local char = LP.Character or LP.CharacterAdded:Wait()
@@ -459,7 +456,7 @@ local function startJob()
         jobStarted           = true
         lastCheckpointName   = res.nextCheckpointPartName
         lastCheckpointFolder = "Checkpoints"
-        SetStatus("Job started — moving to first checkpoint...")
+        SetStatus("Job started â€” moving to first checkpoint...")
         local part = getPart(res.nextCheckpointPartName, "Checkpoints")
         if part then moveTo(part) end
     else
@@ -469,9 +466,9 @@ local function startJob()
     end
 end
 
--- ══════════════════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 -- CYCLE RESET
--- ══════════════════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 local function doCycleReset()
     if isCycleResetting then return end
     isCycleResetting   = true
@@ -481,7 +478,7 @@ local function doCycleReset()
 
     unlockVehicle()
 
-    SetStatus("Income detected — resetting character...")
+    SetStatus("Income detected â€” resetting character...")
 
     local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
     if hum then
@@ -496,12 +493,21 @@ local function doCycleReset()
         return
     end
 
-    SetStatus("Character ready — starting next cycle...")
+    -- tunggu karakter stabil sebelum lanjut ke startJob / TP terminal
+    SetStatus("Stabilizing character...")
+    task.wait(3)
+
+    if not _G.AutoFull then
+        isCycleResetting = false
+        return
+    end
+
+    SetStatus("Character ready â€” starting next cycle...")
     isCycleResetting = false
     startJob()
 end
 
--- ── detect uang masuk → trigger cycle reset (minimum 30 juta) ────────────
+-- â”€â”€ detect uang masuk â†’ trigger cycle reset â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 StatsFolder.Uang:GetPropertyChangedSignal("Value"):Connect(function()
     local newMoney = StatsFolder.Uang.Value
     if newMoney > lastMoney then
@@ -528,9 +534,9 @@ StatsFolder.Uang:GetPropertyChangedSignal("Value"):Connect(function()
     lastMoney = newMoney
 end)
 
--- ══════════════════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 -- CHECKPOINT RECOVERY MONITOR
--- ══════════════════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 task.spawn(function()
     while task.wait(0.5) do
         if not _G.AutoFull or isRecovering or isCycleResetting then continue end
@@ -553,19 +559,19 @@ task.spawn(function()
 
         if detected then
             isRecovering = true
-            SetStatus("Off-track — recovering to checkpoint...")
+            SetStatus("Off-track â€” recovering to checkpoint...")
             local part = getPart(lastCheckpointName, lastCheckpointFolder)
             if part then moveTo(part) end
             task.wait(1)
             isRecovering = false
-            SetStatus("Recovered — continuing...")
+            SetStatus("Recovered â€” continuing...")
         end
     end
 end)
 
--- ══════════════════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 -- BusJobUpdate handler
--- ══════════════════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 Remotes:WaitForChild("BusJobUpdate").OnClientEvent:Connect(function(action, data)
     if not _G.AutoFull then return end
 
@@ -620,7 +626,7 @@ Remotes:WaitForChild("BusJobUpdate").OnClientEvent:Connect(function(action, data
                     isWaitingInZone    = false
                     jobStarted         = false
                     lastCheckpointName = ""
-                    SetStatus("Cycle done — restarting...")
+                    SetStatus("Cycle done â€” restarting...")
                     startJob()
                 end
             else
@@ -632,9 +638,9 @@ Remotes:WaitForChild("BusJobUpdate").OnClientEvent:Connect(function(action, data
     end
 end)
 
--- ══════════════════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 -- WEBHOOK
--- ══════════════════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 local function getAvatar()
     return "https://www.roblox.com/headshot-thumbnail/image?userId=" .. LP.UserId .. "&width=420&height=420&format=png"
 end
@@ -679,9 +685,9 @@ local function sendWebhook(income)
     end
 end
 
--- ══════════════════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 -- STATS LOOP
--- ══════════════════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 task.spawn(function()
     while task.wait(1) do
         if UangLabel then
@@ -702,9 +708,9 @@ task.spawn(function()
     end
 end)
 
--- ══════════════════════════════════════════════════════════════════════════
--- UI — MAIN TAB
--- ══════════════════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- UI â€” MAIN TAB
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 local MainTab = Window:CreateTab("Main Farm", "play")
 MainTab:CreateSection("Autofarm Bus")
 
@@ -796,9 +802,9 @@ MainTab:CreateToggle({
     end,
 })
 
--- ══════════════════════════════════════════════════════════════════════════
--- UI — ROUTE TAB
--- ══════════════════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- UI â€” ROUTE TAB
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 local RouteTab = Window:CreateTab("Routes", "map-pin")
 RouteTab:CreateSection("Select Bus Route")
 
@@ -886,9 +892,9 @@ RouteTab:CreateButton({
     end,
 })
 
--- ══════════════════════════════════════════════════════════════════════════
--- UI — CONFIGURATION TAB
--- ══════════════════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- UI â€” CONFIGURATION TAB
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 local ConfigTab = Window:CreateTab("Configuration", "settings")
 ConfigTab:CreateSection("Select Vehicle")
 
@@ -942,9 +948,9 @@ ConfigTab:CreateToggle({
     end,
 })
 
--- ══════════════════════════════════════════════════════════════════════════
--- UI — STATS TAB
--- ══════════════════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- UI â€” STATS TAB
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 StatsTab:CreateSection("Info Farm")
 StatusLabel  = StatsTab:CreateLabel("Status: Waiting",                    "clock")
@@ -956,9 +962,9 @@ StatsTab:CreateSection("System Info")
 FPSLabel  = StatsTab:CreateLabel("FPS: Scanning...",  "monitor")
 PingLabel = StatsTab:CreateLabel("Ping: Scanning...", "wifi")
 
--- ══════════════════════════════════════════════════════════════════════════
--- UI — MORE FEATURES TAB
--- ══════════════════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- UI â€” MORE FEATURES TAB
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 local MoreTab = Window:CreateTab("More Features", "plus-circle")
 MoreTab:CreateSection("Important Features")
 
