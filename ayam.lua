@@ -57,7 +57,7 @@ local SelectedTP           = "Dealership"
 local isWebhookRunning     = false
 local busOptions           = {}
 local isCycleResetting     = false
-local lockedRootPart       = nil   -- tracks the currently anchored vehicle rootPart
+local lockedRootPart       = nil
 
 -- ── recovery state ────────────────────────────────────────────────────────
 local lastCheckpointName   = ""
@@ -151,7 +151,7 @@ local function SetStatus(text)
     if StatusLabel then StatusLabel:Set("Status: " .. text) end
 end
 
--- ── unlock helper — dipake di doCycleReset dan awal moveTo ───────────────
+-- ── unlock helper ─────────────────────────────────────────────────────────
 local function unlockVehicle()
     if lockedRootPart and lockedRootPart.Parent then
         lockedRootPart.Anchored                = false
@@ -281,7 +281,7 @@ local function prepareVehicle()
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
--- moveTo — brief release on arrival lalu lock, unlock dulu sebelum gerak
+-- moveTo
 -- ══════════════════════════════════════════════════════════════════════════
 local function getPart(name, folderName)
     local folder = workspace:WaitForChild(folderName, 5)
@@ -297,7 +297,6 @@ end
 local function moveTo(targetPart)
     if not targetPart then return end
 
-    -- ── Unlock vehicle dari arrival sebelumnya supaya bisa gerak ──────────
     unlockVehicle()
 
     local char = LP.Character or LP.CharacterAdded:Wait()
@@ -324,7 +323,6 @@ local function moveTo(targetPart)
         end
     end
 
-    -- Anchor selama tween biar physics ga ganggu
     rootPart.Anchored = true
 
     local noclipConn = RunService.Stepped:Connect(function()
@@ -374,13 +372,11 @@ local function moveTo(targetPart)
         task.wait(0.2)
     end
 
-    -- ── Sampe di CP: lepas gravity sebentar biar trigger detect ──────────
     rootPart.Anchored                = false
     rootPart.AssemblyLinearVelocity  = Vector3.zero
     rootPart.AssemblyAngularVelocity = Vector3.zero
     task.wait(0.25)
 
-    -- ── Lock lagi biar ga ngeslide di turunan ─────────────────────────────
     rootPart.Anchored                = true
     rootPart.AssemblyLinearVelocity  = Vector3.zero
     rootPart.AssemblyAngularVelocity = Vector3.zero
@@ -421,7 +417,7 @@ local function startJob()
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
--- CYCLE RESET — unlock vehicle dulu sebelum reset char
+-- CYCLE RESET
 -- ══════════════════════════════════════════════════════════════════════════
 local function doCycleReset()
     if isCycleResetting then return end
@@ -430,7 +426,6 @@ local function doCycleReset()
     jobStarted         = false
     lastCheckpointName = ""
 
-    -- ── Wajib unlock sebelum reset, biar prepareVehicle next cycle clean ──
     unlockVehicle()
 
     SetStatus("Income detected — resetting character...")
@@ -453,7 +448,9 @@ local function doCycleReset()
     startJob()
 end
 
--- ── detect uang masuk → trigger cycle reset ───────────────────────────────
+-- ── detect uang masuk → trigger cycle reset (minimum 30 juta) ────────────
+local INCOME_THRESHOLD = 30_000_000
+
 StatsFolder.Uang:GetPropertyChangedSignal("Value"):Connect(function()
     local newMoney = StatsFolder.Uang.Value
     if newMoney > lastMoney then
@@ -473,7 +470,8 @@ StatsFolder.Uang:GetPropertyChangedSignal("Value"):Connect(function()
             end)
         end
 
-        if _G.AutoFull and not isCycleResetting then
+        -- Reset hanya kalau satu transaksi income >= 30 juta
+        if _G.AutoFull and not isCycleResetting and income >= INCOME_THRESHOLD then
             task.spawn(doCycleReset)
         end
     end
