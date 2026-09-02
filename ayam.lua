@@ -56,6 +56,7 @@ local SelectedAction       = "Dealership"
 local SelectedTP           = "Dealership"
 local isWebhookRunning     = false
 local busOptions           = {}
+local isCycleResetting     = false
 
 -- ── recovery state ────────────────────────────────────────────────────────
 local lastCheckpointName   = ""
@@ -394,12 +395,74 @@ local function startJob()
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
+-- CYCLE RESET — uang masuk → reset char → invoke job → farm
+-- ══════════════════════════════════════════════════════════════════════════
+local function doCycleReset()
+    if isCycleResetting then return end
+    isCycleResetting   = true
+    isWaitingInZone    = false
+    jobStarted         = false
+    lastCheckpointName = ""
+
+    SetStatus("Income detected — resetting character...")
+
+    -- reset character
+    local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.Health = 0
+    end
+
+    -- tunggu karakter respawn
+    LP.CharacterAdded:Wait()
+    task.wait(2)
+
+    if not _G.AutoFull then
+        isCycleResetting = false
+        return
+    end
+
+    SetStatus("Character ready — starting next cycle...")
+    isCycleResetting = false
+    startJob()
+end
+
+-- ── detect uang masuk → trigger cycle reset ───────────────────────────────
+StatsFolder.Uang:GetPropertyChangedSignal("Value"):Connect(function()
+    local newMoney = StatsFolder.Uang.Value
+    if newMoney > lastMoney then
+        local income = newMoney - lastMoney
+        pendingIncome = pendingIncome + income
+
+        -- webhook accumulate
+        if not isWebhookRunning and _G.WebhookURL ~= "" and _G.WebhookEnabled then
+            isWebhookRunning = true
+            task.spawn(function()
+                while isWebhookRunning do
+                    task.wait(65)
+                    if pendingIncome > 0 and _G.WebhookURL ~= "" and _G.WebhookEnabled then
+                        -- sendWebhook defined below, forward ref safe via task.spawn
+                        pendingIncome = 0
+                    end
+                    if not _G.AutoFull then isWebhookRunning = false end
+                end
+            end)
+        end
+
+        -- cycle reset trigger
+        if _G.AutoFull and not isCycleResetting then
+            task.spawn(doCycleReset)
+        end
+    end
+    lastMoney = newMoney
+end)
+
+-- ══════════════════════════════════════════════════════════════════════════
 -- CHECKPOINT RECOVERY MONITOR
--- scan semua TextLabel di PlayerGui, detect "RETURN TO THE CHECKPOINT"
 -- ══════════════════════════════════════════════════════════════════════════
 task.spawn(function()
     while task.wait(0.5) do
-        if not _G.AutoFull or isRecovering or lastCheckpointName == "" then continue end
+        if not _G.AutoFull or isRecovering or isCycleResetting then continue end
+        if lastCheckpointName == "" then continue end
 
         local detected = false
         pcall(function()
@@ -458,7 +521,6 @@ Remotes:WaitForChild("BusJobUpdate").OnClientEvent:Connect(function(action, data
     local folder     = isFinal and "BusJobEndTriggers" or "Checkpoints"
 
     if targetName then
-        -- ── track checkpoint aktif buat recovery ─────────────────────────
         lastCheckpointName   = targetName
         lastCheckpointFolder = folder
 
@@ -466,7 +528,6 @@ Remotes:WaitForChild("BusJobUpdate").OnClientEvent:Connect(function(action, data
             isWaitingInZone = false
 
             if isFinal then
-                -- ── arrive delay countdown ────────────────────────────────
                 local waitStart = os.clock()
                 while _G.AutoFull do
                     local remaining = ARRIVE_DELAY - (os.clock() - waitStart)
@@ -478,21 +539,22 @@ Remotes:WaitForChild("BusJobUpdate").OnClientEvent:Connect(function(action, data
                 end
                 if not _G.AutoFull then return end
 
-                -- ── tween ke last stop ────────────────────────────────────
                 SetStatus("Moving to final stop...")
                 local part = getPart(targetName, folder)
                 if part then moveTo(part) end
 
-                -- ── tunggu server register arrival ────────────────────────
+                -- uang akan masuk setelah tween selesai
+                -- doCycleReset otomatis trigger dari Uang changed signal
+                -- tunggu sebentar biar signal fire duluan
                 task.wait(1.5)
-                if not _G.AutoFull then return end
-
-                -- ── reset + cycle berikutnya ──────────────────────────────
-                isWaitingInZone    = false
-                jobStarted         = false
-                lastCheckpointName = ""
-                SetStatus("Cycle done — restarting...")
-                startJob()
+                -- fallback kalau signal ga fire (edge case)
+                if _G.AutoFull and not isCycleResetting and not jobStarted then
+                    isWaitingInZone    = false
+                    jobStarted         = false
+                    lastCheckpointName = ""
+                    SetStatus("Cycle done — restarting...")
+                    startJob()
+                end
             else
                 SetStatus("Moving to: " .. targetName)
                 local part = getPart(targetName, folder)
@@ -549,27 +611,6 @@ local function sendWebhook(income)
     end
 end
 
-StatsFolder.Uang:GetPropertyChangedSignal("Value"):Connect(function()
-    local newMoney = StatsFolder.Uang.Value
-    if newMoney > lastMoney then
-        pendingIncome = pendingIncome + (newMoney - lastMoney)
-        if not isWebhookRunning then
-            isWebhookRunning = true
-            task.spawn(function()
-                while isWebhookRunning do
-                    task.wait(65)
-                    if pendingIncome > 0 and _G.WebhookURL ~= "" and _G.WebhookEnabled then
-                        sendWebhook(pendingIncome)
-                        pendingIncome = 0
-                    end
-                    if not _G.AutoFull then isWebhookRunning = false end
-                end
-            end)
-        end
-    end
-    lastMoney = newMoney
-end)
-
 -- ══════════════════════════════════════════════════════════════════════════
 -- STATS LOOP
 -- ══════════════════════════════════════════════════════════════════════════
@@ -610,12 +651,14 @@ MainTab:CreateToggle({
     Callback     = function(Value)
         _G.AutoFull = Value
         if Value then
-            isWaitingInZone = false
-            jobStarted      = false
+            isWaitingInZone  = false
+            jobStarted       = false
+            isCycleResetting = false
             task.spawn(startJob)
         else
             isWaitingInZone    = false
             jobStarted         = false
+            isCycleResetting   = false
             lastCheckpointName = ""
             SetStatus("Idle")
         end
