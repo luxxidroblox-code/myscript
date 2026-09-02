@@ -486,7 +486,7 @@ local function doCycleReset()
     end
 
     LP.CharacterAdded:Wait()
-    task.wait(2)
+    task.wait(5)
 
     if not _G.AutoFull then
         isCycleResetting = false
@@ -497,7 +497,7 @@ local function doCycleReset()
     local terminal = getTerminalForKey(SelectedRouteKey)
     if terminal and terminal.useTP then
         SetStatus("Waiting before teleport to " .. terminal.id .. "...")
-        task.wait(4)
+        task.wait(7)
 
         if not _G.AutoFull then
             isCycleResetting = false
