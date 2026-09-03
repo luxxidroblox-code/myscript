@@ -17,7 +17,6 @@ local VirtualUser       = game:GetService("VirtualUser")
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local HttpService       = game:GetService("HttpService")
-local GroupService      = game:GetService("GroupService")
 
 local LP                = Players.LocalPlayer
 local Remotes           = game:GetService("ReplicatedStorage"):WaitForChild("Remotes")
@@ -330,8 +329,7 @@ fetchRoutes()
 
 -- ══════════════════════════════════════════════════════════════════════════
 -- PREPARE VEHICLE
--- spawns bus at character's current position — character must already be
--- at the terminal before this is called
+-- character MUST already be at terminal before this is called
 -- ══════════════════════════════════════════════════════════════════════════
 local function prepareVehicle()
     Remotes.SpawnCar:FireServer(_G.SelectedBus)
@@ -480,7 +478,7 @@ end
 
 -- ══════════════════════════════════════════════════════════════════════════
 -- START JOB
--- character must already be at terminal before calling this
+-- character MUST already be at terminal; prepareVehicle spawns bus here
 -- ══════════════════════════════════════════════════════════════════════════
 local function startJob()
     if jobStarted then return end
@@ -489,7 +487,6 @@ local function startJob()
         return
     end
 
-    -- spawn bus at character's current position (already at terminal)
     SetStatus("Preparing vehicle...")
     prepareVehicle()
     task.wait(2)
@@ -513,20 +510,22 @@ local function startJob()
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
--- CYCLE RESET  — strict order, no bus spawn until after TP
+-- CYCLE RESET
 --
---   [ALL ROUTES]
+-- Cirebon (useTP = true) — strict order:
+--   1. wait 3s
+--   2. destroy bus          ← NO SpawnCar here
+--   3. kill char → wait respawn
+--   4. countdown 12s        ← character idle at default spawn, no bus
+--   5. TP char → Cirebon terminal
+--   6. wait 1.5s (physics settle)
+--   7. startJob → prepareVehicle → SpawnCar at terminal position
+--
+-- Baranangsiang (useTP = false):
 --   1. wait 3s
 --   2. destroy bus
---   3. kill character  →  wait respawn
---
---   [CIREBON only — useTP = true]
---   4. countdown 12s
---   5. TP character to terminal.spawn
---   6. wait 1.5s  (physics settle)
---
---   [ALL ROUTES]
---   7. startJob  →  prepareVehicle  →  SpawnCar at character position
+--   3. kill char → wait respawn
+--   4. startJob → prepareVehicle → SpawnCar at spawn
 -- ══════════════════════════════════════════════════════════════════════════
 local function doCycleReset()
     if isCycleResetting then return end
@@ -537,40 +536,38 @@ local function doCycleReset()
 
     unlockVehicle()
 
-    -- 1. brief pause before destroy
+    -- 1. brief pause
     SetStatus("Income detected — waiting 3s...")
     task.wait(3)
     if not _G.AutoFull then isCycleResetting = false return end
 
-    -- 2. destroy bus — NO SpawnCar here
+    -- 2. destroy bus — no SpawnCar at any point before step 7
     SetStatus("Destroying bus...")
     local bus = GetMyBus()
-    if bus then
-        bus:Destroy()
-    end
+    if bus then bus:Destroy() end
     task.wait(0.5)
     if not _G.AutoFull then isCycleResetting = false return end
 
-    -- 3. kill character and wait for full respawn
+    -- 3. kill character, wait full respawn
     SetStatus("Resetting character...")
     local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
     if hum then hum.Health = 0 end
     LP.CharacterAdded:Wait()
-    task.wait(1.5)  -- let the new character load fully
+    task.wait(1.5)
     if not _G.AutoFull then isCycleResetting = false return end
 
     local terminal = getTerminalForKey(SelectedRouteKey)
 
     if terminal.useTP then
-        -- 4. countdown 12s — character is idle at spawn, no bus yet
+        -- 4. countdown 12s — bare character, no bus, no TP yet
         for i = 12, 1, -1 do
             if not _G.AutoFull then isCycleResetting = false return end
-            SetStatus(string.format("Teleporting in %ds...", i))
+            SetStatus(string.format("Teleporting to %s in %ds...", terminal.id, i))
             task.wait(1)
         end
         if not _G.AutoFull then isCycleResetting = false return end
 
-        -- 5. TP bare character to Cirebon terminal — still no bus
+        -- 5. TP bare character to terminal — still no bus
         SetStatus("Teleporting to " .. terminal.id .. "...")
         local char = LP.Character or LP.CharacterAdded:Wait()
         local root = char:FindFirstChild("HumanoidRootPart")
@@ -578,22 +575,26 @@ local function doCycleReset()
             root.CFrame = terminal.spawn
         end
 
-        -- 6. let physics settle at the terminal
+        -- 6. physics settle at terminal
         task.wait(1.5)
         if not _G.AutoFull then isCycleResetting = false return end
+
+        -- 7. NOW spawn bus at terminal + start job
+        SetStatus("Starting next cycle at " .. terminal.id .. "...")
+        isCycleResetting = false
+        startJob()
     else
-        -- Baranangsiang: no TP needed, character already at correct spawn
+        -- Baranangsiang: character already at correct spawn after respawn
         task.wait(0.5)
         if not _G.AutoFull then isCycleResetting = false return end
-    end
 
-    -- 7. NOW spawn bus (at terminal position) and start job
-    SetStatus("Starting next cycle...")
-    isCycleResetting = false
-    startJob()
+        SetStatus("Starting next cycle...")
+        isCycleResetting = false
+        startJob()
+    end
 end
 
--- ── detect uang masuk → trigger cycle reset ───────────────────────────────
+-- ── detect income → trigger cycle reset ───────────────────────────────────
 StatsFolder.Uang:GetPropertyChangedSignal("Value"):Connect(function()
     local newMoney = StatsFolder.Uang.Value
     if newMoney > lastMoney then
