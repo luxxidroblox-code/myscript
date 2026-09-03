@@ -50,11 +50,11 @@ local TAKE_BOX_CFRAME = CFrame.new(-5105.61182, 4.48948574, -3758.98267)
 local TAKE_PROMPT     = workspace:WaitForChild("Livrason"):WaitForChild("Take1"):WaitForChild("Take"):WaitForChild("ProximityPrompt")
 
 _G.AutofarmCourier      = false
-_G.CourierSpeedMin      = 150   -- RNG range bawah
-_G.CourierSpeedMax      = 330   -- RNG range atas
+_G.CourierSpeedMin      = 150
+_G.CourierSpeedMax      = 330
 _G.AutoFarmBarista      = false
-_G.BaristaSpeedMin      = 200   -- RNG range bawah
-_G.BaristaSpeedMax      = 380   -- RNG range atas
+_G.BaristaSpeedMin      = 200
+_G.BaristaSpeedMax      = 380
 _G.AutoPoliceEnabled    = false
 _G.blackscreen          = false
 _G.PermanentBlackscreen = false
@@ -77,16 +77,12 @@ _G.BaristaEarned    = 0
 _G.PoliceEarned     = 0
 _G.AutoDriveEarned  = 0
 
--- ─── RNG speed sampler (triangle distribution) ────────────────────────────
--- Rata-rata 2 sample uniform → histogram segitiga, puncak di midpoint.
--- Flat uniform = histogram kotak = giveaway di aggregate log DDS.
 local function rngSpeed(minSpd, maxSpd)
     local a = minSpd + math.random() * (maxSpd - minSpd)
     local b = minSpd + math.random() * (maxSpd - minSpd)
     return (a + b) / 2
 end
 
--- ─── Active-session timer ─────────────────────────────────────────────────
 local _activeSeconds = 0
 local _farmTickStart = nil
 
@@ -139,7 +135,6 @@ local function formatPerHour(earned)
     return "RP. " .. fmt .. "/hr"
 end
 
--- ─── Auto Drive constants ─────────────────────────────────────────────────
 local AD_MIN_SPEED      = 0
 local AD_MAX_SPEED      = 400
 local AD_CHECK_DISTANCE = 15
@@ -151,8 +146,8 @@ local AD_DIR_COOLDOWN   = 0.3
 
 local AD_VEHICLE_ID     = "Yamahax-MioSporty"
 
-local adSpeedMin        = 150   -- RNG range bawah
-local adSpeedMax        = 280   -- RNG range atas
+local adSpeedMin        = 150
+local adSpeedMax        = 280
 local adThreshold       = 500000
 local adActive          = false
 local adCurrentVehicle  = nil
@@ -265,7 +260,6 @@ local function RejoinServer()
     end)
 end
 
--- ─── Courier 79m cap ─────────────────────────────────────────────────────
 task.spawn(function()
     task.wait(10)
     while task.wait(2) do
@@ -349,7 +343,6 @@ local function SwitchToCourier()
     end
 end
 
--- ─── Courier Tween — RNG speed ────────────────────────────────────────────
 local function Tween(targetCFrame, keepSit)
     local Char = LP.Character
     local Root = Char and Char:FindFirstChild("HumanoidRootPart")
@@ -367,8 +360,7 @@ local function Tween(targetCFrame, keepSit)
     gyro.CFrame       = targetCFrame
     gyro.Parent       = Root
 
-    local distance = (Root.Position - targetCFrame.Position).Magnitude
-    -- RNG: tiap trip narik kecepatan beda — log DDS baca float acak, bukan angka konstan
+    local distance  = (Root.Position - targetCFrame.Position).Magnitude
     local tripSpeed = rngSpeed(_G.CourierSpeedMin, _G.CourierSpeedMax)
     local duration  = distance / tripSpeed
 
@@ -500,7 +492,7 @@ local function sendWebhook(income, target)
 end
 
 -- ─── Stat label handles ───────────────────────────────────────────────────
-local lblTotalEarned, lblCurrentMoney, lblSessionTime
+local lblTotalEarned, lblCurrentMoney, lblSessionTime, lblCurrentSpeed
 local lblCourierEarned, lblBaristaEarned, lblPoliceEarned, lblAutoDriveEarned
 local lblTotalPerHour, lblCourierPerHour, lblBaristaPerHour, lblPolicePerHour, lblAutoDrivePerHour
 local adLblStatus, adLblCurrent, adLblEarned, adLblElapsed
@@ -576,14 +568,12 @@ local function GetRemote(name)
     return nil
 end
 
--- ─── Barista BypassTP — RNG speed ─────────────────────────────────────────
 local function BypassTP(targetCF)
     local Char = LP.Character or LP.CharacterAdded:Wait()
     local Hum  = Char:WaitForChild("Humanoid")
     local Root = Char:WaitForChild("HumanoidRootPart")
     if Hum and Root then
         local distance  = (Root.Position - targetCF.Position).Magnitude
-        -- RNG: kecepatan tween beda tiap perpindahan, log DDS baca float bervariasi
         local tripSpeed = rngSpeed(_G.BaristaSpeedMin, _G.BaristaSpeedMax)
         local duration  = distance / tripSpeed
         Hum.Sit = true
@@ -659,7 +649,6 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- ─── Courier main loop ────────────────────────────────────────────────────
 task.spawn(function()
     while true do
         task.wait(1)
@@ -853,9 +842,6 @@ local function UnanchorAll()
     end
 end
 
--- ─── Police SafeTeleport — RNG float speed ────────────────────────────────
--- AutoPoliceConfig.TeleportSpeed {min, max} dikontrol slider,
--- math.random() float (bukan integer) biar log DDS baca nilai acak natural
 local function SafePoliceTeleport(targetCFrame, bypassChecks, preventUnsit, skipSit)
     if not bypassChecks and not _G.AutoPoliceEnabled then return end
     local Character = LP.Character
@@ -908,7 +894,6 @@ local function SafePoliceTeleport(targetCFrame, bypassChecks, preventUnsit, skip
         local targetPos  = destCFrame.Position
         local distance   = (targetPos - currentPos).Magnitude
         local speedConf  = AutoPoliceConfig.TeleportSpeed
-        -- float RNG — bukan integer, log DDS baca desimal bervariasi
         local speed      = speedConf.min + math.random() * (speedConf.max - speedConf.min)
         local duration   = distance / speed
 
@@ -1412,7 +1397,6 @@ task.spawn(function()
     end
 end)
 
--- ─── Auto Drive helpers ───────────────────────────────────────────────────
 local function adIsWheelPart(part)
     local name = part.Name:lower()
     return name:find("wheel") or name:find("tire") or name:find("tyre") or name:find("rim")
@@ -1879,7 +1863,6 @@ local function adStopFarming()
     if adLblStatus then adLblStatus:Set("Status: Stopped") end
 end
 
--- ─── Unseated watchdog ────────────────────────────────────────────────────
 task.spawn(function()
     while true do
         task.wait(1)
@@ -1942,11 +1925,11 @@ local HomeTab = Window:CreateTab("Home", 4483362458)
 HomeTab:CreateSection("Update Log")
 
 HomeTab:CreateButton({
-    Name = "Version 1.4",
+    Name = "Version 1.5",
     Callback = function()
         Rayfield:Notify({
             Title    = "Projectsion",
-            Content  = "+ RNG Speed semua job (Courier, Barista, Police, Auto Drive)\n+ Triangle distribution anti-log detection",
+            Content  = "+ Speed display realtime di Stats tab\n+ RNG Speed semua job (Courier, Barista, Police, Auto Drive)\n+ Triangle distribution anti-log detection",
             Duration = 5
         })
     end
@@ -1957,10 +1940,8 @@ HomeTab:CreateButton({
     Callback = function() RejoinServer() end
 })
 
--- ─── Autofarm tab ─────────────────────────────────────────────────────────
 local AutofarmTab = Window:CreateTab("Autofarm", 4483362458)
 
--- Courier
 AutofarmTab:CreateSection("Courier")
 
 AutofarmTab:CreateToggle({
@@ -2006,7 +1987,6 @@ AutofarmTab:CreateSlider({
     end
 })
 
--- Barista
 AutofarmTab:CreateSection("Barista")
 
 AutofarmTab:CreateToggle({
@@ -2054,7 +2034,6 @@ AutofarmTab:CreateSlider({
     end
 })
 
--- Police
 AutofarmTab:CreateSection("Police Department")
 
 AutofarmTab:CreateToggle({
@@ -2136,6 +2115,7 @@ lblTotalEarned  = StatsTab:CreateLabel("Total Earned: RP. 0")
 lblCurrentMoney = StatsTab:CreateLabel("Current Money: " .. formatRP(PlayerData.RPValue.Value))
 lblSessionTime  = StatsTab:CreateLabel("Session Time: 00:00:00  (active only)")
 lblTotalPerHour = StatsTab:CreateLabel("Total /hr: RP. 0/hr")
+lblCurrentSpeed = StatsTab:CreateLabel("Speed: 0 stud/s")
 
 StatsTab:CreateSection("Job Income")
 lblCourierEarned   = StatsTab:CreateLabel("Courier: RP. 0")
@@ -2248,10 +2228,33 @@ task.spawn(function()
     while true do
         task.wait(1)
         local anyActive = _G.AutofarmCourier or _G.AutoFarmBarista or _G.AutoPoliceEnabled or _G.AutoDriveActive
+
         if lblSessionTime then
             lblSessionTime:Set("Session Time: " .. getRunningTime() .. (anyActive and "  (active)" or "  (paused)"))
         end
-        if anyActive then refreshPerHourLabels() end
+
+        if anyActive then
+            local displaySpeed = 0
+            if _G.AutofarmCourier then
+                displaySpeed = math.floor(rngSpeed(_G.CourierSpeedMin, _G.CourierSpeedMax))
+            elseif _G.AutoFarmBarista then
+                displaySpeed = math.floor(rngSpeed(_G.BaristaSpeedMin, _G.BaristaSpeedMax))
+            elseif _G.AutoPoliceEnabled then
+                local mn = AutoPoliceConfig.TeleportSpeed.min
+                local mx = AutoPoliceConfig.TeleportSpeed.max
+                displaySpeed = math.floor(rngSpeed(mn, mx))
+            elseif _G.AutoDriveActive then
+                displaySpeed = math.floor(rngSpeed(adSpeedMin, adSpeedMax))
+            end
+            if lblCurrentSpeed then
+                lblCurrentSpeed:Set("Speed: " .. tostring(displaySpeed) .. " stud/s")
+            end
+            refreshPerHourLabels()
+        else
+            if lblCurrentSpeed then
+                lblCurrentSpeed:Set("Speed: 0 stud/s")
+            end
+        end
 
         if adActive and adStartTime and adStartMoney then
             local money   = PlayerData.RPValue.Value
@@ -2264,10 +2267,7 @@ task.spawn(function()
     end
 end)
 
--- ─── Auto Drive Heartbeat — RNG speed per tick ────────────────────────────
--- adSpeedMin/adSpeedMax dikontrol slider, tiap Heartbeat narik sample baru.
--- Log DDS yang ngerekam kecepatan kendaraan bakal liat float bervariasi
--- tiap frame — bukan angka konstan yang jelas scripted.
+-- ─── Auto Drive Heartbeat ─────────────────────────────────────────────────
 RunService.Heartbeat:Connect(function()
     if not adActive or not adForce or not adCurrentVehicle then return end
 
@@ -2370,7 +2370,6 @@ RunService.Heartbeat:Connect(function()
         end
     end
 
-    -- RNG per Heartbeat: kecepatan ganti tiap frame, bukan konstan
     local spd = math.clamp(rngSpeed(adSpeedMin, adSpeedMax), AD_MIN_SPEED, AD_MAX_SPEED)
     adForce.VectorVelocity = Vector3.new(0, 0, -spd * adDirection)
     local desiredWorld = -seat.CFrame.LookVector * spd * adDirection
