@@ -17,6 +17,7 @@ local VirtualUser       = game:GetService("VirtualUser")
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local HttpService       = game:GetService("HttpService")
+local GroupService      = game:GetService("GroupService")
 
 local LP                = Players.LocalPlayer
 local Remotes           = game:GetService("ReplicatedStorage"):WaitForChild("Remotes")
@@ -44,6 +45,7 @@ _G.WebhookEnabled  = false
 local TWEEN_SPEED      = 100
 local ARRIVE_DELAY     = 60
 local INCOME_THRESHOLD = 30_000_000
+local STAFF_GROUP_ID   = 269201883
 
 -- ── state ─────────────────────────────────────────────────────────────────
 local isWaitingInZone      = false
@@ -133,26 +135,64 @@ LP.Idled:Connect(function()
     end
 end)
 
--- ── auto kick intruders ───────────────────────────────────────────────────
-local function checkAndKick()
-    local playerList = Players:GetPlayers()
-    if #playerList > 1 then
-        local names = {}
-        for _, p in ipairs(playerList) do
-            if p ~= LP then table.insert(names, p.Name) end
+-- ══════════════════════════════════════════════════════════════════════════
+-- STAFF GROUP KICK
+-- ══════════════════════════════════════════════════════════════════════════
+local kickedSelf     = false
+local checkedPlayers = {}
+
+local function isStaffMember(player)
+    if checkedPlayers[player.UserId] ~= nil then
+        return checkedPlayers[player.UserId]
+    end
+    local ok, result = pcall(function()
+        return player:IsInGroup(STAFF_GROUP_ID)
+    end)
+    local inGroup = ok and result == true
+    checkedPlayers[player.UserId] = inGroup
+    return inGroup
+end
+
+local function kickSelfIfStaffPresent()
+    if kickedSelf or not _G.AutoKickEnabled then return end
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p == LP then continue end
+        if isStaffMember(p) then
+            kickedSelf = true
+            task.wait(0.2)
+            LP:Kick(
+                "\n[Projectsion]\nStaff member detected in server:\n"
+                .. p.Name .. " (Group " .. STAFF_GROUP_ID .. ")\nExiting safely."
+            )
+            return
         end
-        LP:Kick("admim mesum joim private server lu woi aowkaowk: " .. table.concat(names, ", "))
     end
 end
 
 Players.PlayerAdded:Connect(function(p)
     if p == LP then return end
-    task.wait(0.5)
-    checkAndKick()
+    task.delay(2, function()
+        if not _G.AutoKickEnabled or kickedSelf then return end
+        if isStaffMember(p) then
+            kickedSelf = true
+            task.wait(0.2)
+            LP:Kick(
+                "\n[Projectsion]\nStaff member detected: "
+                .. p.Name .. "\nExiting safely."
+            )
+        end
+    end)
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    checkedPlayers[p.UserId] = nil
 end)
 
 task.spawn(function()
-    while true do task.wait(3) checkAndKick() end
+    while task.wait(8) do
+        if kickedSelf then break end
+        kickSelfIfStaffPresent()
+    end
 end)
 
 -- ── format helpers ────────────────────────────────────────────────────────
@@ -290,6 +330,8 @@ fetchRoutes()
 
 -- ══════════════════════════════════════════════════════════════════════════
 -- PREPARE VEHICLE
+-- spawns bus at character's current position — character must already be
+-- at the terminal before this is called
 -- ══════════════════════════════════════════════════════════════════════════
 local function prepareVehicle()
     Remotes.SpawnCar:FireServer(_G.SelectedBus)
@@ -438,6 +480,7 @@ end
 
 -- ══════════════════════════════════════════════════════════════════════════
 -- START JOB
+-- character must already be at terminal before calling this
 -- ══════════════════════════════════════════════════════════════════════════
 local function startJob()
     if jobStarted then return end
@@ -446,6 +489,7 @@ local function startJob()
         return
     end
 
+    -- spawn bus at character's current position (already at terminal)
     SetStatus("Preparing vehicle...")
     prepareVehicle()
     task.wait(2)
@@ -469,16 +513,20 @@ local function startJob()
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
--- CYCLE RESET
--- urutan wajib:
---   1. task.wait(3)          ← jeda sebelum destroy
+-- CYCLE RESET  — strict order, no bus spawn until after TP
+--
+--   [ALL ROUTES]
+--   1. wait 3s
 --   2. destroy bus
---   3. kill character
---   4. CharacterAdded:Wait()
---   5. [Cirebon only] countdown 12 detik
---   6. [Cirebon only] TP character ke terminal
---   7. task.wait(1.5)
---   8. startJob              ← spawn bus di posisi character (sudah di terminal)
+--   3. kill character  →  wait respawn
+--
+--   [CIREBON only — useTP = true]
+--   4. countdown 12s
+--   5. TP character to terminal.spawn
+--   6. wait 1.5s  (physics settle)
+--
+--   [ALL ROUTES]
+--   7. startJob  →  prepareVehicle  →  SpawnCar at character position
 -- ══════════════════════════════════════════════════════════════════════════
 local function doCycleReset()
     if isCycleResetting then return end
@@ -489,53 +537,57 @@ local function doCycleReset()
 
     unlockVehicle()
 
-    -- 1. jeda 3 detik sebelum destroy
-    SetStatus("Income detected — waiting 3s before reset...")
+    -- 1. brief pause before destroy
+    SetStatus("Income detected — waiting 3s...")
     task.wait(3)
     if not _G.AutoFull then isCycleResetting = false return end
 
-    -- 2. destroy bus
+    -- 2. destroy bus — NO SpawnCar here
     SetStatus("Destroying bus...")
     local bus = GetMyBus()
-    if bus then bus:Destroy() end
+    if bus then
+        bus:Destroy()
+    end
     task.wait(0.5)
+    if not _G.AutoFull then isCycleResetting = false return end
 
-    -- 3. kill character
+    -- 3. kill character and wait for full respawn
     SetStatus("Resetting character...")
     local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
     if hum then hum.Health = 0 end
-
-    -- 4. tunggu karakter respawn
     LP.CharacterAdded:Wait()
-    task.wait(1)
+    task.wait(1.5)  -- let the new character load fully
+    if not _G.AutoFull then isCycleResetting = false return end
 
     local terminal = getTerminalForKey(SelectedRouteKey)
 
     if terminal.useTP then
-        -- 5. countdown 12 detik
+        -- 4. countdown 12s — character is idle at spawn, no bus yet
         for i = 12, 1, -1 do
             if not _G.AutoFull then isCycleResetting = false return end
-            SetStatus(string.format("Teleporting in: %ds", i))
+            SetStatus(string.format("Teleporting in %ds...", i))
             task.wait(1)
         end
         if not _G.AutoFull then isCycleResetting = false return end
 
-        -- 6. TP character ke terminal Cirebon
-        SetStatus("Teleporting to terminal " .. terminal.id .. "...")
+        -- 5. TP bare character to Cirebon terminal — still no bus
+        SetStatus("Teleporting to " .. terminal.id .. "...")
         local char = LP.Character or LP.CharacterAdded:Wait()
         local root = char:FindFirstChild("HumanoidRootPart")
-        if root then root.CFrame = terminal.spawn end
+        if root then
+            root.CFrame = terminal.spawn
+        end
 
-        -- 7. jeda settling setelah TP
+        -- 6. let physics settle at the terminal
         task.wait(1.5)
         if not _G.AutoFull then isCycleResetting = false return end
     else
-        -- Baranangsiang: langsung lanjut tanpa TP
-        task.wait(1)
+        -- Baranangsiang: no TP needed, character already at correct spawn
+        task.wait(0.5)
         if not _G.AutoFull then isCycleResetting = false return end
     end
 
-    -- 8. startJob — prepareVehicle spawn bus di posisi character (sudah di terminal)
+    -- 7. NOW spawn bus (at terminal position) and start job
     SetStatus("Starting next cycle...")
     isCycleResetting = false
     startJob()
@@ -750,7 +802,7 @@ MainTab:CreateSection("Autofarm Bus")
 
 MainTab:CreateParagraph({
     Title   = "WARNING",
-    Content = "USE JB5 ONLY. Turn on Auto-Kick when staff joins.",
+    Content = "USE JB5 ONLY. Auto-Kick detects group " .. STAFF_GROUP_ID .. " members.",
 })
 
 MainTab:CreateToggle({
@@ -992,6 +1044,57 @@ ConfigTab:CreateToggle({
                 Image    = "alert-triangle",
             })
         end
+    end,
+})
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- UI — SAFETY TAB
+-- ══════════════════════════════════════════════════════════════════════════
+local SafetyTab = Window:CreateTab("Safety", "shield")
+SafetyTab:CreateSection("Staff Detection")
+
+SafetyTab:CreateParagraph({
+    Title   = "How It Works",
+    Content = "Monitors all players for membership in group "
+        .. STAFF_GROUP_ID
+        .. ". When detected, kicks YOU out of the server safely.",
+})
+
+SafetyTab:CreateToggle({
+    Name         = "Auto-Kick on Staff Detection",
+    CurrentValue = false,
+    Flag         = "StaffKick",
+    Callback     = function(Value)
+        _G.AutoKickEnabled = Value
+        kickedSelf = false
+        if Value then
+            SetStatus("Staff detection: ACTIVE")
+            task.spawn(kickSelfIfStaffPresent)
+        else
+            SetStatus("Staff detection: OFF")
+        end
+    end,
+})
+
+SafetyTab:CreateButton({
+    Name     = "Scan Now",
+    Callback = function()
+        if not _G.AutoKickEnabled then
+            Rayfield:Notify({
+                Title    = "Detection Off",
+                Content  = "Enable the toggle first.",
+                Duration = 3,
+                Image    = "alert-triangle",
+            })
+            return
+        end
+        kickSelfIfStaffPresent()
+        Rayfield:Notify({
+            Title    = "Scan Complete",
+            Content  = "No staff members found.",
+            Duration = 3,
+            Image    = "shield",
+        })
     end,
 })
 
