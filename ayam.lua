@@ -66,7 +66,7 @@ local lastCheckpointFolder = "Checkpoints"
 local isRecovering         = false
 
 -- ── route state ───────────────────────────────────────────────────────────
-local RouteData        = {}   -- key → { Reward, TotalCheckpoints, DisplayName, Terminal }
+local RouteData        = {}
 local RouteSortedKeys  = {}
 local SelectedRouteKey = ""
 local LabelToKey       = {}
@@ -75,11 +75,10 @@ local StatusLabel, UangLabel, EarningLabel, TimeLabel, FPSLabel, PingLabel
 local RouteRewardLabel
 
 -- ── terminal registry ─────────────────────────────────────────────────────
--- Terminal string harus match persis dengan arg InvokeServer("Baranangsiang") dll
 local TERMINALS = {
     {
         id    = "Baranangsiang",
-        spawn = CFrame.new(0, 0, 0),   -- default; karakter sudah di sini saat awal
+        spawn = CFrame.new(0, 0, 0),
         useTP = false,
     },
     {
@@ -92,7 +91,6 @@ local TERMINALS = {
     },
 }
 
--- lookup terminal by route key
 local function getTerminalForKey(key)
     local info = RouteData[key]
     if not info then return TERMINALS[1] end
@@ -215,7 +213,7 @@ local TP_Locations = {
 }
 
 -- ══════════════════════════════════════════════════════════════════════════
--- ROUTE FETCH + SORT  (semua terminal sekaligus)
+-- ROUTE FETCH + SORT
 -- ══════════════════════════════════════════════════════════════════════════
 local function buildLabelForKey(key)
     local info = RouteData[key]
@@ -423,7 +421,7 @@ local function moveTo(targetPart)
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
--- START JOB  — TP ke terminal dulu kalau perlu
+-- START JOB  — bersih, tanpa TP logic
 -- ══════════════════════════════════════════════════════════════════════════
 local function startJob()
     if jobStarted then return end
@@ -432,24 +430,9 @@ local function startJob()
         return
     end
 
-    local terminal = getTerminalForKey(SelectedRouteKey)
-
-    -- ── TP karakter ke terminal spawn point ───────────────────────────────
-    if terminal.useTP then
-        SetStatus("Teleporting to terminal " .. terminal.id .. "...")
-        local char = LP.Character or LP.CharacterAdded:Wait()
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if root then
-            root.CFrame = terminal.spawn
-        end
-        task.wait(1.5)
-        if not _G.AutoFull then return end
-    end
-
     SetStatus("Preparing vehicle...")
     prepareVehicle()
     task.wait(2)
-
     if not _G.AutoFull then return end
 
     SetStatus("Invoke job: " .. SelectedRouteKey)
@@ -470,7 +453,20 @@ local function startJob()
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
+-- TP ke terminal helper  — dipake doCycleReset & toggle on
+-- ══════════════════════════════════════════════════════════════════════════
+local function teleportToTerminal(terminal)
+    SetStatus("Teleporting to terminal " .. terminal.id .. "...")
+    local char = LP.Character or LP.CharacterAdded:Wait()
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if root then root.CFrame = terminal.spawn end
+    task.wait(1.5)
+end
+
+-- ══════════════════════════════════════════════════════════════════════════
 -- CYCLE RESET
+-- Baranangsiang : kill → CharacterAdded → startJob langsung
+-- Cirebon       : kill → CharacterAdded → tunggu 12 detik → TP → startJob
 -- ══════════════════════════════════════════════════════════════════════════
 local function doCycleReset()
     if isCycleResetting then return end
@@ -480,20 +476,44 @@ local function doCycleReset()
     lastCheckpointName = ""
 
     unlockVehicle()
-
     SetStatus("Income detected — resetting character...")
 
     local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-    if hum then
-        hum.Health = 0
-    end
+    if hum then hum.Health = 0 end
 
     LP.CharacterAdded:Wait()
-    task.wait(2)
 
-    if not _G.AutoFull then
-        isCycleResetting = false
-        return
+    local terminal = getTerminalForKey(SelectedRouteKey)
+
+    if terminal.useTP then
+        -- Cirebon: tunggu 12 detik baru TP
+        for i = 12, 1, -1 do
+            if not _G.AutoFull then
+                isCycleResetting = false
+                return
+            end
+            SetStatus(string.format("Recovering... %ds", i))
+            task.wait(1)
+        end
+
+        if not _G.AutoFull then
+            isCycleResetting = false
+            return
+        end
+
+        teleportToTerminal(terminal)
+
+        if not _G.AutoFull then
+            isCycleResetting = false
+            return
+        end
+    else
+        -- Baranangsiang: langsung lanjut
+        task.wait(1)
+        if not _G.AutoFull then
+            isCycleResetting = false
+            return
+        end
     end
 
     SetStatus("Character ready — starting next cycle...")
@@ -722,7 +742,17 @@ MainTab:CreateToggle({
             isWaitingInZone  = false
             jobStarted       = false
             isCycleResetting = false
-            task.spawn(startJob)
+
+            -- fresh-start: kalau rute Cirebon, TP dulu sebelum startJob
+            local terminal = getTerminalForKey(SelectedRouteKey)
+            if terminal.useTP then
+                task.spawn(function()
+                    teleportToTerminal(terminal)
+                    if _G.AutoFull then startJob() end
+                end)
+            else
+                task.spawn(startJob)
+            end
         else
             unlockVehicle()
             isWaitingInZone    = false
