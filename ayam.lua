@@ -437,7 +437,8 @@ local function moveTo(targetPart)
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
--- START JOB  — bersih, tanpa TP logic
+-- START JOB
+-- urutan: TP character dulu → spawn bus di posisi itu → invoke job
 -- ══════════════════════════════════════════════════════════════════════════
 local function startJob()
     if jobStarted then return end
@@ -446,11 +447,24 @@ local function startJob()
         return
     end
 
+    -- 1. TP character ke terminal dulu, sebelum bus spawned
+    local terminal = getTerminalForKey(SelectedRouteKey)
+    if terminal.useTP then
+        SetStatus("Teleporting to terminal " .. terminal.id .. "...")
+        local char = LP.Character or LP.CharacterAdded:Wait()
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then root.CFrame = terminal.spawn end
+        task.wait(1.5)
+        if not _G.AutoFull then return end
+    end
+
+    -- 2. spawn bus di posisi character yang sudah di terminal
     SetStatus("Preparing vehicle...")
     prepareVehicle()
     task.wait(2)
     if not _G.AutoFull then return end
 
+    -- 3. invoke job
     SetStatus("Invoke job: " .. SelectedRouteKey)
     local res = Remotes:WaitForChild("StartBusJob"):InvokeServer(SelectedRouteKey, nil)
 
@@ -472,8 +486,8 @@ end
 -- CYCLE RESET
 -- 1. destroy bus
 -- 2. kill character
--- 3. kalau Cirebon: tunggu 12 detik → TP character ke Cirebon
--- 4. startJob (spawn bus baru di posisi character)
+-- 3. kalau Cirebon: countdown 12 detik
+-- 4. startJob (yang urus TP + spawn bus)
 -- ══════════════════════════════════════════════════════════════════════════
 local function doCycleReset()
     if isCycleResetting then return end
@@ -497,10 +511,9 @@ local function doCycleReset()
 
     LP.CharacterAdded:Wait()
 
+    -- 3. countdown kalau terminal butuh TP
     local terminal = getTerminalForKey(SelectedRouteKey)
-
     if terminal.useTP then
-        -- 3. tunggu 12 detik, TP character bare ke Cirebon
         for i = 12, 1, -1 do
             if not _G.AutoFull then
                 isCycleResetting = false
@@ -509,24 +522,11 @@ local function doCycleReset()
             SetStatus(string.format("Recovering... %ds", i))
             task.wait(1)
         end
-
-        if not _G.AutoFull then
-            isCycleResetting = false
-            return
-        end
-
-        SetStatus("Teleporting to terminal " .. terminal.id .. "...")
-        local char = LP.Character or LP.CharacterAdded:Wait()
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if root then root.CFrame = terminal.spawn end
-        task.wait(1.5)
-
         if not _G.AutoFull then
             isCycleResetting = false
             return
         end
     else
-        -- Baranangsiang: langsung lanjut
         task.wait(1)
         if not _G.AutoFull then
             isCycleResetting = false
@@ -534,13 +534,13 @@ local function doCycleReset()
         end
     end
 
-    -- 4. startJob spawn bus baru di posisi character sekarang
+    -- 4. startJob urus TP + spawn bus
     SetStatus("Starting next cycle...")
     isCycleResetting = false
     startJob()
 end
 
--- ── detect uang masuk → trigger cycle reset ───────────────────────────────
+-- ── detect uang masuk ─────────────────────────────────────────────────────
 StatsFolder.Uang:GetPropertyChangedSignal("Value"):Connect(function()
     local newMoney = StatsFolder.Uang.Value
     if newMoney > lastMoney then
@@ -761,20 +761,7 @@ MainTab:CreateToggle({
             isWaitingInZone  = false
             jobStarted       = false
             isCycleResetting = false
-
-            local terminal = getTerminalForKey(SelectedRouteKey)
-            if terminal.useTP then
-                task.spawn(function()
-                    SetStatus("Teleporting to terminal " .. terminal.id .. "...")
-                    local char = LP.Character or LP.CharacterAdded:Wait()
-                    local root = char:FindFirstChild("HumanoidRootPart")
-                    if root then root.CFrame = terminal.spawn end
-                    task.wait(1.5)
-                    if _G.AutoFull then startJob() end
-                end)
-            else
-                task.spawn(startJob)
-            end
+            task.spawn(startJob)
         else
             unlockVehicle()
             isWaitingInZone    = false
