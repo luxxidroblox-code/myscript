@@ -188,6 +188,22 @@ local function unlockVehicle()
     lockedRootPart = nil
 end
 
+-- ── get owned bus from workspace ──────────────────────────────────────────
+local function GetMyBus()
+    local spawnedFolder = workspace:FindFirstChild("SpawnedVehicles")
+    if not spawnedFolder then return nil end
+    for _, veh in ipairs(spawnedFolder:GetChildren()) do
+        local ownerAttr = veh:GetAttribute("Owner")
+        local ownerVal  = veh:FindFirstChild("Owner")
+        if (ownerAttr and tostring(ownerAttr) == LP.Name)
+        or (ownerVal  and tostring(ownerVal.Value) == LP.Name)
+        or veh.Name:find(LP.Name) then
+            return veh
+        end
+    end
+    return nil
+end
+
 -- ── bus list ──────────────────────────────────────────────────────────────
 for _, car in pairs(OwnedCarsFolder:GetChildren()) do
     local carID   = car.Name
@@ -453,20 +469,11 @@ local function startJob()
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
--- TP ke terminal helper  — dipake doCycleReset & toggle on
--- ══════════════════════════════════════════════════════════════════════════
-local function teleportToTerminal(terminal)
-    SetStatus("Teleporting to terminal " .. terminal.id .. "...")
-    local char = LP.Character or LP.CharacterAdded:Wait()
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if root then root.CFrame = terminal.spawn end
-    task.wait(1.5)
-end
-
--- ══════════════════════════════════════════════════════════════════════════
 -- CYCLE RESET
--- Baranangsiang : kill → CharacterAdded → startJob langsung
--- Cirebon       : kill → CharacterAdded → tunggu 12 detik → TP → startJob
+-- 1. destroy bus
+-- 2. kill character
+-- 3. kalau Cirebon: tunggu 12 detik → TP character ke Cirebon
+-- 4. startJob (spawn bus baru di posisi character)
 -- ══════════════════════════════════════════════════════════════════════════
 local function doCycleReset()
     if isCycleResetting then return end
@@ -476,8 +483,15 @@ local function doCycleReset()
     lastCheckpointName = ""
 
     unlockVehicle()
-    SetStatus("Income detected — resetting character...")
+    SetStatus("Income detected — destroying bus...")
 
+    -- 1. destroy bus
+    local bus = GetMyBus()
+    if bus then bus:Destroy() end
+    task.wait(0.5)
+
+    -- 2. kill character
+    SetStatus("Resetting character...")
     local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
     if hum then hum.Health = 0 end
 
@@ -486,7 +500,7 @@ local function doCycleReset()
     local terminal = getTerminalForKey(SelectedRouteKey)
 
     if terminal.useTP then
-        -- Cirebon: tunggu 12 detik baru TP
+        -- 3. tunggu 12 detik, TP character bare ke Cirebon
         for i = 12, 1, -1 do
             if not _G.AutoFull then
                 isCycleResetting = false
@@ -501,7 +515,11 @@ local function doCycleReset()
             return
         end
 
-        teleportToTerminal(terminal)
+        SetStatus("Teleporting to terminal " .. terminal.id .. "...")
+        local char = LP.Character or LP.CharacterAdded:Wait()
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then root.CFrame = terminal.spawn end
+        task.wait(1.5)
 
         if not _G.AutoFull then
             isCycleResetting = false
@@ -516,12 +534,13 @@ local function doCycleReset()
         end
     end
 
-    SetStatus("Character ready — starting next cycle...")
+    -- 4. startJob spawn bus baru di posisi character sekarang
+    SetStatus("Starting next cycle...")
     isCycleResetting = false
     startJob()
 end
 
--- ── detect uang masuk → trigger cycle reset (minimum 30 juta) ────────────
+-- ── detect uang masuk → trigger cycle reset ───────────────────────────────
 StatsFolder.Uang:GetPropertyChangedSignal("Value"):Connect(function()
     local newMoney = StatsFolder.Uang.Value
     if newMoney > lastMoney then
@@ -743,11 +762,14 @@ MainTab:CreateToggle({
             jobStarted       = false
             isCycleResetting = false
 
-            -- fresh-start: kalau rute Cirebon, TP dulu sebelum startJob
             local terminal = getTerminalForKey(SelectedRouteKey)
             if terminal.useTP then
                 task.spawn(function()
-                    teleportToTerminal(terminal)
+                    SetStatus("Teleporting to terminal " .. terminal.id .. "...")
+                    local char = LP.Character or LP.CharacterAdded:Wait()
+                    local root = char:FindFirstChild("HumanoidRootPart")
+                    if root then root.CFrame = terminal.spawn end
+                    task.wait(1.5)
                     if _G.AutoFull then startJob() end
                 end)
             else
