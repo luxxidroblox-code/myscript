@@ -83,11 +83,11 @@ local LocalPlayer      = Players.LocalPlayer
 
 local isEventRunning   = false
 local targetEarningLimit = 0
-local tweenSpeed       = 190
+local tweenSpeed       = 150
 local tweenHeight      = 4
-local tweenArriveDistance = 34
+local tweenArriveDistance = 33
 local minigameStart    = 2
-local minigameEnd      = 18
+local minigameEnd      = 8
 
 local webhookUrl       = ""
 local webhookEnabled   = false
