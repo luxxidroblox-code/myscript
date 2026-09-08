@@ -7,7 +7,7 @@ local lp = Players.LocalPlayer
 local char = lp.Character or lp.CharacterAdded:Wait()
 
 local isRunning = true
-local teleportTime = 3 -- detik per checkpoint
+local teleportTime = 3
 
 local checkpoints = {
     CFrame.new(306.730, 150.496, 2481.263, 0.937, 0.005, -0.350, -0.002, 1.000, 0.009, 0.350, -0.008, 0.937),
@@ -58,7 +58,6 @@ local function resetVelocity(model)
     end
 end
 
--- tween lurus langsung ke target tanpa naik
 local function tweenTo(model, targetCFrame, duration)
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum or not hum.SeatPart then return end
@@ -101,18 +100,18 @@ end
 local ShowRaceTrack = RS.Race.Remotes.ShowRaceTrack
 
 while isRunning do
+    char = lp.Character or lp.CharacterAdded:Wait()
+
     local vehicle = getVehicle()
 
-    -- Step 1: teleport instant ke start
+    -- Step 1: instant ke start
     if vehicle then
         instantTo(vehicle, checkpoints[1])
     else
         char:PivotTo(checkpoints[1])
     end
 
-    -- Step 2: task.wait 15 lalu listen ShowRaceTrack
-    task.wait(15)
-
+    -- Step 2: listen ShowRaceTrack
     local raceStarted = false
     local conn
     conn = ShowRaceTrack.OnClientEvent:Connect(function(state)
@@ -123,7 +122,7 @@ while isRunning do
     end)
 
     local elapsed = 0
-    while not raceStarted and elapsed < 30 do
+    while not raceStarted and elapsed < 60 do
         task.wait(0.5)
         elapsed += 0.5
     end
@@ -135,7 +134,10 @@ while isRunning do
         continue
     end
 
-    -- Step 3: tween lurus ke tiap checkpoint, index 2 dst (index 1 = start)
+    task.wait(30) -- ingame countdown 30 detik (vehicle prepare/spawn)
+    task.wait(15) -- race countdown buffer
+
+    -- Step 3: tween tiap checkpoint
     for i = 2, #checkpoints do
         if not isRunning then break end
 
@@ -149,6 +151,6 @@ while isRunning do
         task.wait(1)
     end
 
-    -- Step 4: finish — langsung loop balik ke atas (restart)
+    -- Step 4: finish, langsung loop balik
     task.wait(2)
 end
