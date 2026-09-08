@@ -1,97 +1,13 @@
 -- Lua | VoidlineHub | Roblox Client Script
 
 local RS = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
 local lp = Players.LocalPlayer
 local char = lp.Character or lp.CharacterAdded:Wait()
 
 local isRunning = true
-local flySpeed = 300
-local flyHeight = 8 -- terbang di ketinggian ini di atas checkpoint
-
--- ============================================================
--- DESTROY WHEELS
--- ============================================================
-local function stripWheels(model)
-    local wheels = model:FindFirstChild("Wheels") or model:FindFirstChild("wheels")
-    if wheels then wheels:Destroy() end
-    local body = model:FindFirstChild("Body")
-    if body then
-        local mainPart = body:FindFirstChild("MainPart")
-        if mainPart and mainPart:IsA("BasePart") then
-            mainPart.CanCollide = false
-        end
-    end
-end
-
--- ============================================================
--- FLY TO — berhenti saat tepat di atas target (XZ match, Y = target + flyHeight)
--- ============================================================
-local function flyModelTo(model, targetPos)
-    local root = model.PrimaryPart
-        or model:FindFirstChild("DriveSeat")
-        or model:FindFirstChild("VehicleSeat")
-        or model:FindFirstChildWhichIsA("BasePart")
-    if not root then return end
-
-    -- final destination: langsung di atas checkpoint
-    local destination = Vector3.new(targetPos.X, targetPos.Y + flyHeight, targetPos.Z)
-
-    local noclipConn = RunService.Stepped:Connect(function()
-        for _, v in ipairs(model:GetDescendants()) do
-            if v:IsA("BasePart") then v.CanCollide = false end
-        end
-        if char then
-            for _, v in ipairs(char:GetDescendants()) do
-                if v:IsA("BasePart") then v.CanCollide = false end
-            end
-        end
-    end)
-
-    local BG = Instance.new("BodyGyro")
-    BG.P = 9e4
-    BG.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-    BG.D = 50
-    BG.Parent = root
-
-    local BV = Instance.new("BodyVelocity")
-    BV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-    BV.Velocity = Vector3.zero
-    BV.Parent = root
-
-    local timeout = os.clock()
-    while isRunning do
-        local cur = root.Position
-        local dir = destination - cur
-
-        -- stop: XZ dalam 3 studs DAN Y dalam 2 studs dari destination
-        local xzDist = Vector3.new(dir.X, 0, dir.Z).Magnitude
-        local yDiff  = math.abs(dir.Y)
-        if xzDist < 3 and yDiff < 2 then break end
-
-        if os.clock() - timeout > 60 then break end
-
-        BV.Velocity = dir.Unit * flySpeed
-        BG.CFrame = CFrame.lookAt(cur, destination)
-        task.wait()
-    end
-
-    BV.Velocity = Vector3.zero
-    task.wait(0.2)
-    BG:Destroy()
-    BV:Destroy()
-
-    for _, v in ipairs(model:GetDescendants()) do
-        if v:IsA("BasePart") then
-            v.AssemblyLinearVelocity = Vector3.zero
-            v.AssemblyAngularVelocity = Vector3.zero
-            v.CanCollide = true
-        end
-    end
-
-    noclipConn:Disconnect()
-end
+local teleportTime = 3 -- detik turun ke checkpoint
 
 -- ============================================================
 -- GET VEHICLE
@@ -99,23 +15,77 @@ end
 local function getVehicle()
     local hum = char:FindFirstChildOfClass("Humanoid")
     if hum and hum.SeatPart then
-        return hum.SeatPart:FindFirstAncestorOfClass("Model")
+        return hum.SeatPart.Parent
     end
     return nil
 end
 
 -- ============================================================
--- STEP 1: Strip wheels → fly ke start
+-- v191 TWEEN METHOD (ported dari DEJ script)
 -- ============================================================
-local startPos = Vector3.new(306.730, 150.496, 2481.263)
+local function resetVelocity(model)
+    for _, part in ipairs(model:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.AssemblyLinearVelocity = Vector3.zero
+            part.AssemblyAngularVelocity = Vector3.zero
+        end
+    end
+end
+
+local function tweenModelTo(model, targetCFrame, duration)
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or not hum.SeatPart then return end
+
+    model.PrimaryPart = hum.SeatPart
+    local primaryPart = model.PrimaryPart
+    if not primaryPart then return end
+
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut)
+    local cfValue = Instance.new("CFrameValue")
+    cfValue.Value = model:GetPrimaryPartCFrame()
+
+    cfValue.Changed:Connect(function()
+        model:PivotTo(cfValue.Value)
+        resetVelocity(model)
+    end)
+
+    local tween = TweenService:Create(cfValue, tweenInfo, { Value = targetCFrame })
+    tween:Play()
+    tween.Completed:Wait()
+    cfValue:Destroy()
+    resetVelocity(model)
+end
+
+local function flyTo(model, targetCFrame)
+    local primaryPart = model.PrimaryPart
+    if not primaryPart then return end
+
+    workspace.Gravity = 0
+    resetVelocity(model)
+
+    -- naik dulu tinggi
+    tweenModelTo(model, primaryPart.CFrame + Vector3.new(0, 1000, 0), 0)
+    -- geser ke atas target
+    tweenModelTo(model, targetCFrame + Vector3.new(0, 1000, 0), 0)
+    -- turun ke target
+    tweenModelTo(model, targetCFrame, teleportTime)
+
+    workspace.Gravity = 196.2
+    resetVelocity(model)
+    task.wait(1.2)
+end
+
+-- ============================================================
+-- STEP 1: Fly ke start race
+-- ============================================================
+local startCFrame = CFrame.new(306.730, 150.496, 2481.263, 0.937, 0.005, -0.350, -0.002, 1.000, 0.009, 0.350, -0.008, 0.937)
 
 local vehicle = getVehicle()
 if vehicle then
-    stripWheels(vehicle)
-    task.wait(0.3)
-    flyModelTo(vehicle, startPos)
+    vehicle.PrimaryPart = char:FindFirstChildOfClass("Humanoid").SeatPart
+    flyTo(vehicle, startCFrame)
 else
-    char:PivotTo(CFrame.new(startPos))
+    char:PivotTo(startCFrame)
 end
 
 -- ============================================================
@@ -195,12 +165,14 @@ while not finished do
     local target = getClosest(targets)
     if not target then break end
 
+    local destCFrame = CFrame.new(target.part.Position + Vector3.new(0, 4, 0))
+
     local v = getVehicle()
     if v then
-        stripWheels(v)
-        flyModelTo(v, target.part.Position)
+        v.PrimaryPart = char:FindFirstChildOfClass("Humanoid").SeatPart
+        flyTo(v, destCFrame)
     else
-        char:PivotTo(CFrame.new(target.part.Position + Vector3.new(0, flyHeight, 0)))
+        char:PivotTo(destCFrame)
     end
 
     if target.label:find("FINISH") then
