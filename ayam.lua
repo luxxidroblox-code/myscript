@@ -7,7 +7,7 @@ local lp = Players.LocalPlayer
 local char = lp.Character or lp.CharacterAdded:Wait()
 
 local isRunning = true
-local teleportTime = 3
+local teleportTime = 7
 
 local checkpoints = {
     CFrame.new(306.730, 150.496, 2481.263, 0.937, 0.005, -0.350, -0.002, 1.000, 0.009, 0.350, -0.008, 0.937),
