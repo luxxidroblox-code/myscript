@@ -629,12 +629,11 @@ autoRaceTab:CreateSlider({
     suffix    = " Seconds",
     callback  = function(value)
         raceTpTime = value
-    end,
+    end
 })
 
 autoRaceTab:CreateToggle({
-    name     = "Start Auto Race
-    (Before press this button, get in your vehicle and press this button, also this race only at hakusan.)",
+    name     = "Start Auto Race",
     callback = function(state)
         if state then
             local char2   = player.Character or player.CharacterAdded:Wait()
