@@ -629,7 +629,7 @@ autoRaceTab:CreateSlider({
     suffix    = " Seconds",
     callback  = function(value)
         raceTpTime = value
-    end
+    end,
 })
 
 autoRaceTab:CreateToggle({
