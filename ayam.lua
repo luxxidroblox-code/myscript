@@ -1,13 +1,35 @@
 -- Lua | VoidlineHub | Roblox Client Script
 
 local RS = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
 
-local char = game.Players.LocalPlayer.Character
-    or game.Players.LocalPlayer.CharacterAdded:Wait()
-local hrp = char:WaitForChild("HumanoidRootPart")
+local lp = Players.LocalPlayer
+local char = lp.Character or lp.CharacterAdded:Wait()
 
--- Step 1: Teleport ke start race
-hrp.CFrame = CFrame.new(306.730, 150.496, 2481.263, 0.937, 0.005, -0.350, -0.002, 1.000, 0.009, 0.350, -0.008, 0.937)
+local function getVehicleModel()
+    -- cari model kendaraan yang di-seat oleh player
+    local hrp = char:WaitForChild("HumanoidRootPart")
+    local seat = hrp:FindFirstChildOfClass("VehicleSeat") 
+        or hrp.Parent:FindFirstChildOfClass("VehicleSeat")
+    
+    -- cek via Humanoid.SeatPart
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum and hum.SeatPart then
+        return hum.SeatPart:FindFirstAncestorOfClass("Model")
+    end
+    return nil
+end
+
+-- Step 1: PivotTo ke start race
+local startCFrame = CFrame.new(306.730, 150.496, 2481.263, 0.937, 0.005, -0.350, -0.002, 1.000, 0.009, 0.350, -0.008, 0.937)
+
+local vehicle = getVehicleModel()
+if vehicle then
+    vehicle:PivotTo(startCFrame)
+else
+    -- fallback kalau ga di kendaraan
+    char:PivotTo(startCFrame)
+end
 
 -- Step 2: Tunggu ShowRaceTrack OnClientEvent
 local ShowRaceTrack = RS.Race.Remotes.ShowRaceTrack
@@ -21,7 +43,6 @@ conn = ShowRaceTrack.OnClientEvent:Connect(function(state)
     end
 end)
 
--- timeout fallback 30 detik
 local elapsed = 0
 while not raceStarted and elapsed < 30 do
     task.wait(0.5)
@@ -83,7 +104,14 @@ while not finished do
     end
 
     if closest then
-        hrp.CFrame = closest.part.CFrame + Vector3.new(0, 3, 0)
+        local targetCFrame = closest.part.CFrame + Vector3.new(0, 3, 0)
+        local v = getVehicleModel()
+        if v then
+            v:PivotTo(targetCFrame)
+        else
+            char:PivotTo(targetCFrame)
+        end
+
         if closest.label:find("FINISH") then
             finished = true
         end
