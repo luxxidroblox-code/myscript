@@ -59,52 +59,6 @@ local Window = Rayfield:CreateWindow({
 local AutoRaceTab = Window:CreateTab("Auto Race", 4483362458)
 
 -- ============================================================
--- NOCLIP — vehicle
--- ============================================================
-local noclipActive  = false
-local noclipConn    = nil
-
-local function setVehicleNoclip(model, state)
-    -- *CanCollide is a client-local write; server still collides,
-    --  but physics resolution on the client stops intercepting geometry*
-    for _, part in ipairs(model:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CanCollide = not state
-        end
-    end
-end
-
-local function startNoclip(model)
-    if noclipConn then noclipConn:Disconnect() end
-    noclipActive = true
-    -- Re-apply every Stepped so the engine doesn't re-enable collision
-    -- on parts that change state mid-tween
-    noclipConn = RunService.Stepped:Connect(function()
-        if not noclipActive then
-            noclipConn:Disconnect()
-            noclipConn = nil
-            return
-        end
-        for _, part in ipairs(model:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-            end
-        end
-    end)
-end
-
-local function stopNoclip(model)
-    noclipActive = false
-    if noclipConn then
-        noclipConn:Disconnect()
-        noclipConn = nil
-    end
-    if model and model.Parent then
-        setVehicleNoclip(model, false)
-    end
-end
-
--- ============================================================
 -- HELPERS
 -- ============================================================
 local function getVehicle()
@@ -124,10 +78,34 @@ local function resetVelocity(model)
     end
 end
 
+-- ============================================================
+-- TWEEN — noclip hanya aktif selama tween berjalan
+-- Collision di-disable pas tween mulai, di-restore pas tween selesai.
+-- Jalanan tetap solid karena vehicle nggak bisa nembus setelah restore.
+-- ============================================================
 local function tweenTo(model, targetCFrame, duration)
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum or not hum.SeatPart then return end
     model.PrimaryPart = hum.SeatPart
+
+    -- Snapshot CanCollide tiap part sebelum diubah
+    -- *snapshot penting: ada part yang memang CanCollide = false dari sananya (sensor, invisible wall, dsb)*
+    local snapshot = {}
+    for _, part in ipairs(model:GetDescendants()) do
+        if part:IsA("BasePart") then
+            snapshot[part] = part.CanCollide
+            part.CanCollide = false
+        end
+    end
+
+    -- Stepped re-apply supaya engine nggak reset collision mid-tween
+    local noclipConn = RunService.Stepped:Connect(function()
+        for _, part in ipairs(model:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end)
 
     local cfValue = Instance.new("CFrameValue")
     cfValue.Value  = model:GetPrimaryPartCFrame()
@@ -148,6 +126,14 @@ local function tweenTo(model, targetCFrame, duration)
 
     workspace.Gravity = 196.2
     resetVelocity(model)
+
+    -- Tween selesai — putus Stepped, restore collision dari snapshot
+    noclipConn:Disconnect()
+    for _, part in ipairs(model:GetDescendants()) do
+        if part:IsA("BasePart") and snapshot[part] ~= nil then
+            part.CanCollide = snapshot[part]
+        end
+    end
 end
 
 local function instantTo(model, targetCFrame)
@@ -172,7 +158,6 @@ local function runRaceLoop()
         local vehicle = getVehicle()
 
         if vehicle then
-            startNoclip(vehicle)
             instantTo(vehicle, checkpoints[1])
         else
             char:PivotTo(checkpoints[1])
@@ -207,9 +192,6 @@ local function runRaceLoop()
 
             vehicle = getVehicle()
             if vehicle then
-                -- Noclip still running from startNoclip above;
-                -- re-anchor in case vehicle swapped mid-race
-                startNoclip(vehicle)
                 tweenTo(vehicle, checkpoints[i], teleportTime)
             else
                 char:PivotTo(checkpoints[i])
@@ -218,39 +200,29 @@ local function runRaceLoop()
             task.wait(1)
         end
 
-        -- Clean up noclip after lap completes
-        vehicle = getVehicle()
-        if vehicle then
-            stopNoclip(vehicle)
-        end
-
         task.wait(2)
     end
-
-    -- Ensure noclip off when loop exits
-    local v = getVehicle()
-    if v then stopNoclip(v) end
 end
 
 -- ============================================================
 -- UI ELEMENTS
 -- ============================================================
 AutoRaceTab:CreateSlider({
-    Name        = "Teleport Time (s)",
-    Range       = { 1, 20 },
-    Increment   = 1,
+    Name         = "Teleport Time (s)",
+    Range        = { 1, 20 },
+    Increment    = 1,
     CurrentValue = teleportTime,
-    Flag        = "TeleportTimeSlider",
-    Callback    = function(val)
+    Flag         = "TeleportTimeSlider",
+    Callback     = function(val)
         teleportTime = val
     end,
 })
 
 AutoRaceTab:CreateToggle({
-    Name        = "Auto Race",
+    Name         = "Auto Race",
     CurrentValue = false,
-    Flag        = "AutoRaceToggle",
-    Callback    = function(state)
+    Flag         = "AutoRaceToggle",
+    Callback     = function(state)
         if state then
             char = lp.Character or lp.CharacterAdded:Wait()
             local vehicle = getVehicle()
@@ -262,7 +234,6 @@ AutoRaceTab:CreateToggle({
                     Duration = 5,
                     Image    = 4483362458,
                 })
-                -- Force toggle back off without re-triggering callback loop
                 Rayfield.Flags["AutoRaceToggle"]:Set(false)
                 return
             end
