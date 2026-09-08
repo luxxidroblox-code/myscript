@@ -1,18 +1,79 @@
 -- Lua | VoidlineHub | Roblox Client Script
 
 local RS = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
-
 local lp = Players.LocalPlayer
 local char = lp.Character or lp.CharacterAdded:Wait()
 
-local function getVehicleModel()
-    -- cari model kendaraan yang di-seat oleh player
-    local hrp = char:WaitForChild("HumanoidRootPart")
-    local seat = hrp:FindFirstChildOfClass("VehicleSeat") 
-        or hrp.Parent:FindFirstChildOfClass("VehicleSeat")
-    
-    -- cek via Humanoid.SeatPart
+local isRunning = true
+local flySpeed = 300
+local arriveDistance = 20
+
+-- ============================================================
+-- FLY TO (ported dari vehicleFlyTo BCA)
+-- ============================================================
+local function flyModelTo(model, targetPos)
+    local root = model.PrimaryPart
+        or model:FindFirstChild("DriveSeat")
+        or model:FindFirstChild("VehicleSeat")
+        or model:FindFirstChildWhichIsA("BasePart")
+    if not root then return end
+
+    local noclipConn = RunService.Stepped:Connect(function()
+        for _, v in ipairs(model:GetDescendants()) do
+            if v:IsA("BasePart") then v.CanCollide = false end
+        end
+        if char then
+            for _, v in ipairs(char:GetDescendants()) do
+                if v:IsA("BasePart") then v.CanCollide = false end
+            end
+        end
+    end)
+
+    local BG = Instance.new("BodyGyro")
+    BG.P = 9e4
+    BG.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+    BG.D = 50
+    BG.Parent = root
+
+    local BV = Instance.new("BodyVelocity")
+    BV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    BV.Velocity = Vector3.zero
+    BV.Parent = root
+
+    local timeout = os.clock()
+    while isRunning do
+        local dir = targetPos - root.Position
+        local dist = dir.Magnitude
+        if dist < arriveDistance then break end
+        if os.clock() - timeout > 60 then break end
+
+        BV.Velocity = dir.Unit * flySpeed
+        BG.CFrame = CFrame.lookAt(root.Position, targetPos)
+        task.wait()
+    end
+
+    BV.Velocity = Vector3.zero
+    task.wait(0.2)
+    BG:Destroy()
+    BV:Destroy()
+
+    for _, v in ipairs(model:GetDescendants()) do
+        if v:IsA("BasePart") then
+            v.AssemblyLinearVelocity = Vector3.zero
+            v.AssemblyAngularVelocity = Vector3.zero
+            v.CanCollide = true
+        end
+    end
+
+    noclipConn:Disconnect()
+end
+
+-- ============================================================
+-- GET VEHICLE
+-- ============================================================
+local function getVehicle()
     local hum = char:FindFirstChildOfClass("Humanoid")
     if hum and hum.SeatPart then
         return hum.SeatPart:FindFirstAncestorOfClass("Model")
@@ -20,18 +81,21 @@ local function getVehicleModel()
     return nil
 end
 
--- Step 1: PivotTo ke start race
-local startCFrame = CFrame.new(306.730, 150.496, 2481.263, 0.937, 0.005, -0.350, -0.002, 1.000, 0.009, 0.350, -0.008, 0.937)
+-- ============================================================
+-- STEP 1: Fly ke start CFrame
+-- ============================================================
+local startPos = Vector3.new(306.730, 150.496, 2481.263)
 
-local vehicle = getVehicleModel()
+local vehicle = getVehicle()
 if vehicle then
-    vehicle:PivotTo(startCFrame)
+    flyModelTo(vehicle, startPos)
 else
-    -- fallback kalau ga di kendaraan
-    char:PivotTo(startCFrame)
+    char:PivotTo(CFrame.new(startPos))
 end
 
--- Step 2: Tunggu ShowRaceTrack OnClientEvent
+-- ============================================================
+-- STEP 2: Tunggu ShowRaceTrack OnClientEvent
+-- ============================================================
 local ShowRaceTrack = RS.Race.Remotes.ShowRaceTrack
 local raceStarted = false
 
@@ -46,75 +110,77 @@ end)
 local elapsed = 0
 while not raceStarted and elapsed < 30 do
     task.wait(0.5)
-    elapsed = elapsed + 0.5
+    elapsed += 0.5
 end
 
 if not raceStarted then
-    warn("ShowRaceTrack timeout — race tidak dimulai")
+    warn("ShowRaceTrack timeout")
     return
 end
 
--- Step 3: Checkpoint/Finish teleport loop
-local function isWhiteBillboard(obj)
-    for _, desc in ipairs(obj:GetDescendants()) do
-        if desc:IsA("BillboardGui") then
-            for _, label in ipairs(desc:GetDescendants()) do
+-- ============================================================
+-- STEP 3: Checkpoint/Finish loop — fly ke setiap white billboard
+-- ============================================================
+local function findWhiteBillboards()
+    local results = {}
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BillboardGui") then
+            for _, label in ipairs(obj:GetDescendants()) do
                 if label:IsA("TextLabel") then
                     local text = label.Text:upper()
-                    local color = label.TextColor3
-                    local isWhite = color.R > 0.85 and color.G > 0.85 and color.B > 0.85
+                    local c = label.TextColor3
+                    local isWhite = c.R > 0.85 and c.G > 0.85 and c.B > 0.85
                     local isTarget = text:find("CHECKPOINT") or text:find("FINISH")
                     if isWhite and isTarget then
-                        return true, text
+                        local part = obj.Adornee
+                            or (obj.Parent:IsA("BasePart") and obj.Parent)
+                            or (obj.Parent:IsA("Model") and obj.Parent.PrimaryPart)
+                        if part then
+                            table.insert(results, { part = part, label = text })
+                        end
                     end
                 end
             end
         end
     end
-    return false, nil
+    return results
 end
 
-local finished = false
-
-while not finished do
-    task.wait(1)
-
-    local candidates = {}
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") or obj:IsA("Model") then
-            local found, label = isWhiteBillboard(obj)
-            if found then
-                local part = obj:IsA("BasePart") and obj or obj.PrimaryPart
-                if part then
-                    table.insert(candidates, { part = part, label = label })
-                end
-            end
-        end
-    end
-
-    if #candidates == 0 then break end
-
-    local closest, closestDist = nil, math.huge
-    for _, t in ipairs(candidates) do
-        local dist = (t.part.Position - hrp.Position).Magnitude
-        if dist < closestDist then
-            closestDist = dist
+local function getClosest(list)
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    local closest, minDist = nil, math.huge
+    for _, t in ipairs(list) do
+        local d = (t.part.Position - hrp.Position).Magnitude
+        if d < minDist then
+            minDist = d
             closest = t
         end
     end
+    return closest
+end
 
-    if closest then
-        local targetCFrame = closest.part.CFrame + Vector3.new(0, 3, 0)
-        local v = getVehicleModel()
-        if v then
-            v:PivotTo(targetCFrame)
-        else
-            char:PivotTo(targetCFrame)
-        end
+local finished = false
+while not finished do
+    task.wait(1)
 
-        if closest.label:find("FINISH") then
-            finished = true
-        end
-        task.wait(5)
+    local targets = findWhiteBillboards()
+    if #targets == 0 then break end
+
+    local target = getClosest(targets)
+    if not target then break end
+
+    local destPos = target.part.Position + Vector3.new(0, 4, 0)
+    local v = getVehicle()
+    if v then
+        flyModelTo(v, destPos)
+    else
+        char:PivotTo(CFrame.new(destPos))
     end
+
+    if target.label:find("FINISH") then
+        finished = true
+    end
+
+    task.wait(5)
 end
