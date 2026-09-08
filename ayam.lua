@@ -7,7 +7,7 @@ local lp = Players.LocalPlayer
 local char = lp.Character or lp.CharacterAdded:Wait()
 
 local isRunning = true
-local teleportTime = 7
+local teleportTime = 3
 
 local checkpoints = {
     CFrame.new(306.730, 150.496, 2481.263, 0.937, 0.005, -0.350, -0.002, 1.000, 0.009, 0.350, -0.008, 0.937),
@@ -17,7 +17,7 @@ local checkpoints = {
     CFrame.new(203.609, 61.644, 508.836, 0.058, 0.219, 0.974, -0.012, 0.976, -0.219, -0.998, 0.001, 0.060),
     CFrame.new(-53.878, 31.175, 115.163, 0.999, 0.019, 0.045, -0.009, 0.974, -0.227, -0.048, 0.226, 0.973),
     CFrame.new(-926.268, 25.998, 6.413, 0.043, 0.193, 0.980, 0.006, 0.981, -0.193, -0.999, 0.014, 0.041),
-    CFrame.new(-1459.487, 2.760, 669.708, 0.991, 0.031, 0.129, -0.001, 0.974, -0.226, -0.133, 0.223, 0.966),
+    CFrame.new(-1459.487, 2.760, 669.708, 0.991, 0.031, 0.129, -0.001, 0.974, -0.226, -0.133, 0.223, 0.966) * CFrame.new(0, 0, 5),
     CFrame.new(-1839.563, 12.334, 43.834, 0.735, 0.148, 0.662, -0.000, 0.976, -0.218, -0.678, 0.160, 0.717),
     CFrame.new(-2625.543, 12.284, -759.915, -0.041, 0.228, 0.973, 0.000, 0.974, -0.228, -0.999, -0.009, -0.040),
     CFrame.new(-3326.966, -9.079, -941.116, 0.329, 0.212, 0.920, -0.000, 0.974, -0.225, -0.944, 0.074, 0.321),
@@ -111,7 +111,7 @@ while isRunning do
         char:PivotTo(checkpoints[1])
     end
 
-    -- Step 2: listen ShowRaceTrack
+    -- Step 2: listen ShowRaceTrack, tunggu 15 detik lalu langsung tween
     local raceStarted = false
     local conn
     conn = ShowRaceTrack.OnClientEvent:Connect(function(state)
@@ -134,8 +134,7 @@ while isRunning do
         continue
     end
 
-    task.wait(30) -- ingame countdown 30 detik (vehicle prepare/spawn)
-    task.wait(15) -- race countdown buffer
+    task.wait(15)
 
     -- Step 3: tween tiap checkpoint
     for i = 2, #checkpoints do
