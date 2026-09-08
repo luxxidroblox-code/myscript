@@ -1,14 +1,13 @@
 -- Lua | VoidlineHub | Roblox Client Script
 -- Rayfield UI | Runtime: executor (Arceus X / Delta)
 
-local RS = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local lp = Players.LocalPlayer
-local char = lp.Character or lp.CharacterAdded:Wait()
+local Players      = game:GetService("Players")
+local RunService   = game:GetService("RunService")
+local lp           = Players.LocalPlayer
+local char         = lp.Character or lp.CharacterAdded:Wait()
 
-local isRunning = false
+local isRunning  = false
 local teleportTime = 7
 
 local checkpoints = {
@@ -43,17 +42,15 @@ local checkpoints = {
 -- ============================================================
 -- RAYFIELD UI
 -- ============================================================
-local Rayfield = loadstring(game:HttpGet(
-    "https://sirius.menu/rayfield"
-))()
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
 local Window = Rayfield:CreateWindow({
-    Name             = "VoidlineHub",
-    LoadingTitle     = "VoidlineHub",
-    LoadingSubtitle  = "by Projectsion",
+    Name                = "VoidlineHub",
+    LoadingTitle        = "VoidlineHub",
+    LoadingSubtitle     = "by Projectsion",
     ConfigurationSaving = { Enabled = false },
-    Discord          = { Enabled = false },
-    KeySystem        = false,
+    Discord             = { Enabled = false },
+    KeySystem           = false,
 })
 
 local AutoRaceTab = Window:CreateTab("Auto Race", 4483362458)
@@ -78,18 +75,29 @@ local function resetVelocity(model)
     end
 end
 
+-- Scan seluruh workspace — cari BillboardGui yang punya TextLabel berisi "GO!"
+-- *GetDescendants di workspace bisa berat kalau map besar; dibatasi tiap 0.5s di loop*
+local function detectGoBillboard()
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BillboardGui") then
+            for _, child in ipairs(obj:GetDescendants()) do
+                if child:IsA("TextLabel") and string.find(child.Text, "GO!", 1, true) then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
 -- ============================================================
--- TWEEN — noclip hanya aktif selama tween berjalan
--- Collision di-disable pas tween mulai, di-restore pas tween selesai.
--- Jalanan tetap solid karena vehicle nggak bisa nembus setelah restore.
+-- TWEEN — noclip scoped ke window tween saja
 -- ============================================================
 local function tweenTo(model, targetCFrame, duration)
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum or not hum.SeatPart then return end
     model.PrimaryPart = hum.SeatPart
 
-    -- Snapshot CanCollide tiap part sebelum diubah
-    -- *snapshot penting: ada part yang memang CanCollide = false dari sananya (sensor, invisible wall, dsb)*
     local snapshot = {}
     for _, part in ipairs(model:GetDescendants()) do
         if part:IsA("BasePart") then
@@ -98,7 +106,6 @@ local function tweenTo(model, targetCFrame, duration)
         end
     end
 
-    -- Stepped re-apply supaya engine nggak reset collision mid-tween
     local noclipConn = RunService.Stepped:Connect(function()
         for _, part in ipairs(model:GetDescendants()) do
             if part:IsA("BasePart") then
@@ -127,7 +134,6 @@ local function tweenTo(model, targetCFrame, duration)
     workspace.Gravity = 196.2
     resetVelocity(model)
 
-    -- Tween selesai — putus Stepped, restore collision dari snapshot
     noclipConn:Disconnect()
     for _, part in ipairs(model:GetDescendants()) do
         if part:IsA("BasePart") and snapshot[part] ~= nil then
@@ -150,8 +156,6 @@ end
 -- RACE LOOP
 -- ============================================================
 local function runRaceLoop()
-    local ShowRaceTrack = RS.Race.Remotes.ShowRaceTrack
-
     while isRunning do
         char = lp.Character or lp.CharacterAdded:Wait()
 
@@ -163,30 +167,23 @@ local function runRaceLoop()
             char:PivotTo(checkpoints[1])
         end
 
-        local raceStarted = false
-        local conn
-        conn = ShowRaceTrack.OnClientEvent:Connect(function(state)
-            if state == true then
-                raceStarted = true
-                conn:Disconnect()
-            end
-        end)
+        -- Tunggu billboard "GO!" muncul, timeout 90 detik
+        local goDetected = false
+        local elapsed    = 0
 
-        local elapsed = 0
-        while not raceStarted and elapsed < 60 do
+        while not goDetected and elapsed < 90 and isRunning do
             task.wait(0.5)
             elapsed += 0.5
+            goDetected = detectGoBillboard()
         end
-        if conn then conn:Disconnect() end
 
-        if not raceStarted then
-            warn("ShowRaceTrack timeout, retry...")
+        if not goDetected then
+            warn("[VoidlineHub] GO! billboard timeout — retrying...")
             task.wait(3)
             continue
         end
 
-        task.wait(15)
-
+        -- Tween tiap checkpoint
         for i = 2, #checkpoints do
             if not isRunning then break end
 
